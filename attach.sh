@@ -6,7 +6,7 @@ set -e
 if [ -z "$1" ] || [ -z "$2" ]; then
     echo "Usage: $0 <session> <agent>"
     echo "  session  tmux session name (e.g. claude_myproject_alice)"
-    echo "  agent    claude, gemini, codex, vibe"
+    echo "  agent    claude, codex, copilot, gemini, vibe"
     exit 1
 fi
 

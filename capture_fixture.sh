@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <agent> [duration_secs]"
-  echo "  agent: claude | codex | gemini | vibe"
+  echo "  agent: claude | codex | copilot | gemini | vibe"
   echo "  duration_secs: capture duration (default 60)"
   exit 1
 fi
@@ -20,6 +20,7 @@ STATES_OUT="$DIR/fixtures/${AGENT}_states.jsonl"
 case "$AGENT" in
   claude) START_CMD="${CAPTURE_CMD:-claude --dangerously-skip-permissions}" ;;
   codex)  START_CMD="${CAPTURE_CMD:-codex}" ;;
+  copilot) START_CMD="${CAPTURE_CMD:-copilot --allow-all}" ;;
   gemini) START_CMD="${CAPTURE_CMD:-gemini}" ;;
   vibe)   START_CMD="${CAPTURE_CMD:-vibe}" ;;
   *)

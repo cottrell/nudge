@@ -128,6 +128,18 @@ def test_classify_vibe_idle():
     m = Monitor('vibe')
     assert m.classify('> ') == 'idle'
 
+def test_classify_copilot_idle():
+    m = Monitor('copilot')
+    assert m.classify('› ') == 'idle'
+
+def test_classify_copilot_idle_prompt_help():
+    m = Monitor('copilot')
+    assert m.classify('❯  Type @ to mention files, # for issues/PRs, / for commands, or ? for shortcuts') == 'idle'
+
+def test_classify_copilot_working():
+    m = Monitor('copilot')
+    assert m.classify('esc to interrupt') == 'working'
+
 def test_classify_unrecognised_line_returns_none():
     m = Monitor('claude')
     assert m.classify('some random output') is None
@@ -231,7 +243,7 @@ def test_socket_multiple_queries(sock_path):
 
 def test_fixture_replay_classifies_for_python():
     checked = 0
-    for agent in ['claude', 'codex', 'gemini', 'vibe']:
+    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe']:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue
@@ -254,7 +266,7 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
         pytest.skip('monitor-bin not built')
 
     checked = 0
-    for agent in ['claude', 'codex', 'gemini', 'vibe']:
+    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe']:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue

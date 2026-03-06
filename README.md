@@ -42,6 +42,7 @@ make test-c     # C smoke + fixture replay parity check vs Python
 make capture AGENT=claude DUR=60  # real tmux capture -> fixtures/claude_capture.txt
 make capture_claude DUR=60
 make capture_codex DUR=60
+make capture_copilot DUR=60
 make capture_gemini DUR=60
 make capture_vibe DUR=60
 make capture_all DUR=60

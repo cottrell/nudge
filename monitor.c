@@ -56,6 +56,16 @@ static const Pat PATS[] = {
     {"codex",  ST_WORKING,      "running"},
     {"codex",  ST_RATE_LIMITED, "rate limit"},
     {"codex",  ST_ERROR,        "error:"},
+    {"copilot", ST_WORKING,      "thinking"},
+    {"copilot", ST_WORKING,      "writing"},
+    {"copilot", ST_WORKING,      "running"},
+    {"copilot", ST_WORKING,      "loading environment"},
+    {"copilot", ST_WORKING,      "esc to interrupt"},
+    {"copilot", ST_IDLE,         "type @ to mention files"},
+    {"copilot", ST_IDLE,         "type your message"},
+    {"copilot", ST_RATE_LIMITED, "rate limit"},
+    {"copilot", ST_RATE_LIMITED, "too many requests"},
+    {"copilot", ST_ERROR,        "error:"},
     {"vibe",   ST_WORKING,      "esc to interrupt"},
     {"vibe",   ST_RATE_LIMITED, "rate limits exceeded"},
     {"vibe",   ST_ERROR,        "error:"},
@@ -130,11 +140,21 @@ static int is_claude_idle(const char *line) {
     return 0;
 }
 
+static int is_copilot_idle(const char *line) {
+    if (line[0] == '>' && line[1] == '\0') return 1;
+    if ((unsigned char)line[0] == 0xE2 &&
+        (unsigned char)line[1] == 0x80 &&
+        (unsigned char)line[2] == 0xBA &&
+        line[3] == '\0') return 1; /* › */
+    return 0;
+}
+
 static State classify(char *line) {
     if (strstr(line, "\x1b[?2026")) return ST_WORKING;
     strip_ansi(line);
     trim_ascii_ws(line);
     if (!strcmp(g_agent, "claude") && is_claude_idle(line)) return ST_IDLE;
+    if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
     if (has_braille(line)) return ST_WORKING;
     for (int i = 0; PATS[i].agent; i++)
         if (!strcmp(PATS[i].agent, g_agent) && icontains(line, PATS[i].pat))

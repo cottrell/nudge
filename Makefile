@@ -14,7 +14,7 @@ test: build
 	uv run pytest test_monitor.py -v
 
 capture:
-	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|gemini|vibe> [DUR=60]"; exit 1)
+	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|copilot|gemini|vibe> [DUR=60]"; exit 1)
 	./capture_fixture.sh $(AGENT) $(DUR)
 
 capture_claude:
@@ -23,13 +23,16 @@ capture_claude:
 capture_codex:
 	$(MAKE) capture AGENT=codex DUR="$(DUR)"
 
+capture_copilot:
+	$(MAKE) capture AGENT=copilot DUR="$(DUR)"
+
 capture_gemini:
 	$(MAKE) capture AGENT=gemini DUR="$(DUR)"
 
 capture_vibe:
 	$(MAKE) capture AGENT=vibe DUR="$(DUR)"
 
-capture_all: capture_claude capture_codex capture_gemini capture_vibe
+capture_all: capture_claude capture_codex capture_copilot capture_gemini capture_vibe
 
 # Manual tmux test — no agent needed, just pipes text through a plain session.
 # Open a second terminal and run: echo "status" | nc -U /tmp/test-monitor.sock

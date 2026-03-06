@@ -47,6 +47,12 @@ PATTERNS = {
         'idle':         [r'^\$\s*$'],
         'error':        [r'Error:'],
     },
+    'copilot': {
+        'working':      [r'thinking', r'writing', r'running', r'loading environment', r'esc to interrupt'],
+        'rate_limited': [r'rate.?limit', r'429', r'too many requests'],
+        'idle':         [r'^\s*[›>]\s*$', r'type @ to mention files', r'type your message'],
+        'error':        [r'Error:'],
+    },
     'vibe': {
         # braille spinner + "(0s esc to interrupt)" hint
         'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'esc to interrupt'],
@@ -172,7 +178,7 @@ class Monitor:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--agent', default='unknown', help='Agent type: claude, codex, gemini, vibe')
+    parser.add_argument('--agent', default='unknown', help='Agent type: claude, codex, copilot, gemini, vibe')
     parser.add_argument('--socket', default=None, help='Unix socket path')
     parser.add_argument('--http-port', type=int, default=None, help='Optional HTTP port')
     parser.add_argument('--debug', default=None, metavar='FILE', help='Write raw incoming lines to FILE (use repr encoding)')
