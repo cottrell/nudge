@@ -9,4 +9,5 @@ if [ -z "$1" ] || [ -z "$2" ]; then
 fi
 TARGET=$1; shift
 tmux send-keys -t "$TARGET" "$*"
+sleep 0.1
 tmux send-keys -t "$TARGET" Enter
