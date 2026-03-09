@@ -23,7 +23,12 @@ while true; do
     case "$STATE" in
         idle|unknown)
             echo "$(date '+%H:%M:%S') $SESSION is $STATE — nudging"
-            tmux send-keys -t "$SESSION" "$NUDGE"
+            MSG="$NUDGE"
+            if [ -n "$TMUX" ]; then
+                SENDER=$(tmux display-message -p '#S')
+                MSG="${SENDER}: ${MSG}"
+            fi
+            tmux send-keys -t "$SESSION" "$MSG"
             sleep 0.1
             tmux send-keys -t "$SESSION" C-m
             ;;
