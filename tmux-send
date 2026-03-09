@@ -8,6 +8,11 @@ if [ -z "$1" ] || [ -z "$2" ]; then
     exit 1
 fi
 TARGET=$1; shift
-tmux send-keys -t "$TARGET" "$*"
+MSG="$*"
+if [ -n "$TMUX" ]; then
+    SENDER=$(tmux display-message -p '#S')
+    MSG="${SENDER}: ${MSG}"
+fi
+tmux send-keys -t "$TARGET" "$MSG"
 sleep 0.1
 tmux send-keys -t "$TARGET" Enter
