@@ -55,6 +55,24 @@ Capture fixtures are repr-encoded raw pane lines, scrubbed for common sensitive 
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
+## Safe Interaction (No Collisions)
+
+For a reliable "safe" typing experience (where logs don't overwrite your typing), use `safe-launcher.sh`:
+
+```bash
+# Launch a session with separate input/output panes
+./safe-launcher.sh mychat codex
+```
+
+This creates a split window where:
+- Top pane runs the agent.
+- Bottom pane is your "safe keyboard".
+
+To send commands from another terminal (automation):
+```bash
+./tmux-send mychat "Hello agent"
+```
+
 ## Similar projects
 
 - [ccmanager](https://github.com/kbwo/ccmanager) — Go TUI, supports Claude/Gemini/Codex/Cursor/etc, state detection
