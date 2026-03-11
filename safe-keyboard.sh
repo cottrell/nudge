@@ -19,6 +19,7 @@ echo "Type safely below. Press Enter to send."
 while IFS= read -r -e -p "> " line; do
     # Send the literal characters of the line
     tmux send-keys -t "$TARGET" -l -- "$line"
-    # Send the Enter key
-    tmux send-keys -t "$TARGET" Enter
+    sleep 0.1
+    # Send Enter as a separate C-m keypress; this has been more reliable than Enter.
+    tmux send-keys -t "$TARGET" C-m
 done

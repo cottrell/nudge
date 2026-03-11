@@ -39,7 +39,9 @@ tmux split-window -t "$SESSION_NAME:0" -v -l 5
 # We target the pane above us using the default behavior of safe-keyboard.sh ({up-of})
 # We use the absolute path to ensure it runs from anywhere
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-tmux send-keys -t "$SESSION_NAME:0.1" "$SCRIPT_DIR/safe-keyboard.sh" C-m
+tmux send-keys -t "$SESSION_NAME:0.1" -l -- "$SCRIPT_DIR/safe-keyboard.sh"
+sleep 0.1
+tmux send-keys -t "$SESSION_NAME:0.1" C-m
 
 # 4. Select the bottom pane so typing starts there immediately
 tmux select-pane -t "$SESSION_NAME:0.1"

@@ -26,4 +26,4 @@ fi
 # Use -l for literal text sending to handle special chars correctly
 tmux send-keys -t "$TARGET" -l -- "$MSG"
 sleep 0.1
-tmux send-keys -t "$TARGET" Enter
+tmux send-keys -t "$TARGET" C-m
