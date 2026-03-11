@@ -1,12 +1,26 @@
-# monitor
+# nudge
 
-Minimal agent nudging system. Reads a tmux pane stream, classifies agent state,
-serves it over a Unix socket, and nudges the agent when idle.
+Composable tmux agent tools. The scripts are meant to be used together, but
+each piece is also useful on its own. The repo currently covers three related
+jobs:
+
+- monitor an agent pane and classify its state
+- query that state over a Unix socket
+- drive the session safely, either with automatic nudges or a split-pane input path
+
 States: `unknown` `working` `idle` `rate_limited` `error`
 
 **User-facing scripts:**
-- `launch.sh <session> <agent>` — create session if needed, attach monitor, drop into tmux
+- `launch.sh <session> <agent>` — create or resume a monitored single-pane session
+- `attach.sh <session> <agent>` — attach the monitor to an existing session
 - `babysit.sh <session>` — poll state, nudge on idle, back off on rate_limited
+- `safe-launcher.sh <session> [command]` — create a split-pane session with a dedicated input pane
+- `safe-keyboard.sh [target-pane]` — relay typed lines to another pane without prompt clobbering
+- `tmux-send <target> <text...>` — send literal text plus Enter to a pane
+
+The repo name still fits if you think of "nudge" as the original behavior plus
+the surrounding operator tools, but the project is better described as a small
+toolbox than a single-purpose nudger.
 
 No colons in tmux session names — use underscores.
 
@@ -21,18 +35,27 @@ One session per agent, one window, one pane. `pipe-pane` and `send-keys` target
 `session:window.pane` — with a single pane the session name alone is unambiguous.
 For multiple panes you must be explicit: `claude_myproject_alice:0.0`.
 
+## Monitored sessions
+
 ```bash
-# start agent
-tmux new-session -d -s claude_myproject_alice
-tmux send-keys -t claude_myproject_alice "claude --dangerously-skip-permissions" Enter
+# create or resume a monitored session and attach to it
+./launch.sh claude_myproject_alice claude
 
-# attach monitor
-./attach.sh claude_myproject_alice claude
+# start the agent inside tmux if the session is new
+tmux send-keys -t claude_myproject_alice "claude --dangerously-skip-permissions"
+sleep 0.1
+tmux send-keys -t claude_myproject_alice C-m
 
-# query
+# query the monitor socket
 echo status | nc -U /tmp/claude_myproject_alice.sock  # {"state": "working"}
 echo log    | nc -U /tmp/claude_myproject_alice.sock  # {"log": [...]}
 echo tail   | nc -U /tmp/claude_myproject_alice.sock  # {"line": "..."}
+```
+
+You can also create the tmux session yourself and then run:
+
+```bash
+./attach.sh claude_myproject_alice claude
 ```
 
 ```bash
@@ -55,23 +78,28 @@ Capture fixtures are repr-encoded raw pane lines, scrubbed for common sensitive 
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
-## Safe Interaction (No Collisions)
+## Safe interaction
 
-For a reliable "safe" typing experience (where logs don't overwrite your typing), use `safe-launcher.sh`:
+For a split-pane setup where your typing happens in a dedicated input pane, use
+`safe-launcher.sh`:
 
 ```bash
-# Launch a session with separate input/output panes
+# top pane: agent or shell
+# bottom pane: safe input relay
 ./safe-launcher.sh mychat codex
 ```
 
-This creates a split window where:
-- Top pane runs the agent.
-- Bottom pane is your "safe keyboard".
+This creates one tmux window with:
+- top pane running the command you passed
+- bottom pane running `safe-keyboard.sh`, which forwards each submitted line to the pane above
 
-To send commands from another terminal (automation):
+To send text from another terminal:
 ```bash
 ./tmux-send mychat "Hello agent"
 ```
+
+`tmux-send` defaults a bare session name like `mychat` to `mychat:0.0`, which
+matches the top pane created by `safe-launcher.sh`.
 
 ## Similar projects
 

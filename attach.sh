@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./attach.sh <session> [agent]
+# Usage: ./attach.sh <session> <agent>
 # Example: ./attach.sh claude_myproject_alice claude
 set -e
 

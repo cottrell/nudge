@@ -1,9 +1,8 @@
 #!/bin/bash
-# safe-launcher.sh
-# Automates the setup of a "safe" tmux environment.
+# Create a split-pane tmux session with a dedicated input pane.
 #
-# Usage: ./scripts/safe-launcher.sh <session_name> [command]
-# Example: ./scripts/safe-launcher.sh my-chat codex
+# Usage: ./safe-launcher.sh <session_name> [command]
+# Example: ./safe-launcher.sh my-chat codex
 #
 # Layout:
 # -------------------------

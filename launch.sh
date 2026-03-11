@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch or resume a monitored agent session.
-# Usage: ./launch.sh <session> [agent]
+# Usage: ./launch.sh <session> <agent>
 set -e
 
 if [ -z "$1" ] || [ -z "$2" ]; then

@@ -1,19 +1,7 @@
 #!/bin/bash
-# safe-keyboard.sh
-# A simple "safe input" loop for tmux.
+# Read lines in one tmux pane and forward them to another pane.
 # Usage: ./safe-keyboard.sh [target-pane]
-#
-# If target-pane is not specified, it defaults to the pane logically "above" this one.
-#
-# Workflow:
-# 1. Open tmux.
-# 2. Run your agent (e.g., `codex`) in the top pane.
-# 3. Split the window (Ctrl+b ").
-# 4. Run `./safe-keyboard.sh` in the bottom pane.
-# 5. Type in the bottom pane safely. Output appears in the top.
-#
-# Note: To send keys directly to the agent from another terminal (skipping this script),
-# use: tmux send-keys -t <session>:0.0 "command" Enter
+# Default target is the pane above this one: {up-of}
 
 TARGET="${1:-{up-of}}"
 
