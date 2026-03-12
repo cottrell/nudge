@@ -26,9 +26,9 @@ No colons in tmux session names — use underscores.
 
 `send-keys` requires `C-m` (Enter) as a **separate call** — combining text and `C-m` in one call does not submit:
 ```bash
-tmux send-keys -t mysession "some text"
+tmux send-keys -t mysession:0.0 -l -- "some text"
 sleep 0.1
-tmux send-keys -t mysession C-m
+tmux send-keys -t mysession:0.0 C-m
 ```
 
 One session per agent, one window, one pane. `pipe-pane` and `send-keys` target
@@ -42,9 +42,9 @@ For multiple panes you must be explicit: `claude_myproject_alice:0.0`.
 ./launch.sh claude_myproject_alice claude
 
 # start the agent inside tmux if the session is new
-tmux send-keys -t claude_myproject_alice "claude --dangerously-skip-permissions"
+tmux send-keys -t claude_myproject_alice:0.0 -l -- "claude --dangerously-skip-permissions"
 sleep 0.1
-tmux send-keys -t claude_myproject_alice C-m
+tmux send-keys -t claude_myproject_alice:0.0 C-m
 
 # query the monitor socket
 echo status | nc -U /tmp/claude_myproject_alice.sock  # {"state": "working"}

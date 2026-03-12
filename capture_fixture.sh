@@ -12,6 +12,7 @@ AGENT="$1"
 DURATION="${2:-60}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SESSION="capture_${AGENT}_$(date +%Y%m%d_%H%M%S)"
+TARGET="${SESSION}:0.0"
 SOCK="/tmp/${SESSION}.sock"
 RAW_TMP="/tmp/${SESSION}.raw.tmp"
 FIXTURE_OUT="$DIR/fixtures/${AGENT}_capture.txt"
@@ -55,9 +56,9 @@ tmux pipe-pane -t "$SESSION" "python $DIR/monitor.py --agent $AGENT --socket $SO
 ) &
 POLL_PID=$!
 
-tmux send-keys -t "$SESSION" "$START_CMD"
+tmux send-keys -t "$TARGET" -l -- "$START_CMD"
 sleep 0.1
-tmux send-keys -t "$SESSION" C-m
+tmux send-keys -t "$TARGET" C-m
 
 # Wait for agent to reach idle (ready prompt), then send a simple prompt
 echo "Waiting for agent to start..."
@@ -65,9 +66,9 @@ sleep "${STARTUP_WAIT:-8}"
 
 PROMPT="${CAPTURE_PROMPT:-say hello}"
 echo "Sending prompt: $PROMPT"
-tmux send-keys -t "$SESSION" "$PROMPT"
+tmux send-keys -t "$TARGET" -l -- "$PROMPT"
 sleep 0.1
-tmux send-keys -t "$SESSION" C-m
+tmux send-keys -t "$TARGET" C-m
 
 # Wait for response + return to idle
 sleep "$DURATION"

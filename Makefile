@@ -40,7 +40,9 @@ tmux-test:
 	tmux new-session -d -s monitor-test 2>/dev/null || true
 	tmux pipe-pane -t monitor-test "python $(CURDIR)/monitor.py --agent claude --socket /tmp/test-monitor.sock"
 	@echo "Session running. Send lines with:"
-	@echo "  tmux send-keys -t monitor-test 'Thinking...' Enter"
+	@echo "  tmux send-keys -t monitor-test:0.0 -l -- 'Thinking...'"
+	@echo "  sleep 0.1"
+	@echo "  tmux send-keys -t monitor-test:0.0 C-m"
 	@echo "Query state with:"
 	@echo "  echo status | nc -U /tmp/test-monitor.sock"
 	@echo "Attach with:"
