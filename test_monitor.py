@@ -35,6 +35,19 @@ def _sock_status(sock_path):
 
 
 def _expected_final_state(agent):
+    path = os.path.join('fixtures', f'{agent}_transitions.jsonl')
+    if os.path.exists(path):
+        last = None
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get('state'), str):
+                    last = obj['state']
+        if last:
+            return last
     path = os.path.join('fixtures', f'{agent}_states.jsonl')
     if not os.path.exists(path):
         return None
@@ -50,6 +63,11 @@ def _expected_final_state(agent):
                 if isinstance(st, dict) and isinstance(st.get('state'), str):
                     last = st['state']
     return last
+
+
+def _load_jsonl(path):
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        return [json.loads(raw) for raw in f if raw.strip()]
 
 
 # --- classify ---
@@ -174,6 +192,35 @@ def test_state_transitions():
     m.ingest('Claude AI is currently overloaded')
     assert m.state == 'rate_limited'
 
+def test_idle_holdoff_prevents_spinner_redraw_flap():
+    m = Monitor('gemini')
+    m.ingest('⠙ Thinking ... (esc to cancel, 5s)')
+    assert m.state == 'working'
+    m.ingest('*   Type your message or @path/to/file')
+    assert m.state == 'working'
+
+def test_state_log_records_init_and_changes(tmp_path):
+    path = tmp_path / 'state.jsonl'
+    m = Monitor('claude', state_log=str(path))
+    m.ingest('⠙ Thinking...')
+    m.ingest('> ')
+    rows = _load_jsonl(path)
+    assert [row['event'] for row in rows] == ['init', 'change', 'change']
+    assert [row['state'] for row in rows] == ['unknown', 'working', 'idle']
+    assert rows[1]['line'] == '⠙ Thinking...'
+    assert rows[2]['line'] == '>'
+
+def test_query_does_not_promote_pending_idle(tmp_path):
+    path = tmp_path / 'state-query.jsonl'
+    m = Monitor('gemini', state_log=str(path))
+    m.ingest('⠙ Thinking ... (esc to cancel, 5s)')
+    m.ingest('*   Type your message or @path/to/file')
+    before = _load_jsonl(path)
+    assert [row['state'] for row in before] == ['unknown', 'working']
+    assert m.query('status') == {'state': 'working'}
+    after = _load_jsonl(path)
+    assert after == before
+
 
 # --- query ---
 
@@ -254,6 +301,10 @@ def test_fixture_replay_classifies_for_python():
             m.ingest(line)
             seen.add(m.state)
         assert any(state != 'unknown' for state in seen), f'no classified state in {path}'
+        if agent == 'gemini':
+            time.sleep(1.05)
+            with m._lock:
+                m._refresh_state_locked()
         expected = _expected_final_state(agent)
         if expected:
             assert m.state == expected, f'python final state mismatch for {agent}'
@@ -278,6 +329,10 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
         py_monitor = Monitor(agent)
         for line in lines:
             py_monitor.ingest(line)
+        if agent == 'gemini':
+            time.sleep(1.05)
+            with py_monitor._lock:
+                py_monitor._refresh_state_locked()
 
         sock_path = str(tmp_path / f'{agent}.sock')
         proc = subprocess.Popen(
@@ -298,8 +353,8 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
                     break
                 time.sleep(0.05)
 
-            # Give C time to ingest all lines before querying
-            time.sleep(0.1)
+            # Gemini idle recovery uses a 1.0s holdoff plus a 100ms background tick.
+            time.sleep(1.25 if agent == 'gemini' else 0.1)
             c_state = _sock_status(sock_path)
         finally:
             proc.terminate()
@@ -315,3 +370,132 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
 
     if checked == 0:
         pytest.skip('no capture fixtures found')
+
+
+def test_c_state_log_records_init_and_changes(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-state.sock')
+    state_log = str(tmp_path / 'c-state.jsonl')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'claude', '--socket', sock_path, '--state-log', state_log],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('⠙ Thinking...\n')
+        proc.stdin.write('> \n')
+        proc.stdin.flush()
+        time.sleep(0.1)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    rows = _load_jsonl(state_log)
+    assert [row['event'] for row in rows] == ['init', 'change', 'change']
+    assert [row['state'] for row in rows] == ['unknown', 'working', 'idle']
+
+
+def test_c_debug_writes_raw_lines(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-debug.sock')
+    debug_path = str(tmp_path / 'c-debug.txt')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'claude', '--socket', sock_path, '--debug', debug_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('hello\n')
+        proc.stdin.write('> \n')
+        proc.stdin.flush()
+        time.sleep(0.1)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    with open(debug_path, 'r', encoding='utf-8', errors='replace') as f:
+        rows = [raw.rstrip('\n') for raw in f]
+    assert rows == ["'hello'", "'> '"]
+
+
+def test_c_idle_holdoff_prevents_spinner_redraw_flap(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-holdoff.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'gemini', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('⠙ Thinking ... (esc to cancel, 5s)\n')
+        proc.stdin.write('*   Type your message or @path/to/file\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_c_query_does_not_promote_pending_idle(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-query.sock')
+    state_log = str(tmp_path / 'c-query.jsonl')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'gemini', '--socket', sock_path, '--state-log', state_log],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('⠙ Thinking ... (esc to cancel, 5s)\n')
+        proc.stdin.write('*   Type your message or @path/to/file\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        before = _load_jsonl(state_log)
+        assert [row['state'] for row in before] == ['unknown', 'working']
+        assert _sock_status(sock_path) == 'working'
+        after = _load_jsonl(state_log)
+        assert after == before
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()

@@ -14,7 +14,11 @@ import threading
 import json
 import os
 import argparse
+from datetime import datetime, timezone
 from collections import deque
+from time import monotonic
+
+IDLE_HOLDOFF_SECS = 1.0
 
 # Keyed by agent type, then state name -> list of patterns (case-insensitive)
 # Patterns sourced directly from each CLI's own output / source.
@@ -78,7 +82,7 @@ def strip_ansi(s):
 
 
 class Monitor:
-    def __init__(self, agent_type='unknown', socket_path=None, log_size=500, debug_file=None):
+    def __init__(self, agent_type='unknown', socket_path=None, log_size=500, debug_file=None, state_log=None):
         self.agent_type = agent_type
         self.socket_path = socket_path
         self.state = 'unknown'
@@ -86,8 +90,44 @@ class Monitor:
         self.patterns = PATTERNS.get(agent_type, {})
         self._lock = threading.Lock()
         self._debug = open(debug_file, 'wb') if debug_file else None
+        self._state_log = open(state_log, 'w', encoding='utf-8') if state_log else None
         # ring buffer of last 20 raw lines for debug query
         self._raw = deque(maxlen=20)
+        self._last_working_at = None
+        self._pending_idle_at = None
+        self._pending_idle_line = None
+        self._emit_state('init', self.state)
+
+    def _emit_state(self, event, state, line=None):
+        if not self._state_log:
+            return
+        payload = {
+            'ts': datetime.now(timezone.utc).isoformat(),
+            'event': event,
+            'agent': self.agent_type,
+            'state': state,
+        }
+        if line is not None:
+            payload['line'] = line
+        self._state_log.write(json.dumps(payload) + '\n')
+        self._state_log.flush()
+
+    def _refresh_state_locked(self, now=None):
+        if now is None:
+            now = monotonic()
+        if self.agent_type != 'gemini':
+            return False
+        if self.state != 'working':
+            return False
+        if self._pending_idle_at is None or self._last_working_at is None:
+            return False
+        if now - self._last_working_at < IDLE_HOLDOFF_SECS:
+            return False
+        self.state = 'idle'
+        self._emit_state('change', self.state, self._pending_idle_line)
+        self._pending_idle_at = None
+        self._pending_idle_line = None
+        return True
 
     def classify(self, line):
         # synchronized output marker — Claude uses this for in-place spinner updates
@@ -109,9 +149,21 @@ class Monitor:
         with self._lock:
             self._raw.append(raw)
             self.log.append(line)
+            self._refresh_state_locked()
             new_state = self.classify(line)
-            if new_state:
+            now = monotonic()
+            if new_state == 'working':
+                self._last_working_at = now
+                self._pending_idle_at = None
+                self._pending_idle_line = None
+            elif self.agent_type == 'gemini' and new_state == 'idle' and self._last_working_at is not None:
+                if now - self._last_working_at < IDLE_HOLDOFF_SECS:
+                    self._pending_idle_at = now
+                    self._pending_idle_line = line
+                    new_state = None
+            if new_state and new_state != self.state:
                 self.state = new_state
+                self._emit_state('change', self.state, line)
 
     def query(self, cmd):
         cmd = cmd.strip()
@@ -172,8 +224,15 @@ class Monitor:
             threading.Thread(target=self.serve, daemon=True).start()
         if http_port:
             threading.Thread(target=self.serve_http, args=(http_port,), daemon=True).start()
+        threading.Thread(target=self._tick, daemon=True).start()
         for line in sys.stdin:
             self.ingest(line)
+
+    def _tick(self):
+        while True:
+            with self._lock:
+                self._refresh_state_locked()
+            threading.Event().wait(0.1)
 
 
 if __name__ == '__main__':
@@ -182,7 +241,8 @@ if __name__ == '__main__':
     parser.add_argument('--socket', default=None, help='Unix socket path')
     parser.add_argument('--http-port', type=int, default=None, help='Optional HTTP port')
     parser.add_argument('--debug', default=None, metavar='FILE', help='Write raw incoming lines to FILE (use repr encoding)')
+    parser.add_argument('--state-log', default=None, metavar='FILE', help='Append state init/change events to FILE as JSONL')
     args = parser.parse_args()
 
-    m = Monitor(agent_type=args.agent, socket_path=args.socket, debug_file=args.debug)
+    m = Monitor(agent_type=args.agent, socket_path=args.socket, debug_file=args.debug, state_log=args.state_log)
     m.run(http_port=args.http_port)

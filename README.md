@@ -12,10 +12,10 @@ States: `unknown` `working` `idle` `rate_limited` `error`
 
 **User-facing scripts:**
 - `launch.sh <session> <agent>` — create or resume a monitored single-pane session
-- `attach.sh <session> <agent>` — attach the monitor to an existing session
+- `attach.sh <session-or-target> <agent>` — attach the monitor to an existing session or pane target
 - `babysit.sh <session>` — poll state, nudge on idle, back off on rate_limited
-- `safe-launcher.sh <session> [command]` — create a split-pane session with a dedicated input pane
-- `safe-keyboard.sh [target-pane]` — relay typed lines to another pane without prompt clobbering
+- `launch-2pane.sh <session> <agent> [command]` — create a monitored split-pane session with a dedicated input pane
+- `keyboard-2pane.sh [target-pane]` — relay typed lines to another pane without prompt clobbering
 - `tmux-send <target> <text...>` — send literal text plus Enter to a pane
 
 The repo name still fits if you think of "nudge" as the original behavior plus
@@ -56,6 +56,7 @@ You can also create the tmux session yourself and then run:
 
 ```bash
 ./attach.sh claude_myproject_alice claude
+./attach.sh claude_myproject_alice:0.0 claude
 ```
 
 ```bash
@@ -74,24 +75,36 @@ make tmux-test  # manual test with a plain session, no agent needed
 
 `attach.sh` uses the C binary by default. Set `MONITOR_BACKEND=python` to use the Python version instead.
 
-Capture fixtures are repr-encoded raw pane lines, scrubbed for common sensitive tokens. They are intended to be committed and replayed in tests. Re-capture only when agent output format or classifier behavior changes.
+Debug helpers for either backend:
+
+```bash
+MONITOR_DEBUG=1 ./attach.sh mysession claude
+MONITOR_STATE_LOG=1 ./attach.sh mysession claude
+MONITOR_DEBUG=1 MONITOR_STATE_LOG=1 ./launch-2pane.sh mysession gemini
+```
+
+Defaults:
+- `MONITOR_DEBUG=1` writes raw ingested lines to `/tmp/<session>.raw`
+- `MONITOR_STATE_LOG=1` writes init/state-change events to `/tmp/<session>.state.log`
+
+Capture fixtures are repr-encoded raw pane lines from the monitor's ingest stream, scrubbed for common sensitive tokens. Capture also writes exact state transitions to `fixtures/<agent>_transitions.jsonl`. They are intended to be committed and replayed in tests. Re-capture only when agent output format or classifier behavior changes.
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
-## Safe interaction
+## Two-pane interaction
 
-For a split-pane setup where your typing happens in a dedicated input pane, use
-`safe-launcher.sh`:
+For a monitored split-pane setup where your typing happens in a dedicated input
+pane, use `launch-2pane.sh`:
 
 ```bash
-# top pane: agent or shell
-# bottom pane: safe input relay
-./safe-launcher.sh mychat codex
+# top pane: agent or shell, monitored on :0.0
+# bottom pane: input relay on :0.1
+./launch-2pane.sh mychat codex
 ```
 
 This creates one tmux window with:
 - top pane running the command you passed
-- bottom pane running `safe-keyboard.sh`, which forwards each submitted line to the pane above
+- bottom pane running `keyboard-2pane.sh`, which forwards each submitted line to the pane above
 
 To send text from another terminal:
 ```bash
@@ -99,7 +112,7 @@ To send text from another terminal:
 ```
 
 `tmux-send` defaults a bare session name like `mychat` to `mychat:0.0`, which
-matches the top pane created by `safe-launcher.sh`.
+matches the top pane created by `launch-2pane.sh`.
 
 ## Similar projects
 

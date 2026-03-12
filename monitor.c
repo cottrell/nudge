@@ -18,6 +18,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 #define MAX_LOG   500
 #define MAX_LINE  1024
@@ -79,6 +80,97 @@ static char    g_log[MAX_LOG][MAX_LINE];
 static int     g_head  = 0;
 static int     g_count = 0;
 static char    g_agent[64] = "unknown";
+static FILE   *g_state_log = NULL;
+static FILE   *g_debug_log = NULL;
+static struct timespec g_last_working_at = {0};
+static struct timespec g_pending_idle_at = {0};
+static char    g_pending_idle_line[MAX_LINE] = "";
+
+#define IDLE_HOLDOFF_SECS 1.0
+
+static void log_state_event(const char *event, State state, const char *line);
+static void log_debug_line(const char *line);
+
+static double monotonic_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
+}
+
+static void refresh_state_locked(void) {
+    if (strcmp(g_agent, "gemini") != 0) return;
+    if (g_state != ST_WORKING) return;
+    if (g_pending_idle_at.tv_sec == 0 || g_last_working_at.tv_sec == 0) return;
+    double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
+    if (monotonic_now() - last < IDLE_HOLDOFF_SECS) return;
+    g_state = ST_IDLE;
+    log_state_event("change", g_state, g_pending_idle_line[0] ? g_pending_idle_line : NULL);
+    g_pending_idle_at.tv_sec = 0;
+    g_pending_idle_at.tv_nsec = 0;
+    g_pending_idle_line[0] = '\0';
+}
+
+static void *tick_thread(void *arg) {
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&lock);
+        refresh_state_locked();
+        pthread_mutex_unlock(&lock);
+        usleep(100000);
+    }
+    return NULL;
+}
+
+static void json_write_escaped(FILE *out, const char *s) {
+    for (int i = 0; s[i]; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') fputc('\\', out);
+        if (c >= 0x20) fputc(c, out);
+    }
+}
+
+static void log_state_event(const char *event, State state, const char *line) {
+    if (!g_state_log) return;
+    time_t now = time(NULL);
+    struct tm tm;
+    gmtime_r(&now, &tm);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    fprintf(g_state_log,
+            "{\"ts\":\"%s\",\"event\":\"%s\",\"agent\":\"%s\",\"state\":\"%s\"",
+            ts, event, g_agent, STATE_STR[state]);
+    if (line) {
+        fputs(",\"line\":\"", g_state_log);
+        json_write_escaped(g_state_log, line);
+        fputc('"', g_state_log);
+    }
+    fputs("}\n", g_state_log);
+    fflush(g_state_log);
+}
+
+static void log_debug_line(const char *line) {
+    if (!g_debug_log) return;
+    fputc('\'', g_debug_log);
+    for (int i = 0; line[i]; i++) {
+        unsigned char c = (unsigned char)line[i];
+        if (c == '\\' || c == '\'') {
+            fputc('\\', g_debug_log);
+            fputc(c, g_debug_log);
+        } else if (c == '\n') {
+            fputs("\\n", g_debug_log);
+        } else if (c == '\r') {
+            fputs("\\r", g_debug_log);
+        } else if (c == '\t') {
+            fputs("\\t", g_debug_log);
+        } else if (c < 0x20 || c == 0x7f) {
+            fprintf(g_debug_log, "\\x%02x", c);
+        } else {
+            fputc(c, g_debug_log);
+        }
+    }
+    fputs("'\n", g_debug_log);
+    fflush(g_debug_log);
+}
 
 /* Case-insensitive substring search */
 static int icontains(const char *hay, const char *needle) {
@@ -164,12 +256,31 @@ static State classify(char *line) {
 
 static void ingest(const char *line) {
     pthread_mutex_lock(&lock);
+    log_debug_line(line);
     strncpy(g_log[g_head], line, MAX_LINE - 1);
     g_log[g_head][MAX_LINE - 1] = '\0';
     g_head = (g_head + 1) % MAX_LOG;
     if (g_count < MAX_LOG) g_count++;
+    refresh_state_locked();
     State s = classify((char *)line);
-    if (s != ST_UNKNOWN) g_state = s;
+    if (s == ST_WORKING) {
+        clock_gettime(CLOCK_MONOTONIC, &g_last_working_at);
+        g_pending_idle_at.tv_sec = 0;
+        g_pending_idle_at.tv_nsec = 0;
+        g_pending_idle_line[0] = '\0';
+    } else if (!strcmp(g_agent, "gemini") && s == ST_IDLE && g_last_working_at.tv_sec != 0) {
+        double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
+        if (monotonic_now() - last < IDLE_HOLDOFF_SECS) {
+            clock_gettime(CLOCK_MONOTONIC, &g_pending_idle_at);
+            strncpy(g_pending_idle_line, line, MAX_LINE - 1);
+            g_pending_idle_line[MAX_LINE - 1] = '\0';
+            s = ST_UNKNOWN;
+        }
+    }
+    if (s != ST_UNKNOWN && s != g_state) {
+        g_state = s;
+        log_state_event("change", g_state, line);
+    }
     pthread_mutex_unlock(&lock);
 }
 
@@ -293,18 +404,39 @@ static void *http_thread(void *arg) {
 int main(int argc, char **argv) {
     char sock_path[256] = "";
     int  http_port      = 0;
+    char state_log_path[256] = "";
+    char debug_path[256] = "";
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--agent")     && i+1 < argc) strncpy(g_agent,   argv[++i], sizeof(g_agent)   - 1);
         if (!strcmp(argv[i], "--socket")    && i+1 < argc) strncpy(sock_path, argv[++i], sizeof(sock_path) - 1);
         if (!strcmp(argv[i], "--http-port") && i+1 < argc) http_port = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--debug")     && i+1 < argc) strncpy(debug_path, argv[++i], sizeof(debug_path) - 1);
+        if (!strcmp(argv[i], "--state-log") && i+1 < argc) strncpy(state_log_path, argv[++i], sizeof(state_log_path) - 1);
         if (!strcmp(argv[i], "--help")) {
-            printf("Usage: monitor --agent <name> --socket <path> [--http-port <port>]\n");
+            printf("Usage: monitor --agent <name> --socket <path> [--http-port <port>] [--debug <path>] [--state-log <path>]\n");
             return 0;
         }
     }
 
     signal(SIGPIPE, SIG_IGN);
+
+    if (state_log_path[0]) {
+        g_state_log = fopen(state_log_path, "w");
+        if (!g_state_log) {
+            perror("fopen state-log");
+            return 1;
+        }
+        log_state_event("init", g_state, NULL);
+    }
+
+    if (debug_path[0]) {
+        g_debug_log = fopen(debug_path, "w");
+        if (!g_debug_log) {
+            perror("fopen debug");
+            return 1;
+        }
+    }
 
     pthread_t t;
     if (sock_path[0])
@@ -314,6 +446,7 @@ int main(int argc, char **argv) {
         port = http_port;
         pthread_create(&t, NULL, http_thread, &port);
     }
+    pthread_create(&t, NULL, tick_thread, NULL);
 
     char line[MAX_LINE];
     while (fgets(line, sizeof(line), stdin)) {
