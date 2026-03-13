@@ -20,7 +20,7 @@ shift
 MSG="$*"
 if [ -n "$TMUX" ]; then
     SENDER=$(tmux display-message -p '#S')
-    # MSG="${SENDER}: ${MSG}"  <-- Commented out auto-prefixing to keep it clean
+    MSG="${SENDER}: ${MSG}"
 fi
 
 # Use -l for literal text sending to handle special chars correctly
