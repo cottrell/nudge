@@ -14,8 +14,21 @@ fi
 
 SESSION=$1
 AGENT=$2
-SOCK="/tmp/${SESSION}.sock"
 DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Socket matches attach.sh naming: session_window-pane.sock
+# For bare session names, default to :0.0
+if [[ "$SESSION" != *:*.* ]]; then
+    if [[ "$SESSION" != *:* ]]; then
+        WINDOW_PANE="0.0"
+    elif [[ "$SESSION" != *.* ]]; then
+        WINDOW_PANE="0.0"
+    fi
+else
+    WINDOW_PANE="${SESSION#*:}"
+fi
+SESSION_NAME="${SESSION%%:*}"
+SOCK="/tmp/${SESSION_NAME}_${WINDOW_PANE}.sock"
 
 # Create session if it doesn't exist
 if tmux new-session -d -s "$SESSION" 2>/dev/null; then
