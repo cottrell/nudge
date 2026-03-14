@@ -1,0 +1,26 @@
+# Example config for multi-agent babysit orchestration.
+# Copy to agents.conf and edit for your setup.
+
+[session]
+name = agents_myproject
+
+[agents]
+# pane = agent_type (for reference, used by launch scripts)
+0.0 = claude
+0.1 = gemini
+0.2 = copilot
+0.3 = vibe
+0.4 = qwen
+0.5 = codex
+
+[babysit]
+# pane = enabled|prompt_file|interval_seconds
+# Set enabled=false to disable babysit for an agent
+# Prompt files are relative to this config file's directory
+
+0.0 = true|prompts/claude_main.md|600
+0.1 = true|prompts/gemini_review.md|300
+0.2 = true|prompts/copilot_tests.md|600
+0.3 = false||0
+0.4 = false||0
+0.5 = false||0
