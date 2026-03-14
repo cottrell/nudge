@@ -36,20 +36,13 @@ Python (`monitor.py`) is the **reference implementation and test oracle**:
 
 ## Future Enhancements
 
-- **Config-driven orchestration** — YAML/JSON config for launching multiple agents:
+- **Config-driven agent launching** — Extend `agents.conf` to also launch agents:
   ```yaml
-  agents:
-    - name: claude_main
-      target: myproject:0.0
-      agent: claude
-      babysit: true
-      interval: 600
-    - name: gemini_review
-      target: myproject:0.1
-      agent: gemini
-      babysit: false
+  [agents]
+  0.0 = claude --dangerously-skip-permissions
+  0.1 = gemini
   ```
-  Then `./launch-all` reads config and spins everything up.
+  Then `./babysit-manager.sh` could also start the agents themselves.
 
 - Pattern config file (JSON/TOML) to avoid recompiling for pattern updates
 - Additional agents (cursor, windsurf, etc.)
