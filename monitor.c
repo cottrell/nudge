@@ -66,6 +66,7 @@ static const Pat PATS[] = {
     {"codex",  ST_WORKING,      "running"},
     {"codex",  ST_RATE_LIMITED, "rate limit"},
     {"codex",  ST_RATE_LIMITED, "429"},
+    {"codex",  ST_IDLE,         "reply with exactly"},
     {"codex",  ST_ERROR,        "error:"},
     /* copilot */
     {"copilot", ST_WORKING,      "thinking"},

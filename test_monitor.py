@@ -178,6 +178,18 @@ def test_classify_copilot_working():
     m = Monitor('copilot')
     assert m.classify('esc to interrupt') == 'working'
 
+def test_classify_codex_idle_prompt():
+    m = Monitor('codex')
+    assert m.classify('$ ') == 'idle'
+
+def test_classify_codex_idle_reply():
+    m = Monitor('codex')
+    assert m.classify('› Reply with exactly: OK') == 'idle'
+
+def test_classify_codex_working():
+    m = Monitor('codex')
+    assert m.classify('thinking') == 'working'
+
 def test_classify_unrecognised_line_returns_none():
     m = Monitor('claude')
     assert m.classify('some random output') is None

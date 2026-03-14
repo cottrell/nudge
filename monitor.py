@@ -57,7 +57,7 @@ PATTERNS = {
     'codex': {
         'working':      [r'thinking', r'writing', r'running'],
         'rate_limited': [r'rate.?limit', r'429'],
-        'idle':         [r'^\$\s*$'],
+        'idle':         [r'^\s*\$\s*$', r'^\s*[›>]\s+', r'Reply with exactly'],
         'error':        [r'Error:'],
     },
     'copilot': {
