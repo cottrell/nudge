@@ -4,6 +4,23 @@
 # Requires two send-keys calls; combining them in one does not reliably send Enter.
 # NOTE: sending while an agent is mid-run (still processing) may cause odd behaviour — not fully tested.
 
+if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "Usage: tmux-send <target> <text...>"
+    echo ""
+    echo "Send literal text plus Enter to a tmux pane."
+    echo ""
+    echo "Arguments:"
+    echo "  target   tmux session, window, or pane target"
+    echo "           Examples: mysession, mysession:0, mysession:0.0"
+    echo "           Bare session names default to :0.0"
+    echo "  text     Text to send (joined with spaces)"
+    echo ""
+    echo "Examples:"
+    echo "  tmux-send claude_myproject 'Hello agent'"
+    echo "  tmux-send myproject:0.1 'ls -la'"
+    exit 0
+fi
+
 TARGET="$1"
 # Default to :0.0 (First window, first pane) if no pane specified in target string
 if [[ "$TARGET" != *:*.* ]]; then
