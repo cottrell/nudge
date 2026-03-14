@@ -20,7 +20,16 @@ if [[ "$TARGET" != *:*.* ]]; then
 fi
 SESSION=${TARGET%%:*}
 AGENT=$2
-SOCK="/tmp/${SESSION}.sock"
+
+# Socket name derived from full pane target for uniqueness
+# Examples:
+#   mysession       → /tmp/mysession_0-0.sock
+#   mysession:0     → /tmp/mysession_0-0.sock
+#   mysession:0.0   → /tmp/mysession_0-0.sock
+#   mysession:1.2   → /tmp/mysession_1-2.sock
+#   agents:0.0      → /tmp/agents_0-0.sock (pane grid friendly)
+WINDOW_PANE="${TARGET#*:}"  # Strip session, keep window.pane
+SOCK="/tmp/${SESSION}_${WINDOW_PANE}.sock"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 tmux list-panes -t "$TARGET" >/dev/null 2>&1 || {
@@ -40,7 +49,8 @@ DEBUG_FLAG=""
 if [ -n "${MONITOR_DEBUG:-}" ]; then
     DEBUG_PATH="${MONITOR_DEBUG}"
     if [ "$DEBUG_PATH" = "1" ]; then
-        DEBUG_PATH="/tmp/${SESSION}.raw"
+        # Use session_window-pane.raw for debug files
+        DEBUG_PATH="/tmp/${SESSION}_${WINDOW_PANE}.raw"
     fi
     DEBUG_FLAG="--debug $DEBUG_PATH"
     echo "Debug log: $DEBUG_PATH"
@@ -50,7 +60,8 @@ STATE_LOG_FLAG=""
 if [ -n "${MONITOR_STATE_LOG:-}" ]; then
     STATE_LOG_PATH="${MONITOR_STATE_LOG}"
     if [ "$STATE_LOG_PATH" = "1" ]; then
-        STATE_LOG_PATH="/tmp/${SESSION}.state.log"
+        # Use session_window-pane.state.log for state logs
+        STATE_LOG_PATH="/tmp/${SESSION}_${WINDOW_PANE}.state.log"
     fi
     STATE_LOG_FLAG="--state-log $STATE_LOG_PATH"
     echo "State log: $STATE_LOG_PATH"
