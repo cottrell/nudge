@@ -79,10 +79,10 @@ make tmux-test  # manual test with a plain session, no agent needed
 
 ## Backend status
 
-- **C (`monitor-bin`)** — Primary runtime, production use, no dependencies
-- **Python (`monitor.py`)** — Reference/debug only, may diverge from C
+- **C (`monitor-bin`)** — Production runtime, fast, no dependencies
+- **Python (`monitor.py`)** — Reference implementation and test oracle
 
-The Python version is kept for occasional debugging or pattern prototyping. **Do not assume Python and C are in sync** — C is the canonical implementation. See [AGENTS.md](AGENTS.md) for development guidelines.
+The Python version defines expected behavior. The C binary must match Python's output — this is verified by `make test` which runs fixture replay tests comparing both implementations. See [AGENTS.md](AGENTS.md) for development guidelines.
 
 Debug helpers for either backend:
 

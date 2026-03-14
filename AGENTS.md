@@ -29,21 +29,21 @@ You should commit your work when:
 
 ## Backend Status
 
-- **C (`monitor.c` / `monitor-bin`)** — **Primary backend**, production use, no dependencies
-- **Python (`monitor.py`)** — Reference/debug only, may be out of sync with C
+- **C (`monitor.c` / `monitor-bin`)** — **Production backend**, fast, no dependencies
+- **Python (`monitor.py`)** — **Test oracle / reference implementation**
 
-**Agents should target C for all changes.** The Python version is kept for:
-- Historical reference
-- Occasional debugging if behavior is unclear
-- Quick pattern prototyping (optional)
+**Agents should implement all changes in C.** The Python version serves two purposes:
 
-**Do not feel obligated to keep Python and C in sync.** Divergence is acceptable. If Python becomes useful again, it can be updated; if not, it may eventually be removed.
+1. **Reference** — Shows intended behavior in a more readable form
+2. **Test validation** — `test_fixture_replay_c_matches_python_final_state` verifies C matches Python
+
+**Keep Python in sync for pattern changes** so the test oracle remains accurate. If Python drifts, the fixture replay tests may fail or become meaningless.
 
 ## Pattern Changes
 
 When adding or modifying agent patterns:
-- **Primary target:** `monitor.c` (PATS array)
-- **Optional:** `monitor.py` (PATTERNS dict) — only if you want to keep them aligned
+- **Implement in C first** (`monitor.c` PATS array)
+- **Also update Python** (`monitor.py` PATTERNS dict) — keeps test oracle accurate
 - Add tests for new patterns in `test_monitor.py`
 - Update help text in `launch.sh`, `attach.sh`, `capture_fixture.sh`, `Makefile`
 

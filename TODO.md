@@ -14,11 +14,11 @@ The C implementation (`monitor.c`) is now the primary backend:
 
 ### Python Backend Status
 
-Python (`monitor.py`) is **deprecated as a production backend**:
-- Kept for historical reference and occasional debugging
-- **May diverge from C** — do not assume they are in sync
-- Agents should target C for all changes; Python updates are optional
-- May be removed entirely in the future if no longer useful
+Python (`monitor.py`) is the **reference implementation and test oracle**:
+- Defines expected behavior for state classification
+- Used by `test_fixture_replay_c_matches_python_final_state` to verify C parity
+- Should be kept in sync with C for pattern changes
+- Not used in production (C is the runtime backend)
 
 ## Open Issues
 

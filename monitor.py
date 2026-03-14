@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
 """
-DEPRECATED — Python monitor is no longer the primary backend.
+Reference implementation and test oracle.
 
-This file is kept for:
-- Historical reference
-- Occasional debugging if C behavior is unclear
-- Quick pattern prototyping (optional)
+This file defines the expected behavior for agent state classification.
+The C implementation (monitor.c) is the production backend and must match
+this file's output. The test 'test_fixture_replay_c_matches_python_final_state'
+verifies parity between C and Python.
 
-DO NOT assume this file is in sync with monitor.c. The C implementation is
-the canonical backend for production use. Agents should target monitor.c
-for all changes; updating this file is optional.
-
-See AGENTS.md for development guidelines.
-
----
-
-Original docstring:
-Process stdin line-by-line, classify state via regex patterns, expose state
-over a Unix socket.
+When adding patterns:
+1. Add to this file first (easier to test/read)
+2. Mirror in monitor.c (PATS array)
+3. Run 'make test' to verify parity
 
 Usage:
     tmux pipe-pane -t mysession "python monitor.py --agent claude --socket /tmp/mysession.sock"
