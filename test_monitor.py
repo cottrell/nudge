@@ -146,6 +146,26 @@ def test_classify_vibe_idle():
     m = Monitor('vibe')
     assert m.classify('> ') == 'idle'
 
+def test_classify_qwen_working_braille():
+    m = Monitor('qwen')
+    assert m.classify('⠙ Thinking...') == 'working'
+
+def test_classify_qwen_working_braille_variant():
+    m = Monitor('qwen')
+    assert m.classify('⠋ Processing...') == 'working'
+
+def test_classify_qwen_idle():
+    m = Monitor('qwen')
+    assert m.classify('> ') == 'idle'
+
+def test_classify_qwen_rate_limited():
+    m = Monitor('qwen')
+    assert m.classify('Error 429: Too Many Requests') == 'rate_limited'
+
+def test_classify_qwen_error():
+    m = Monitor('qwen')
+    assert m.classify('Error: something went wrong') == 'error'
+
 def test_classify_copilot_idle():
     m = Monitor('copilot')
     assert m.classify('› ') == 'idle'
@@ -290,7 +310,7 @@ def test_socket_multiple_queries(sock_path):
 
 def test_fixture_replay_classifies_for_python():
     checked = 0
-    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe']:
+    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen']:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue
@@ -317,7 +337,7 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
         pytest.skip('monitor-bin not built')
 
     checked = 0
-    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe']:
+    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen']:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue

@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <agent> [duration_secs]"
-  echo "  agent: claude | codex | copilot | gemini | vibe"
+  echo "  agent: claude | codex | copilot | gemini | vibe | qwen"
   echo "  duration_secs: capture duration (default 60)"
   exit 1
 fi
@@ -26,6 +26,7 @@ case "$AGENT" in
   copilot) START_CMD="${CAPTURE_CMD:-copilot --allow-all}" ;;
   gemini) START_CMD="${CAPTURE_CMD:-gemini}" ;;
   vibe)   START_CMD="${CAPTURE_CMD:-vibe}" ;;
+  qwen)   START_CMD="${CAPTURE_CMD:-qwen}" ;;
   *)
     echo "Unknown agent: $AGENT"
     exit 1

@@ -76,8 +76,11 @@ make tmux-test  # manual test with a plain session, no agent needed
 `attach.sh` uses the C binary by default. Set `MONITOR_BACKEND=python` to use the Python version instead.
 
 Backend status:
-- C (`monitor-bin`) is the primary runtime path and the default for normal use.
-- Python (`monitor.py`) is still kept in sync and covered by tests, but it is best treated as a reference/debug backend rather than the main operational path.
+- **C (`monitor-bin`)** — Primary runtime, production use, no dependencies
+- **Python (`monitor.py`)** — Reference implementation, test coverage, debug use
+
+The Python version defines the specification but the C binary is the intended operational backend.
+See [AGENTS.md](AGENTS.md) for development guidelines.
 
 Debug helpers for either backend:
 

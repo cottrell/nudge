@@ -31,6 +31,7 @@ static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited",
 /* Pattern table — case-insensitive substring match */
 typedef struct { const char *agent; State state; const char *pat; } Pat;
 static const Pat PATS[] = {
+    /* claude */
     {"claude", ST_WORKING,      "esc to cancel"},
     {"claude", ST_WORKING,      "✻"},
     {"claude", ST_WORKING,      "✽"},
@@ -39,24 +40,34 @@ static const Pat PATS[] = {
     {"claude", ST_WORKING,      "∗"},
     {"claude", ST_WORKING,      "·"},
     {"claude", ST_RATE_LIMITED, "rate_limit_error"},
+    {"claude", ST_RATE_LIMITED, "overloaded_error"},
     {"claude", ST_RATE_LIMITED, "overloaded"},
     {"claude", ST_RATE_LIMITED, "retrying in"},
+    {"claude", ST_RATE_LIMITED, "429"},
+    {"claude", ST_RATE_LIMITED, "529"},
     {"claude", ST_ERROR,        "api error:"},
     {"claude", ST_ERROR,        "authentication_error"},
     {"claude", ST_ERROR,        "invalid_request_error"},
+    {"claude", ST_ERROR,        "\"type\":\"error\""},
+    /* gemini */
     {"gemini", ST_WORKING,      "thinking ..."},
     {"gemini", ST_WORKING,      "esc to cancel"},
     {"gemini", ST_RATE_LIMITED, "quota exceeded"},
     {"gemini", ST_RATE_LIMITED, "rate limit"},
     {"gemini", ST_RATE_LIMITED, "too many requests"},
+    {"gemini", ST_RATE_LIMITED, "429"},
     {"gemini", ST_IDLE,         "type your message"},
     {"gemini", ST_IDLE,         "? for shortcuts"},
     {"gemini", ST_ERROR,        "request failed after all retries"},
+    {"gemini", ST_ERROR,        "error"},
+    /* codex */
     {"codex",  ST_WORKING,      "thinking"},
     {"codex",  ST_WORKING,      "writing"},
     {"codex",  ST_WORKING,      "running"},
     {"codex",  ST_RATE_LIMITED, "rate limit"},
+    {"codex",  ST_RATE_LIMITED, "429"},
     {"codex",  ST_ERROR,        "error:"},
+    /* copilot */
     {"copilot", ST_WORKING,      "thinking"},
     {"copilot", ST_WORKING,      "writing"},
     {"copilot", ST_WORKING,      "running"},
@@ -66,10 +77,18 @@ static const Pat PATS[] = {
     {"copilot", ST_IDLE,         "type your message"},
     {"copilot", ST_RATE_LIMITED, "rate limit"},
     {"copilot", ST_RATE_LIMITED, "too many requests"},
+    {"copilot", ST_RATE_LIMITED, "429"},
     {"copilot", ST_ERROR,        "error:"},
+    /* vibe */
     {"vibe",   ST_WORKING,      "esc to interrupt"},
     {"vibe",   ST_RATE_LIMITED, "rate limits exceeded"},
     {"vibe",   ST_ERROR,        "error:"},
+    /* qwen */
+    {"qwen",   ST_RATE_LIMITED, "rate limit"},
+    {"qwen",   ST_RATE_LIMITED, "429"},
+    {"qwen",   ST_RATE_LIMITED, "too many requests"},
+    {"qwen",   ST_ERROR,        "error:"},
+    {"qwen",   ST_ERROR,        "error"},
     {NULL, 0, NULL}
 };
 
@@ -85,8 +104,17 @@ static FILE   *g_debug_log = NULL;
 static struct timespec g_last_working_at = {0};
 static struct timespec g_pending_idle_at = {0};
 static char    g_pending_idle_line[MAX_LINE] = "";
+static char    g_sock_path[256] = "";  /* for cleanup */
 
 #define IDLE_HOLDOFF_SECS 1.0
+
+static void cleanup_and_exit(int sig) {
+    (void)sig;
+    if (g_sock_path[0]) unlink(g_sock_path);
+    if (g_state_log) fclose(g_state_log);
+    if (g_debug_log) fclose(g_debug_log);
+    _exit(0);
+}
 
 static void log_state_event(const char *event, State state, const char *line);
 static void log_debug_line(const char *line);
@@ -192,10 +220,21 @@ static void strip_ansi(char *s) {
         if (*r == '\x1b') {
             r++;
             if (*r == '[') {
+                /* CSI sequence: ESC [ params final-byte */
                 r++;
                 while (*r && !(*r >= '@' && *r <= '~')) r++;
                 if (*r) r++;
+            } else if (*r == ']') {
+                /* OSC sequence: ESC ] text ST (BEL or ESC \) */
+                r++;
+                while (*r && *r != '\x07' && *r != '\x1b') r++;
+                if (*r == '\x07') r++;
+                else if (*r == '\x1b' && *(r+1) == '\\') r += 2;
             } else if (*r >= '@' && *r <= '_') {
+                /* Fe sequence: single char after ESC */
+                r++;
+            } else if (*r == '\\') {
+                /* String terminator (after ST) */
                 r++;
             }
         } else {
@@ -205,11 +244,15 @@ static void strip_ansi(char *s) {
     *w = '\0';
 }
 
-/* Braille block U+2800-U+28FF encodes as E2 A0 xx in UTF-8 */
+/* Braille block U+2800-U+28FF encodes as E2 A0 xx in UTF-8 (xx is 0x80-0xBF) */
 static int has_braille(const char *line) {
-    for (int i = 0; line[i] && line[i+1]; i++)
-        if ((unsigned char)line[i] == 0xE2 && (unsigned char)line[i+1] == 0xA0)
+    for (int i = 0; line[i] && line[i+1] && line[i+2]; i++) {
+        unsigned char c0 = (unsigned char)line[i];
+        unsigned char c1 = (unsigned char)line[i+1];
+        unsigned char c2 = (unsigned char)line[i+2];
+        if (c0 == 0xE2 && c1 == 0xA0 && c2 >= 0x80 && c2 <= 0xBF)
             return 1;
+    }
     return 0;
 }
 
@@ -288,11 +331,18 @@ static void ingest(const char *line) {
 static int json_str(char *buf, int cap, const char *s) {
     int n = 0;
     buf[n++] = '"';
-    for (int i = 0; s[i] && n < cap - 4; i++) {
+    for (int i = 0; s[i] && n < cap - 6; i++) {
         unsigned char c = s[i];
         if (c == '"')       { buf[n++] = '\\'; buf[n++] = '"'; }
         else if (c == '\\') { buf[n++] = '\\'; buf[n++] = '\\'; }
-        else if (c < 0x20)  { /* skip control chars */ }
+        else if (c == '\n') { buf[n++] = '\\'; buf[n++] = 'n'; }
+        else if (c == '\r') { buf[n++] = '\\'; buf[n++] = 'r'; }
+        else if (c == '\t') { buf[n++] = '\\'; buf[n++] = 't'; }
+        else if (c < 0x20)  { /* escape as \u00XX */
+            buf[n++] = '\\'; buf[n++] = 'u'; buf[n++] = '0'; buf[n++] = '0';
+            buf[n++] = "0123456789abcdef"[c >> 4];
+            buf[n++] = "0123456789abcdef"[c & 0xF];
+        }
         else                  buf[n++] = c;
     }
     buf[n++] = '"';
@@ -420,6 +470,11 @@ int main(int argc, char **argv) {
     }
 
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGINT, cleanup_and_exit);
+    signal(SIGTERM, cleanup_and_exit);
+
+    /* store socket path for cleanup */
+    if (sock_path[0]) strncpy(g_sock_path, sock_path, sizeof(g_sock_path) - 1);
 
     if (state_log_path[0]) {
         g_state_log = fopen(state_log_path, "w");

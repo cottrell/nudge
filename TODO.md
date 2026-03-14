@@ -1,22 +1,42 @@
 # TODO
 
-## Native rewrite
+## Completed
 
-The Python monitor works but has non-trivial startup cost and memory footprint
-for something intended to run permanently alongside every agent session.
+### Native Rewrite (C)
 
-A native version (C, Zig, or Rust) would be:
-- ~1MB resident vs ~20MB for Python
-- instant startup
-- no runtime dependency
+The C implementation (`monitor.c`) is now the primary backend:
+- ~1MB binary with no runtime dependencies
+- Instant startup
+- Full feature parity with Python reference implementation
+- Signal handling for cleanup (SIGINT, SIGTERM)
+- Proper JSON escaping for control characters
+- Complete ANSI escape sequence stripping
 
-The Python implementation defines the spec — patterns config, socket protocol,
-HTTP endpoints, states. A native port is a straight translation.
+### Python Backend Status
 
-**Candidate languages:**
-- **C** — smallest binary, most portable, regex via `regcomp`/`regexec` or PCRE
-- **Zig** — easy C interop, good stdlib, safer than C
-- **Rust** — `regex` crate is excellent, good for this kind of stream processing
+Python (`monitor.py`) is now a **reference implementation and test backend**:
+- Defines the specification (patterns, socket protocol, states)
+- Used for unit tests and fixture validation
+- Not intended for production use
 
-Pattern config would move to a file (TOML/JSON) rather than being compiled in,
-so agent patterns can be updated without recompiling.
+Keep Python in sync with C for pattern changes, but new features should target C first.
+
+## Open Issues
+
+### Edge Cases to Watch
+
+1. **Agent output format changes** — When agent CLI output changes, patterns may need updates. Re-capture fixtures with `make capture_<agent>` and verify tests pass.
+
+2. **UTF-8 handling** — The C code validates braille UTF-8 sequences but doesn't fully validate all Unicode. Malformed input could cause issues.
+
+3. **Race conditions** — The `launch-2pane.sh` retry loop helps but doesn't eliminate all timing issues with socket readiness.
+
+4. **Pattern gaps** — Some agents may have unclassified states. Add patterns as new output formats are observed.
+
+5. **ANSI stripping completeness** — The C stripper handles common sequences but may miss obscure terminal control codes.
+
+## Future Enhancements
+
+- Pattern config file (JSON/TOML) to avoid recompiling for pattern updates
+- Additional agents (cursor, windsurf, etc.)
+- Enhanced state detection (e.g., "waiting for user input" vs "idle")

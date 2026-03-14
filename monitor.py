@@ -64,6 +64,13 @@ PATTERNS = {
         'idle':         [r'^\s*>\s*$'],
         'error':        [r'Error:'],
     },
+    'qwen': {
+        # braille spinner from cli-spinners "dots" set
+        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]'],
+        'rate_limited': [r'rate.?limit', r'429', r'too many requests'],
+        'idle':         [r'^\s*>\s*$'],
+        'error':        [r'Error:', r'error'],
+    },
 }
 
 
@@ -237,7 +244,7 @@ class Monitor:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--agent', default='unknown', help='Agent type: claude, codex, copilot, gemini, vibe')
+    parser.add_argument('--agent', default='unknown', help='Agent type: claude, codex, copilot, gemini, vibe, qwen')
     parser.add_argument('--socket', default=None, help='Unix socket path')
     parser.add_argument('--http-port', type=int, default=None, help='Optional HTTP port')
     parser.add_argument('--debug', default=None, metavar='FILE', help='Write raw incoming lines to FILE (use repr encoding)')

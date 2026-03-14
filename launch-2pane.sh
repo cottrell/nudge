@@ -40,8 +40,21 @@ tmux send-keys -t "$SESSION_NAME:0.1" -l -- "$DIR/keyboard-2pane.sh $SESSION_NAM
 sleep 0.1
 tmux send-keys -t "$SESSION_NAME:0.1" C-m
 
-if [ "$(tmux display-message -p -t "$SESSION_NAME:0.0" '#{pane_pipe}')" = "1" ] && \
-   echo status | nc -U "$SOCK" 2>/dev/null | grep -q state; then
+# Check if monitor is already running by querying the socket with retries
+# pane_pipe=1 alone isn't sufficient - the monitor process must be ready
+monitor_running() {
+    [ "$(tmux display-message -p -t "$SESSION_NAME:0.0" '#{pane_pipe}')" = "1" ] || return 1
+    # Retry socket query up to 5 times with 100ms delays
+    for i in 1 2 3 4 5; do
+        if echo status | nc -U "$SOCK" 2>/dev/null | grep -q state; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+if monitor_running; then
     echo "Monitor already running on $SESSION_NAME:0.0 via $SOCK"
 else
     echo "Attaching monitor to $SESSION_NAME:0.0..."
