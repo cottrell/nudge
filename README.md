@@ -61,14 +61,16 @@ You can also create the tmux session yourself and then run:
 
 ```bash
 make build      # compile C binary (default backend)
-make test       # Python unit tests
-make test-c     # C smoke + fixture replay parity check vs Python
+make test       # C smoke + fixture replay parity check
+make test-python # Python unit tests (optional, may be out of sync)
+make test-c     # Same as 'make test'
 make capture AGENT=claude DUR=60  # real tmux capture -> fixtures/claude_capture.txt
 make capture_claude DUR=60
 make capture_codex DUR=60
 make capture_copilot DUR=60
 make capture_gemini DUR=60
 make capture_vibe DUR=60
+make capture_qwen DUR=60
 make capture_all DUR=60
 make tmux-test  # manual test with a plain session, no agent needed
 ```
