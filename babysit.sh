@@ -21,7 +21,10 @@ fi
 SESSION=${TARGET%%:*}
 INTERVAL=${2:-60}
 NUDGE=${3:-"Please continue."}
-SOCK="/tmp/${SESSION}.sock"
+
+# Socket matches attach.sh naming: session_window-pane.sock
+WINDOW_PANE="${TARGET#*:}"
+SOCK="/tmp/${SESSION}_${WINDOW_PANE}.sock"
 
 tmux list-panes -t "$TARGET" >/dev/null 2>&1 || {
     echo "Target pane not found: $TARGET"

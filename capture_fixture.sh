@@ -13,7 +13,9 @@ DURATION="${2:-60}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SESSION="capture_${AGENT}_$(date +%Y%m%d_%H%M%S)"
 TARGET="${SESSION}:0.0"
-SOCK="/tmp/${SESSION}.sock"
+
+# Socket matches attach.sh naming: session_window-pane.sock
+SOCK="/tmp/${SESSION}_0.0.sock"
 RAW_TMP="/tmp/${SESSION}.raw.tmp"
 TRANSITIONS_TMP="/tmp/${SESSION}.transitions.tmp"
 FIXTURE_OUT="$DIR/fixtures/${AGENT}_capture.txt"

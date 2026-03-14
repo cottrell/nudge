@@ -17,7 +17,10 @@ SESSION_NAME="$1"
 AGENT="$2"
 COMMAND="${3:-bash}" # Default to bash if no command provided
 DIR="$(cd "$(dirname "$0")" && pwd)"
-SOCK="/tmp/${SESSION_NAME}.sock"
+
+# Socket matches attach.sh naming: session_window-pane.sock
+# Top pane (0.0) gets the monitor
+SOCK="/tmp/${SESSION_NAME}_0.0.sock"
 
 if [ -z "$SESSION_NAME" ] || [ -z "$AGENT" ]; then
     echo "Usage: $0 <session_name> <agent> [command]"
