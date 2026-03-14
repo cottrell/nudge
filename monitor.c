@@ -32,6 +32,7 @@ static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited",
 typedef struct { const char *agent; State state; const char *pat; } Pat;
 static const Pat PATS[] = {
     /* claude */
+    {"claude", ST_IDLE,         "bypasspermissions"},
     {"claude", ST_WORKING,      "esc to cancel"},
     {"claude", ST_WORKING,      "✻"},
     {"claude", ST_WORKING,      "✽"},
@@ -296,6 +297,8 @@ static int is_copilot_idle(const char *line) {
 
 static State classify(char *line) {
     if (strstr(line, "\x1b[?2026")) return ST_WORKING;
+    /* Skip title bar updates - they contain spinners but aren't real work */
+    if (strstr(line, "\x1b]") && strstr(line, "Claude Code")) return ST_UNKNOWN;
     strip_ansi(line);
     trim_ascii_ws(line);
     if (!strcmp(g_agent, "claude") && is_claude_idle(line)) return ST_IDLE;

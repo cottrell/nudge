@@ -36,7 +36,7 @@ IDLE_HOLDOFF_SECS = 1.0
 PATTERNS = {
     'claude': {
         # idle checked first — these lines are definitive
-        'idle':         [r'^\s*>\s*$', r'^❯'],
+        'idle':         [r'^\s*>\s*$', r'^❯', r'bypasspermissions'],
         # spinner verbs + braille dots cycling: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏
         'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'[·✢✳∗✻✽]'],
         # 529 overloaded is distinct from 429 rate limit but both mean "back off"
@@ -149,6 +149,9 @@ class Monitor:
         # synchronized output marker — Claude uses this for in-place spinner updates
         if '\x1b[?2026' in line:
             return 'working'
+        # Skip title bar updates (contain OSC sequences like ]0;)
+        if '\x1b]' in line and 'Claude Code' in line:
+            return None  # Don't classify title bar as working
         line = strip_ansi(line)
         for state, pats in self.patterns.items():
             for p in pats:
