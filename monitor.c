@@ -238,6 +238,15 @@ static void strip_ansi(char *s) {
                 /* String terminator (after ST) */
                 r++;
             }
+        } else if (*r == '[') {
+            /* Orphaned CSI (no ESC) - skip if it looks like CSI sequence */
+            char *peek = r + 1;
+            while (*peek && !(*peek >= '@' && *peek <= '~')) peek++;
+            if (*peek >= '@' && *peek <= '~') {
+                r = peek + 1;  /* Skip the whole sequence */
+            } else {
+                *w++ = *r++;
+            }
         } else {
             *w++ = *r++;
         }
