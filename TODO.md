@@ -14,12 +14,11 @@ The C implementation (`monitor.c`) is now the primary backend:
 
 ### Python Backend Status
 
-Python (`monitor.py`) is now a **reference implementation and test backend**:
-- Defines the specification (patterns, socket protocol, states)
-- Used for unit tests and fixture validation
-- Not intended for production use
-
-Keep Python in sync with C for pattern changes, but new features should target C first.
+Python (`monitor.py`) is **deprecated as a production backend**:
+- Kept for historical reference and occasional debugging
+- **May diverge from C** — do not assume they are in sync
+- Agents should target C for all changes; Python updates are optional
+- May be removed entirely in the future if no longer useful
 
 ## Open Issues
 

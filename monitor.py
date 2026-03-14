@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
 """
+DEPRECATED — Python monitor is no longer the primary backend.
+
+This file is kept for:
+- Historical reference
+- Occasional debugging if C behavior is unclear
+- Quick pattern prototyping (optional)
+
+DO NOT assume this file is in sync with monitor.c. The C implementation is
+the canonical backend for production use. Agents should target monitor.c
+for all changes; updating this file is optional.
+
+See AGENTS.md for development guidelines.
+
+---
+
+Original docstring:
 Process stdin line-by-line, classify state via regex patterns, expose state
 over a Unix socket.
 
