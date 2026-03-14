@@ -8,6 +8,7 @@ build:
 
 test-c: build
 	bash test_c.sh
+	uv run pytest test_monitor.py -k fixture_replay -v
 
 test-python: build
 	uv run pytest test_monitor.py -v
