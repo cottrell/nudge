@@ -136,3 +136,12 @@ matches the top pane created by `launch-2pane.sh`.
 - [Adventures in Babysitting Coding Agents (HN)](https://news.ycombinator.com/item?id=44205137)
 
 This project's angle: no-TUI, socket-first IPC queryable with `nc`, C binary with no runtime deps, babysit loop as first-class feature.
+
+## Community patterns
+
+Multi-agent tmux setups in the wild typically use:
+- **One session per agent** — Clean isolation, matches this project's design
+- **Pane grids** — Now supported via `session:window.pane` socket naming
+- **Two-step send-keys** — Text then `C-m` separately (all scripts here do this)
+
+See [AGENTS.md](AGENTS.md) for development guidelines and [TODO.md](TODO.md) for planned enhancements like config-driven orchestration.
