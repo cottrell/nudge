@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import apply as swarm_apply
 import babysit_apply
-from common import build_runtime_map, load_config
+from common import build_runtime_map, build_self_awareness_text, load_config
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -182,6 +182,8 @@ panes:
     monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda cfg, pane, agent, dry_run: calls.append(("monitor", pane, agent, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", pane, title, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
+    monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
     monkeypatch.setattr(swarm_apply.time, "sleep", lambda *_: None)
 
     swarm_apply.apply(cfg, dry_run=False)
@@ -193,6 +195,8 @@ panes:
         ("command", "0.0", "claude", "aiclaude", "False"),
         ("title", "0.1", "codex", "False"),
         ("command", "0.1", "codex", "aicodex", "False"),
+        ("runtime_map", "demo"),
+        ("self_awareness", "demo"),
     ]
 
 
@@ -438,3 +442,23 @@ panes:
     assert data["panes"]["0.1"]["babysit"]["pid"] == "/tmp/nudge-swarm/demo/babysit-0-1.pid"
     assert data["panes"]["0.1"]["babysit"]["has_long_prompt"] is True
     assert data["panes"]["0.1"]["babysit"]["has_short_prompt"] is True
+
+
+def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+"""))
+    text = build_self_awareness_text(cfg)
+    assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
+    assert f"Status: python swarm/apply.py {cfg.path} status --brief" in text
+    assert f"Watch: python swarm/apply.py {cfg.path} status --brief --watch" in text

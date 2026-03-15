@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from common import ROOT_DIR, SHELL_NAMES, SwarmConfig, load_config, write_runtime_map
+from common import ROOT_DIR, SHELL_NAMES, SwarmConfig, load_config, write_runtime_map, write_self_awareness_text
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -143,9 +143,15 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
         ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
     if dry_run:
         print(f"would write runtime map to {cfg.runtime_map_path}")
+        print(f"would write self-awareness note to {cfg.self_awareness_path}")
     else:
         write_runtime_map(cfg)
+        write_self_awareness_text(cfg)
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
+    print(f"Runtime map: {cfg.runtime_map_path}")
+    print(f"Self-awareness note: {cfg.self_awareness_path}")
+    print(f"Status: python swarm/apply.py {cfg.path} status --brief")
+    print(f"Watch: python swarm/apply.py {cfg.path} status --brief --watch")
 
 
 def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:

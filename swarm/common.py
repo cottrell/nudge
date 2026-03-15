@@ -63,6 +63,10 @@ class SwarmConfig:
     def runtime_map_path(self) -> Path:
         return self.runtime_dir / "runtime.json"
 
+    @property
+    def self_awareness_path(self) -> Path:
+        return self.runtime_dir / "self-awareness.txt"
+
 
 def load_config(path: str | Path) -> SwarmConfig:
     cfg_path = Path(path).resolve()
@@ -214,3 +218,26 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
 def write_runtime_map(cfg: SwarmConfig) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     cfg.runtime_map_path.write_text(json.dumps(build_runtime_map(cfg), indent=2) + "\n")
+
+
+def build_self_awareness_text(cfg: SwarmConfig) -> str:
+    config_path = str(cfg.path)
+    lines = [
+        f"Swarm session: {cfg.session_name}:{cfg.window_name}",
+        f"Runtime map: {cfg.runtime_map_path}",
+        f"Status: python swarm/apply.py {config_path} status --brief",
+        f"Watch: python swarm/apply.py {config_path} status --brief --watch",
+        "",
+        "If you need to coordinate with other panes, inspect the runtime map for:",
+        "- tmux pane targets",
+        "- monitor socket paths",
+        "- babysit pid/log/spec paths",
+        "",
+        "This file is opt-in context. Only mention it in agent prompts when you want cross-agent coordination.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def write_self_awareness_text(cfg: SwarmConfig) -> None:
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    cfg.self_awareness_path.write_text(build_self_awareness_text(cfg))

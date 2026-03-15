@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 
-from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, load_config, write_runtime_map
+from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, load_config, write_runtime_map, write_self_awareness_text
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
@@ -119,8 +119,10 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
 
     if dry_run:
         print(f"would write runtime map to {cfg.runtime_map_path}")
+        print(f"would write self-awareness note to {cfg.self_awareness_path}")
     else:
         write_runtime_map(cfg)
+        write_self_awareness_text(cfg)
     print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
 
 
@@ -130,6 +132,7 @@ def stop(cfg: SwarmConfig, dry_run: bool) -> None:
         stop_worker(cfg, pane, dry_run)
     if not dry_run:
         write_runtime_map(cfg)
+        write_self_awareness_text(cfg)
     print(f"{'Planned stop for' if dry_run else 'Stopped'} babysit workers for {cfg.session_name}")
 
 
