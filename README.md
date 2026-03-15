@@ -126,7 +126,7 @@ The current config model is:
 - one tmux session
 - one tmux window
 - explicit `layout.rows` and `layout.cols`
-- explicit pane list with `pane`, `agent`, `command`, `monitor`, and optional `babysit`
+- explicit pane list with `pane`, optional `title`, `agent`, `command`, `monitor`, and optional `babysit`
 
 Important current limitation:
 - `rows` and `cols` are mandatory and validated, but v1 still realizes the grid by creating the requested pane count and then applying tmux `select-layout tiled`
@@ -142,6 +142,7 @@ Runtime notes:
 - babysit worker pid/spec/log files live under `/tmp/nudge-swarm/<session>/`
 - `make test` now includes `test_swarm.py`, which validates config loading and apply/babysit reconciliation logic without needing live tmux agents
 - `swarm/apply.py ... status --watch` redraws in place; use `--brief` for a compact per-pane state view and `--interval` to change the default 1s refresh cadence
+- `title` sets the tmux pane title and the initial shell prompt prefix; if omitted it defaults to the `agent` name or the pane id, and some agent CLIs may later overwrite the terminal title themselves
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 

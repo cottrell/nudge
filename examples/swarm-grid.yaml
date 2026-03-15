@@ -9,6 +9,7 @@ layout:
 
 panes:
   - pane: "0.0"
+    title: codex
     agent: codex
     command: "source ~/.bash_aliases && aicodex"
     monitor: true
@@ -16,6 +17,7 @@ panes:
       enabled: false
 
   - pane: "0.1"
+    title: claude
     agent: claude
     command: "source ~/.bash_aliases && aiclaude"
     monitor: true
@@ -25,6 +27,7 @@ panes:
       prompt_file: "../prompts/claude_main.md"
 
   - pane: "0.2"
+    title: copilot
     agent: copilot
     command: "source ~/.bash_aliases && aicopilot"
     monitor: true
@@ -32,6 +35,7 @@ panes:
       enabled: false
 
   - pane: "0.3"
+    title: gemini
     agent: gemini
     command: "source ~/.bash_aliases && aigemini"
     monitor: true
@@ -39,6 +43,7 @@ panes:
       enabled: false
 
   - pane: "0.4"
+    title: qwen
     agent: qwen
     command: "source ~/.bash_aliases && aiqwen"
     monitor: true
@@ -46,6 +51,7 @@ panes:
       enabled: false
 
   - pane: "0.5"
+    title: vibe
     agent: vibe
     command: "source ~/.bash_aliases && aimistral"
     monitor: true
