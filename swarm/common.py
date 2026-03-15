@@ -232,8 +232,6 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "- tmux pane targets",
         "- monitor socket paths",
         "- babysit pid/log/spec paths",
-        "",
-        "This file is opt-in context. Only mention it in agent prompts when you want cross-agent coordination.",
     ]
     return "\n".join(lines) + "\n"
 
