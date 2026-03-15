@@ -33,19 +33,21 @@ def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
             created_session = True
         else:
             run("tmux", "new-session", "-d", "-s", cfg.session_name, "-n", cfg.window_name, "bash")
+            created_session = True
     elif run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) == -1:
         if dry_run:
             print(f"would create window {cfg.session_name}:{cfg.window_name}")
             created_window = True
         else:
             run("tmux", "new-window", "-t", cfg.session_name, "-n", cfg.window_name, "bash")
+            created_window = True
 
     count = 1 if dry_run and (created_session or created_window) else pane_count(cfg)
     if count == 0 and not dry_run:
         raise RuntimeError(f"could not inspect panes for {cfg.session_name}:{cfg.window_name}")
     if count == 0 and dry_run:
         count = 1
-    if count > 0 and count != cfg.pane_count and not (dry_run and (created_session or created_window)):
+    if count > 0 and count != cfg.pane_count and not (created_session or created_window):
         raise RuntimeError(
             f"{cfg.session_name}:{cfg.window_name} has {count} panes, config expects {cfg.pane_count}. "
             "Recreate the window/session before applying."
@@ -57,11 +59,12 @@ def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
             print(f"would split window {cfg.session_name}:{cfg.window_name} to add pane 0.{current_count}")
             current_count += 1
             continue
-        run("tmux", "split-window", "-t", f"{cfg.session_name}:{cfg.window_name}", "bash")
+        run("tmux", "split-window", "-t", f"{cfg.session_name}:{cfg.window_name}.0", "bash")
+        run("tmux", "select-layout", "-t", f"{cfg.session_name}:{cfg.window_name}", "tiled")
         current_count = pane_count(cfg)
     if dry_run:
         print(f"would apply tiled layout to {cfg.session_name}:{cfg.window_name}")
-    else:
+    elif count == current_count:
         run("tmux", "select-layout", "-t", f"{cfg.session_name}:{cfg.window_name}", "tiled")
 
 
@@ -126,11 +129,14 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
 
 
-def status(cfg: SwarmConfig) -> None:
+def status(cfg: SwarmConfig, brief: bool = False) -> None:
     session_exists = run("tmux", "has-session", "-t", cfg.session_name, check=False).returncode == 0
     window_exists = run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) != -1 if session_exists else False
     actual_count = pane_count(cfg) if window_exists else 0
-    print(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
+    if brief:
+        print(f"{cfg.session_name}:{cfg.window_name} panes={actual_count}/{cfg.pane_count}" if window_exists else f"{cfg.session_name}:{cfg.window_name} missing")
+    else:
+        print(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
     if not window_exists:
         return
     for pane in cfg.panes:
@@ -139,9 +145,12 @@ def status(cfg: SwarmConfig) -> None:
         if proc.returncode != 0:
             print(f"{target} missing")
             continue
-        command = pane_current_command(cfg, pane.pane)
         monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
-        print(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+        if brief:
+            print(f"{target} {monitor}")
+        else:
+            command = pane_current_command(cfg, pane.pane)
+            print(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
 
 
 def main() -> int:
@@ -149,6 +158,7 @@ def main() -> int:
     parser.add_argument("config", help="Path to YAML config")
     parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status"])
     parser.add_argument("--attach", action="store_true", help="Attach to the tmux session after apply")
+    parser.add_argument("--brief", action="store_true", help="With status, print a compact per-pane state view")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without changing tmux")
     args = parser.parse_args()
 
@@ -157,7 +167,7 @@ def main() -> int:
         if args.command == "apply":
             apply(cfg, args.dry_run)
         else:
-            status(cfg)
+            status(cfg, args.brief)
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1

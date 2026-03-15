@@ -123,6 +123,52 @@ panes:
     ]
 
 
+def test_ensure_grid_allows_new_session_to_expand(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 2
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+  - pane: "0.1"
+    agent: codex
+    command: "aicodex"
+    monitor: true
+"""))
+    tmux_calls: list[tuple[str, ...]] = []
+    pane_counts = iter([1, 2])
+
+    def fake_run(*args, **kwargs):
+        class Proc:
+            def __init__(self, returncode=0, stdout=""):
+                self.returncode = returncode
+                self.stdout = stdout
+        tmux_calls.append(args)
+        if args[:3] == ("tmux", "has-session", "-t"):
+            return Proc(1, "")
+        if args[:4] == ("tmux", "new-session", "-d", "-s"):
+            return Proc(0, "")
+        if args[:3] == ("tmux", "list-panes", "-t"):
+            return Proc(0, "%0\n" if next(pane_counts) == 1 else "%0\n%1\n")
+        if args[:3] == ("tmux", "split-window", "-t"):
+            return Proc(0, "")
+        if args[:3] == ("tmux", "select-layout", "-t"):
+            return Proc(0, "")
+        raise AssertionError(f"unexpected tmux call: {args}")
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    swarm_apply.ensure_grid(cfg, dry_run=False)
+
+    assert ("tmux", "split-window", "-t", "demo:grid.0", "bash") in tmux_calls
+    assert ("tmux", "select-layout", "-t", "demo:grid", "tiled") in tmux_calls
+
+
 def test_babysit_apply_restarts_worker_when_spec_changes(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session:
@@ -208,3 +254,48 @@ panes:
 
     assert "session=demo window=grid exists=yes panes=1/1" in out
     assert "demo:0.0 cmd=claude monitor=idle babysit=on" in out
+
+
+def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+  window: grid
+layout:
+  type: grid
+  rows: 1
+  cols: 2
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+  - pane: "0.1"
+    agent: codex
+    command: "aicodex"
+    monitor: false
+"""))
+
+    def fake_run(*args, **kwargs):
+        class Proc:
+            def __init__(self, returncode=0, stdout=""):
+                self.returncode = returncode
+                self.stdout = stdout
+        if args[:3] == ("tmux", "has-session", "-t"):
+            return Proc(0, "")
+        if args[:3] == ("tmux", "list-windows", "-t"):
+            return Proc(0, "0: grid\n")
+        if args[:3] == ("tmux", "list-panes", "-t"):
+            return Proc(0, "%0\n")
+        raise AssertionError(f"unexpected tmux call: {args}")
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 2)
+    monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "working")
+
+    swarm_apply.status(cfg, brief=True)
+    out = capsys.readouterr().out
+
+    assert "demo:grid panes=2/2" in out
+    assert "demo:0.0 working" in out
+    assert "demo:0.1 off" in out

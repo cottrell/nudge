@@ -116,6 +116,7 @@ There is now an experimental config-driven orchestration path under `swarm/`:
 python swarm/apply.py examples/swarm-single.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml status
+python swarm/apply.py examples/swarm-grid.yaml status --brief
 python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
 python swarm/babysit_apply.py examples/swarm-grid.yaml status
 ```
