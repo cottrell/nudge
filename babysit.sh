@@ -38,7 +38,7 @@ echo "Babysitting $SESSION via $TARGET (interval=${INTERVAL}s)"
 send_message() {
     MSG="$1"
     if [ -n "$TMUX" ]; then
-        SENDER=$(tmux display-message -p '#S')
+        SENDER=$(tmux display-message -p '#S:#{window_index}.#{pane_index}')
         MSG="${SENDER}: ${MSG}"
     fi
     tmux send-keys -t "$TARGET" -l -- "$MSG"

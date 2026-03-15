@@ -12,7 +12,7 @@ fi
 if [ -n "$1" ]; then
     TARGET="$1"
 else
-    TARGET="$(tmux display-message -p '#S'):0.0"
+    TARGET="$(tmux display-message -p '#S:#{window_index}.0')"
 fi
 
 # Some tmux/shell startup paths have leaked a trailing } into the argument.
