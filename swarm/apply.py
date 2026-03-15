@@ -129,28 +129,56 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
 
 
-def status(cfg: SwarmConfig, brief: bool = False) -> None:
+def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
+    lines: list[str] = []
     session_exists = run("tmux", "has-session", "-t", cfg.session_name, check=False).returncode == 0
     window_exists = run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) != -1 if session_exists else False
     actual_count = pane_count(cfg) if window_exists else 0
     if brief:
-        print(f"{cfg.session_name}:{cfg.window_name} panes={actual_count}/{cfg.pane_count}" if window_exists else f"{cfg.session_name}:{cfg.window_name} missing")
+        lines.append(f"{cfg.session_name}:{cfg.window_name} panes={actual_count}/{cfg.pane_count}" if window_exists else f"{cfg.session_name}:{cfg.window_name} missing")
     else:
-        print(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
+        lines.append(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
     if not window_exists:
-        return
+        return lines
     for pane in cfg.panes:
         target = f"{cfg.session_name}:{pane.pane}"
         proc = run("tmux", "list-panes", "-t", target, check=False)
         if proc.returncode != 0:
-            print(f"{target} missing")
+            lines.append(f"{target} missing")
             continue
         monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
         if brief:
-            print(f"{target} {monitor}")
+            lines.append(f"{target} {monitor}")
         else:
             command = pane_current_command(cfg, pane.pane)
-            print(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+            lines.append(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+    return lines
+
+
+def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) -> None:
+    lines = status_lines(cfg, brief)
+    text = "\n".join(lines)
+    if in_place:
+        sys.stdout.write("\x1b[H\x1b[2J")
+        sys.stdout.write(text)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return
+    print(text)
+
+
+def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
+    try:
+        while True:
+            lines = status_lines(cfg, brief)
+            lines.insert(0, f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}")
+            sys.stdout.write("\x1b[H\x1b[2J")
+            sys.stdout.write("\n".join(lines))
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return
 
 
 def main() -> int:
@@ -159,6 +187,8 @@ def main() -> int:
     parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status"])
     parser.add_argument("--attach", action="store_true", help="Attach to the tmux session after apply")
     parser.add_argument("--brief", action="store_true", help="With status, print a compact per-pane state view")
+    parser.add_argument("--watch", action="store_true", help="With status, refresh the output in place until interrupted")
+    parser.add_argument("--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without changing tmux")
     args = parser.parse_args()
 
@@ -167,7 +197,12 @@ def main() -> int:
         if args.command == "apply":
             apply(cfg, args.dry_run)
         else:
-            status(cfg, args.brief)
+            if args.interval <= 0:
+                raise ValueError("--interval must be > 0")
+            if args.watch:
+                watch_status(cfg, args.brief, args.interval)
+            else:
+                print_status(cfg, args.brief)
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1

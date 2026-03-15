@@ -249,7 +249,7 @@ panes:
     monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 1)
     monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "idle")
 
-    swarm_apply.status(cfg)
+    swarm_apply.print_status(cfg)
     out = capsys.readouterr().out
 
     assert "session=demo window=grid exists=yes panes=1/1" in out
@@ -293,9 +293,37 @@ panes:
     monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 2)
     monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "working")
 
-    swarm_apply.status(cfg, brief=True)
+    swarm_apply.print_status(cfg, brief=True)
     out = capsys.readouterr().out
 
     assert "demo:grid panes=2/2" in out
     assert "demo:0.0 working" in out
     assert "demo:0.1 off" in out
+
+
+def test_status_lines_handles_missing_window(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+"""))
+
+    def fake_run(*args, **kwargs):
+        class Proc:
+            def __init__(self, returncode=0, stdout=""):
+                self.returncode = returncode
+                self.stdout = stdout
+        if args[:3] == ("tmux", "has-session", "-t"):
+            return Proc(1, "")
+        raise AssertionError(f"unexpected tmux call: {args}")
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    assert swarm_apply.status_lines(cfg, brief=True) == ["demo:grid missing"]

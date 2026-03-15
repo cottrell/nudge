@@ -117,6 +117,7 @@ python swarm/apply.py examples/swarm-single.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml status
 python swarm/apply.py examples/swarm-grid.yaml status --brief
+python swarm/apply.py examples/swarm-grid.yaml status --brief --watch
 python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
 python swarm/babysit_apply.py examples/swarm-grid.yaml status
 ```
@@ -140,6 +141,7 @@ The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` wi
 Runtime notes:
 - babysit worker pid/spec/log files live under `/tmp/nudge-swarm/<session>/`
 - `make test` now includes `test_swarm.py`, which validates config loading and apply/babysit reconciliation logic without needing live tmux agents
+- `swarm/apply.py ... status --watch` redraws in place; use `--brief` for a compact per-pane state view and `--interval` to change the default 1s refresh cadence
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
