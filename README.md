@@ -155,6 +155,7 @@ Runtime notes:
 - `swarm/apply.py ... status --watch` redraws in place; use `--brief` for a compact per-pane state view and `--interval` to change the default 1s refresh cadence
 - `title` sets the tmux pane title and the initial shell prompt prefix; if omitted it defaults to the `agent` name or the pane id, and some agent CLIs may later overwrite the terminal title themselves
 - babysit sends the long prompt once when the worker starts, then uses the short prompt for later idle nudges; if no short prompt is configured it falls back to the long prompt
+- the runtime map is written unconditionally as an operator/runtime artifact, but it is not auto-injected into agent prompts; if you want agents to coordinate or inspect each other, mention the runtime map path explicitly in your long or short babysit prompt
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
