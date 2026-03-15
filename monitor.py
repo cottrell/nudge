@@ -83,6 +83,9 @@ PATTERNS = {
     },
 }
 
+VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen')
+VALID_AGENTS_TEXT = ', '.join(VALID_AGENTS)
+
 
 _ANSI = re.compile(
     r'\x1b(?:'
@@ -130,6 +133,8 @@ def _is_vibe_idle(line):
 
 class Monitor:
     def __init__(self, agent_type='unknown', socket_path=None, log_size=500, debug_file=None, state_log=None):
+        if agent_type not in VALID_AGENTS:
+            raise ValueError(f"unknown agent type: {agent_type}")
         self.agent_type = agent_type
         self.socket_path = socket_path
         self.state = 'unknown'
@@ -203,7 +208,7 @@ class Monitor:
             return 'working'
         if self.agent_type == 'vibe' and _has_braille(line) and not _is_vibe_logo_line(line) and 'analyse' in line.lower():
             return 'working'
-        if self.agent_type == 'claude' and has_sync:
+        if self.agent_type == 'claude' and has_sync and line.strip():
             return 'working'
         for state, pats in self.patterns.items():
             for p in pats:
@@ -308,13 +313,19 @@ class Monitor:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--agent', default='unknown', help='Agent type: claude, codex, copilot, gemini, vibe, qwen')
+    parser = argparse.ArgumentParser(
+        epilog=f'Valid agent types: {VALID_AGENTS_TEXT}'
+    )
+    parser.add_argument('--agent', required=True, help=f'Agent type: {VALID_AGENTS_TEXT}')
     parser.add_argument('--socket', default=None, help='Unix socket path')
     parser.add_argument('--http-port', type=int, default=None, help='Optional HTTP port')
     parser.add_argument('--debug', default=None, metavar='FILE', help='Write raw incoming lines to FILE (use repr encoding)')
     parser.add_argument('--state-log', default=None, metavar='FILE', help='Append state init/change events to FILE as JSONL')
     args = parser.parse_args()
 
-    m = Monitor(agent_type=args.agent, socket_path=args.socket, debug_file=args.debug, state_log=args.state_log)
+    try:
+        m = Monitor(agent_type=args.agent, socket_path=args.socket, debug_file=args.debug, state_log=args.state_log)
+    except ValueError as e:
+        print(f"{e}. Valid agent types: {VALID_AGENTS_TEXT}", file=sys.stderr)
+        sys.exit(2)
     m.run(http_port=args.http_port)

@@ -99,6 +99,15 @@ static const Pat PATS[] = {
     {NULL, 0, NULL}
 };
 
+static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, vibe, qwen";
+
+static int valid_agent(const char *agent) {
+    for (int i = 0; PATS[i].agent; i++) {
+        if (!strcmp(PATS[i].agent, agent)) return 1;
+    }
+    return 0;
+}
+
 /* Global state (protected by lock) */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static State   g_state = ST_UNKNOWN;
@@ -371,7 +380,7 @@ static State classify(char *line) {
     if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen")) && has_braille(line)) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && icontains(line, "esc to interrupt")) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && has_braille(line) && !is_vibe_logo_line(line) && icontains(line, "analyse")) return ST_WORKING;
-    if (!strcmp(g_agent, "claude") && has_sync) return ST_WORKING;
+    if (!strcmp(g_agent, "claude") && has_sync && line[0] != '\0') return ST_WORKING;
     for (int i = 0; PATS[i].agent; i++)
         if (!strcmp(PATS[i].agent, g_agent) && icontains(line, PATS[i].pat))
             return PATS[i].state;
@@ -547,8 +556,14 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--state-log") && i+1 < argc) strncpy(state_log_path, argv[++i], sizeof(state_log_path) - 1);
         if (!strcmp(argv[i], "--help")) {
             printf("Usage: monitor --agent <name> --socket <path> [--http-port <port>] [--debug <path>] [--state-log <path>]\n");
+            printf("Valid agent types: %s\n", VALID_AGENTS_TEXT);
             return 0;
         }
+    }
+
+    if (!valid_agent(g_agent)) {
+        fprintf(stderr, "unknown agent type: %s. Valid agent types: %s\n", g_agent, VALID_AGENTS_TEXT);
+        return 2;
     }
 
     signal(SIGPIPE, SIG_IGN);

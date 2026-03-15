@@ -98,6 +98,10 @@ def test_classify_claude_final_response_with_prompt_is_idle():
     m = Monitor('claude')
     assert m.classify('\x1b[?2026l\x1b[?2026h\r\x1b[7A\x1b[38;2;255;255;255m●\x1b[1C\x1b[39mHello!    \r\x1b[3B❯\u00a0') == 'idle'
 
+def test_classify_claude_sync_only_line_is_not_working():
+    m = Monitor('claude')
+    assert m.classify('\x1b[?2026l\x1b[>0q\x1b[c\x1b[?2026h\r\x1b[170C\x1b[1A                  ') is None
+
 def test_classify_rate_limited_overloaded():
     m = Monitor('claude')
     assert m.classify('overloaded_error') == 'rate_limited'
@@ -227,8 +231,8 @@ def test_classify_unrecognised_line_returns_none():
     assert m.classify('some random output') is None
 
 def test_classify_unknown_agent_type():
-    m = Monitor('unknown_agent')
-    assert m.classify('Thinking...') is None
+    with pytest.raises(ValueError, match='unknown agent type: unknown_agent'):
+        Monitor('unknown_agent')
 
 
 # --- ingest / state ---
@@ -348,6 +352,52 @@ def test_query_unknown_command():
     m = Monitor('claude')
     result = m.query('nonsense')
     assert 'error' in result
+
+def test_python_cli_rejects_unknown_agent(tmp_path):
+    proc = subprocess.run(
+        ['python', 'monitor.py', '--agent', 'mistral', '--socket', str(tmp_path / 'bad.sock')],
+        capture_output=True,
+        text=True,
+        cwd='.'
+    )
+    assert proc.returncode == 2
+    assert 'unknown agent type: mistral' in proc.stderr
+    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen' in proc.stderr
+
+def test_c_cli_rejects_unknown_agent(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+    proc = subprocess.run(
+        ['./monitor-bin', '--agent', 'mistral', '--socket', str(tmp_path / 'bad.sock')],
+        capture_output=True,
+        text=True,
+        cwd='.'
+    )
+    assert proc.returncode == 2
+    assert 'unknown agent type: mistral' in proc.stderr
+    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen' in proc.stderr
+
+def test_python_cli_help_lists_valid_agents():
+    proc = subprocess.run(
+        ['python', 'monitor.py', '--help'],
+        capture_output=True,
+        text=True,
+        cwd='.'
+    )
+    assert proc.returncode == 0
+    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen' in proc.stdout
+
+def test_c_cli_help_lists_valid_agents():
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+    proc = subprocess.run(
+        ['./monitor-bin', '--help'],
+        capture_output=True,
+        text=True,
+        cwd='.'
+    )
+    assert proc.returncode == 0
+    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen' in proc.stdout
 
 
 # --- socket ---
