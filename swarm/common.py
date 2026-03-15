@@ -24,8 +24,9 @@ class BabysitSpec:
 @dataclass
 class PaneSpec:
     pane: str
-    agent: str
+    agent: str | None
     command: str
+    title: str
     monitor: bool
     babysit: BabysitSpec
 
@@ -93,13 +94,22 @@ def load_config(path: str | Path) -> SwarmConfig:
             raise ValueError(f"duplicate pane entry: {pane_name}")
         seen.add(pane_name)
 
+        monitor = bool(raw.get("monitor", True))
         agent = str(raw.get("agent") or "").strip()
-        if agent not in VALID_AGENTS:
+        if monitor:
+            if not agent:
+                raise ValueError(f"pane {pane_name} requires agent when monitor=true")
+            if agent not in VALID_AGENTS:
+                raise ValueError(f"unknown agent in config: {agent}")
+        elif agent and agent not in VALID_AGENTS:
             raise ValueError(f"unknown agent in config: {agent}")
 
         command = str(raw.get("command") or "").strip()
         if not command:
             raise ValueError(f"pane {pane_name} is missing command")
+        title = str(raw.get("title") or agent or pane_name).strip()
+        if not title:
+            raise ValueError(f"pane {pane_name} needs a non-empty title")
 
         babysit_raw = raw.get("babysit") or {}
         prompt_file = babysit_raw.get("prompt_file")
@@ -111,12 +121,15 @@ def load_config(path: str | Path) -> SwarmConfig:
                 raise ValueError(f"pane {pane_name} prompt_file not found: {prompt_file}")
             if not prompt:
                 prompt = prompt_path.read_text()
+        if bool(babysit_raw.get("enabled", False)) and not monitor:
+            raise ValueError(f"pane {pane_name} cannot enable babysit when monitor=false")
 
         panes.append(PaneSpec(
             pane=pane_name,
-            agent=agent,
+            agent=agent or None,
             command=command,
-            monitor=bool(raw.get("monitor", True)),
+            title=title,
+            monitor=monitor,
             babysit=BabysitSpec(
                 enabled=bool(babysit_raw.get("enabled", False)),
                 interval_secs=int(babysit_raw.get("interval_secs", 600)),

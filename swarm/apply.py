@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
 import time
@@ -105,7 +106,20 @@ def pane_current_command(cfg: SwarmConfig, pane: str) -> str:
     return proc.stdout.strip()
 
 
-def ensure_command(cfg: SwarmConfig, pane: str, command: str, dry_run: bool) -> None:
+def ensure_title(cfg: SwarmConfig, pane: str, title: str, dry_run: bool) -> None:
+    if dry_run:
+        print(f"would set pane title for {cfg.session_name}:{pane}: {title}")
+        return
+    run("tmux", "select-pane", "-t", f"{cfg.session_name}:{pane}", "-T", title)
+
+
+def shell_prefixed_command(title: str, command: str) -> str:
+    prefix = shlex.quote(f"[{title}] ")
+    return f"export PS1={prefix}\"$PS1\"; {command}"
+
+
+def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_run: bool) -> None:
+    command = shell_prefixed_command(title, command)
     if dry_run:
         print(f"would start command in {cfg.session_name}:{pane}: {command}")
         return
@@ -125,7 +139,8 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     if not dry_run:
         time.sleep(0.2)
     for pane in cfg.panes:
-        ensure_command(cfg, pane.pane, pane.command, dry_run)
+        ensure_title(cfg, pane.pane, pane.title, dry_run)
+        ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
 
 
@@ -148,10 +163,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             continue
         monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
         if brief:
-            lines.append(f"{target} {monitor}")
+            lines.append(f"{target} {pane.title} {monitor}")
         else:
             command = pane_current_command(cfg, pane.pane)
-            lines.append(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
     return lines
 
 

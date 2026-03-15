@@ -334,6 +334,7 @@ static int prompt_suffix_only(const char *s) {
 
 static int is_claude_idle(const char *line) {
     if (line[0] == '>' && line[1] == '\0') return 1;
+    if (strstr(line, "--INSERT--") || strstr(line, "-- INSERT --")) return 1;
     const char *prompt = NULL;
     for (const char *p = line; (p = strstr(p, "❯")); p += 3) prompt = p;
     if (!prompt) return 0;
@@ -343,7 +344,7 @@ static int is_claude_idle(const char *line) {
 }
 
 static int is_claude_insert_redraw(const char *line) {
-    return strncmp(line, "--INSERT--", 10) == 0;
+    return strncmp(line, "--INSERT--", 10) == 0 || strstr(line, "-- INSERT --") != NULL;
 }
 
 static int is_copilot_idle(const char *line) {
@@ -372,8 +373,8 @@ static State classify(char *line) {
     if (strstr(line, "\x1b]") && strstr(line, "Claude Code")) return ST_UNKNOWN;
     strip_ansi(line);
     trim_ascii_ws(line);
-    if (!strcmp(g_agent, "claude") && is_claude_insert_redraw(line)) return ST_UNKNOWN;
     if (!strcmp(g_agent, "claude") && is_claude_idle(line)) return ST_IDLE;
+    if (!strcmp(g_agent, "claude") && is_claude_insert_redraw(line)) return ST_IDLE;
     if (!strcmp(g_agent, "claude") && has_claude_working_marker(line)) return ST_WORKING;
     if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
     if (!strcmp(g_agent, "vibe") && is_vibe_idle(line)) return ST_IDLE;

@@ -86,13 +86,18 @@ def test_classify_claude_idle_chevron():
     m = Monitor('claude')
     assert m.classify('❯ ') == 'idle'
 
-def test_classify_claude_insert_redraw_is_not_idle():
+def test_classify_claude_insert_redraw_is_idle():
     m = Monitor('claude')
-    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)') is None
+    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)') == 'idle'
 
-def test_classify_claude_insert_redraw_with_effort_is_ignored():
+def test_classify_claude_insert_redraw_with_effort_is_idle():
     m = Monitor('claude')
-    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)◐medium·/effo…') is None
+    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)◐medium·/effo…') == 'idle'
+
+def test_classify_claude_sync_insert_redraw_is_idle():
+    m = Monitor('claude')
+    raw = '\x1b[?2026l\x1b[?2026h\x1b[2K\x1b[1A\x1b[2K\r\x1b[4A❯\u00a0\r\x1b[1B-- INSERT -- ⏵⏵ bypass permissions on'
+    assert m.classify(raw) == 'idle'
 
 def test_classify_claude_final_response_with_prompt_is_idle():
     m = Monitor('claude')

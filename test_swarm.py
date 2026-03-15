@@ -42,6 +42,7 @@ panes:
     pane = cfg.panes[0]
     assert cfg.session_name == "demo"
     assert cfg.pane_count == 1
+    assert pane.title == "claude"
     assert pane.babysit.enabled is True
     assert pane.babysit.interval_secs == 123
     assert pane.babysit.prompt == "nudge gently"
@@ -88,6 +89,47 @@ panes:
         load_config(cfg_path)
 
 
+def test_load_config_allows_non_agent_pane_when_monitor_disabled(tmp_path: Path):
+    cfg_path = write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    title: shell
+    command: "htop"
+    monitor: false
+""")
+    cfg = load_config(cfg_path)
+    pane = cfg.panes[0]
+    assert pane.agent is None
+    assert pane.title == "shell"
+    assert pane.monitor is False
+
+
+def test_load_config_rejects_babysit_without_monitor(tmp_path: Path):
+    cfg_path = write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    command: "htop"
+    monitor: false
+    babysit:
+      enabled: true
+      prompt: "continue"
+""")
+    with pytest.raises(ValueError, match="cannot enable babysit when monitor=false"):
+        load_config(cfg_path)
+
+
 def test_apply_invokes_grid_monitor_and_command(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session:
@@ -110,7 +152,8 @@ panes:
 
     monkeypatch.setattr(swarm_apply, "ensure_grid", lambda cfg, dry_run: calls.append(("grid", cfg.session_name, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda cfg, pane, agent, dry_run: calls.append(("monitor", pane, agent, str(dry_run))))
-    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, command, dry_run: calls.append(("command", pane, command, str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", pane, title, str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))))
     monkeypatch.setattr(swarm_apply.time, "sleep", lambda *_: None)
 
     swarm_apply.apply(cfg, dry_run=False)
@@ -118,8 +161,10 @@ panes:
     assert calls == [
         ("grid", "demo", "False"),
         ("monitor", "0.0", "claude", "False"),
-        ("command", "0.0", "aiclaude", "False"),
-        ("command", "0.1", "aicodex", "False"),
+        ("title", "0.0", "claude", "False"),
+        ("command", "0.0", "claude", "aiclaude", "False"),
+        ("title", "0.1", "codex", "False"),
+        ("command", "0.1", "codex", "aicodex", "False"),
     ]
 
 
@@ -253,7 +298,7 @@ panes:
     out = capsys.readouterr().out
 
     assert "session=demo window=grid exists=yes panes=1/1" in out
-    assert "demo:0.0 cmd=claude monitor=idle babysit=on" in out
+    assert "demo:0.0 title=claude cmd=claude monitor=idle babysit=on" in out
 
 
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
@@ -297,8 +342,8 @@ panes:
     out = capsys.readouterr().out
 
     assert "demo:grid panes=2/2" in out
-    assert "demo:0.0 working" in out
-    assert "demo:0.1 off" in out
+    assert "demo:0.0 claude working" in out
+    assert "demo:0.1 codex off" in out
 
 
 def test_status_lines_handles_missing_window(monkeypatch, tmp_path: Path):
@@ -327,3 +372,7 @@ panes:
 
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     assert swarm_apply.status_lines(cfg, brief=True) == ["demo:grid missing"]
+
+
+def test_shell_prefixed_command_sets_ps1_prefix():
+    assert swarm_apply.shell_prefixed_command("codex", "aicodex") == "export PS1='[codex] '\"$PS1\"; aicodex"

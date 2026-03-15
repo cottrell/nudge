@@ -108,12 +108,15 @@ def _is_claude_idle(line):
         return True
     if re.fullmatch(r'❯[\s\xa0]*', line):
         return True
+    if '--INSERT--' in line or '-- INSERT --' in line:
+        return True
     if not re.search(r'❯[\s\xa0]*$', line):
         return False
     return _CLAUDE_WORKING_MARKERS.search(line) is None
 
 def _is_claude_insert_redraw(line):
-    return line.strip().startswith('--INSERT--')
+    line = line.strip()
+    return line.startswith('--INSERT--') or '-- INSERT --' in line
 
 
 def _has_braille(line):
@@ -196,9 +199,9 @@ class Monitor:
         if '\x1b]' in line and 'Claude Code' in line:
             return None  # Don't classify title bar as working
         line = strip_ansi(line)
-        if self.agent_type == 'claude' and _is_claude_insert_redraw(line):
-            return None
         if self.agent_type == 'claude' and _is_claude_idle(line):
+            return 'idle'
+        if self.agent_type == 'claude' and _is_claude_insert_redraw(line):
             return 'idle'
         if self.agent_type == 'vibe' and _is_vibe_idle(line):
             return 'idle'
