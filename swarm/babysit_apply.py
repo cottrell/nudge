@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import signal
+import subprocess
+import sys
+
+from common import ROOT_DIR, SwarmConfig, load_config
+
+
+def pid_path(cfg: SwarmConfig, pane: str) -> Path:
+    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.pid"
+
+
+def log_path(cfg: SwarmConfig, pane: str) -> Path:
+    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.log"
+
+
+def process_running(pid: int) -> bool:
+    try:
+        Path(f"/proc/{pid}")
+    except Exception:
+        return False
+    return Path(f"/proc/{pid}").exists()
+
+
+def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, str]]:
+    out: dict[str, tuple[int, str]] = {}
+    for pane in cfg.panes:
+        if not pane.babysit.enabled:
+            continue
+        out[pane.pane] = (pane.babysit.interval_secs, pane.babysit.prompt)
+    return out
+
+
+def start_worker(cfg: SwarmConfig, pane: str, interval: int, prompt: str, dry_run: bool) -> None:
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    if dry_run:
+        print(f"would start babysit for {cfg.session_name}:{pane} interval={interval}")
+        return
+    with log_path(cfg, pane).open("ab") as log:
+        proc = subprocess.Popen(
+            [str(ROOT_DIR / "babysit.sh"), f"{cfg.session_name}:{pane}", str(interval), prompt],
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+            text=True,
+        )
+    pid_path(cfg, pane).write_text(str(proc.pid))
+
+
+def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
+    path = pid_path(cfg, pane)
+    if not path.exists():
+        return
+    pid = int(path.read_text().strip())
+    try:
+        if process_running(pid):
+            if dry_run:
+                print(f"would stop babysit for {cfg.session_name}:{pane} pid={pid}")
+            else:
+                signal_name = signal.SIGTERM
+                os_kill(pid, signal_name)
+    finally:
+        if not dry_run:
+            path.unlink(missing_ok=True)
+
+
+def os_kill(pid: int, sig: signal.Signals) -> None:
+    import os
+    os.kill(pid, sig)
+
+
+def apply(cfg: SwarmConfig, dry_run: bool) -> None:
+    desired = desired_panes(cfg)
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = {p.name.removeprefix("babysit-").removesuffix(".pid").replace("-", "."): p for p in cfg.runtime_dir.glob("babysit-*.pid")}
+    for pane in sorted(existing):
+        if pane not in desired:
+            stop_worker(cfg, pane, dry_run)
+
+    for pane, (interval, prompt) in desired.items():
+        path = pid_path(cfg, pane)
+        if path.exists():
+            pid = int(path.read_text().strip())
+            if process_running(pid):
+                continue
+            if not dry_run:
+                path.unlink(missing_ok=True)
+        start_worker(cfg, pane, interval, prompt, dry_run)
+
+    print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
+
+
+def stop(cfg: SwarmConfig, dry_run: bool) -> None:
+    for path in cfg.runtime_dir.glob("babysit-*.pid"):
+        pane = path.name.removeprefix("babysit-").removesuffix(".pid").replace("-", ".")
+        stop_worker(cfg, pane, dry_run)
+    print(f"{'Planned stop for' if dry_run else 'Stopped'} babysit workers for {cfg.session_name}")
+
+
+def status(cfg: SwarmConfig) -> None:
+    desired = desired_panes(cfg)
+    for pane in sorted(desired):
+        path = pid_path(cfg, pane)
+        if not path.exists():
+            print(f"{cfg.session_name}:{pane} stopped")
+            continue
+        pid = int(path.read_text().strip())
+        state = "running" if process_running(pid) else "stale"
+        print(f"{cfg.session_name}:{pane} {state} pid={pid}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Apply config-driven babysit workers from YAML config.")
+    parser.add_argument("config", help="Path to YAML config")
+    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "stop", "status"])
+    parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without starting/stopping workers")
+    args = parser.parse_args()
+
+    try:
+        cfg = load_config(args.config)
+        if args.command == "apply":
+            apply(cfg, args.dry_run)
+        elif args.command == "stop":
+            stop(cfg, args.dry_run)
+        else:
+            status(cfg)
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

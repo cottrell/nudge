@@ -1,0 +1,53 @@
+session:
+  name: agent_grid
+  window: grid
+
+layout:
+  type: grid
+  rows: 2
+  cols: 3
+
+panes:
+  - pane: "0.0"
+    agent: codex
+    command: "source ~/.bash_aliases && aicodex"
+    monitor: true
+    babysit:
+      enabled: false
+
+  - pane: "0.1"
+    agent: claude
+    command: "source ~/.bash_aliases && aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      interval_secs: 600
+      prompt_file: "../prompts/claude_main.md"
+
+  - pane: "0.2"
+    agent: copilot
+    command: "source ~/.bash_aliases && aicopilot"
+    monitor: true
+    babysit:
+      enabled: false
+
+  - pane: "0.3"
+    agent: gemini
+    command: "source ~/.bash_aliases && aigemini"
+    monitor: true
+    babysit:
+      enabled: false
+
+  - pane: "0.4"
+    agent: qwen
+    command: "source ~/.bash_aliases && aiqwen"
+    monitor: true
+    babysit:
+      enabled: false
+
+  - pane: "0.5"
+    agent: vibe
+    command: "source ~/.bash_aliases && aimistral"
+    monitor: true
+    babysit:
+      enabled: false

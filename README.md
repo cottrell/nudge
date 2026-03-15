@@ -20,6 +20,7 @@ States: `unknown` `working` `idle` `rate_limited` `error`
 - `examples/launch-single-pane.sh <session> <agent>` — create or resume a monitored single-pane session
 - `examples/launch-2pane.sh <session> <agent> [command]` — create a monitored split-pane session with a dedicated input pane
 - `examples/launch-agent-grid.sh [session] [window]` — six-pane mixed-agent grid example using explicit pane monitors
+- `examples/swarm-grid.yaml` — declarative grid config for the experimental Python swarm apply tools
 
 The repo name still fits if you think of "nudge" as the original behavior plus
 the surrounding operator tools, but the project is better described as a small
@@ -104,6 +105,31 @@ Capture fixtures are repr-encoded raw pane lines from the monitor's ingest strea
 Current note: fixture replay currently covers `claude`, `codex`, `copilot`, `gemini`, and `qwen`. `vibe` still has unit/integration coverage in the test suite, but its committed live fixture is intentionally paused until the upstream service is responsive enough to complete a clean `say hello -> idle` capture.
 
 What went wrong: the earlier tests were incomplete, not wholly wrong. They replayed raw captures, but they were too permissive about transition fixtures, and they missed live tmux behaviors where an agent could redraw an idle-looking prompt during active work or settle visually to idle without emitting a fresh idle line. The monitor now handles both cases, and the tests are stricter about transition fixtures for the agents with committed captures.
+
+## Swarm Config
+
+There is now an experimental config-driven orchestration path under `swarm/`:
+
+```bash
+python swarm/apply.py examples/swarm-grid.yaml --dry-run
+python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
+```
+
+The current config model is:
+- one tmux session
+- one tmux window
+- explicit `layout.rows` and `layout.cols`
+- explicit pane list with `pane`, `agent`, `command`, `monitor`, and optional `babysit`
+
+Important current limitation:
+- `rows` and `cols` are mandatory and validated, but v1 still realizes the grid by creating the requested pane count and then applying tmux `select-layout tiled`
+- so the config expresses the intended grid shape, but tmux still controls the exact final geometry
+
+The split between the two entry points is deliberate:
+- `swarm/apply.py` reconciles tmux topology, monitors, and initial pane commands
+- `swarm/babysit_apply.py` reconciles babysit workers from the same YAML config
+
+The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
