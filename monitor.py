@@ -28,6 +28,8 @@ from collections import deque
 from time import monotonic
 
 IDLE_HOLDOFF_SECS = 1.0
+QUIET_IDLE_SECS = 2.0
+_IDLE_HOLDOFF_AGENTS = {'gemini', 'copilot', 'codex', 'qwen', 'vibe'}
 
 # Keyed by agent type, then state name -> list of patterns (case-insensitive)
 # Patterns sourced directly from each CLI's own output / source.
@@ -36,7 +38,7 @@ IDLE_HOLDOFF_SECS = 1.0
 PATTERNS = {
     'claude': {
         # idle checked first — these lines are definitive
-        'idle':         [r'^\s*>\s*$', r'^❯', r'bypasspermissions'],
+        'idle':         [r'^\s*>\s*$', r'^❯'],
         # spinner verbs + braille dots cycling: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏
         'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'[·✢✳∗✻✽]'],
         # 529 overloaded is distinct from 429 rate limit but both mean "back off"
@@ -55,9 +57,9 @@ PATTERNS = {
         'error':        [r'✕\s+Error', r'✕\s+API Error', r'Request failed after all retries'],
     },
     'codex': {
-        'working':      [r'thinking', r'writing', r'running'],
-        'rate_limited': [r'rate.?limit', r'429'],
-        'idle':         [r'^\s*\$\s*$', r'^\s*[›>]\s+', r'Reply with exactly'],
+        'working':      [r'working', r'esc to interrupt', r'thinking', r'writing', r'running'],
+        'rate_limited': [r'rate.?limited', r'429'],
+        'idle':         [r'^\s*\$\s*$', r'^\s*[›>]\s+', r'Reply with exactly', r'\? for shortcuts', r'context left'],
         'error':        [r'Error:'],
     },
     'copilot': {
@@ -67,8 +69,7 @@ PATTERNS = {
         'error':        [r'Error:'],
     },
     'vibe': {
-        # braille spinner + "(0s esc to interrupt)" hint
-        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'esc to interrupt'],
+        'working':      [r'esc to interrupt'],
         'rate_limited': [r'Rate limits exceeded'],
         'idle':         [r'^\s*>\s*$'],
         'error':        [r'Error:'],
@@ -77,7 +78,7 @@ PATTERNS = {
         # braille spinner from cli-spinners "dots" set
         'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]'],
         'rate_limited': [r'rate.?limit', r'429', r'too many requests'],
-        'idle':         [r'^\s*>\s*$'],
+        'idle':         [r'^\s*[>!*]\s*$', r'Type your message', r'\? for shortcuts'],
         'error':        [r'Error:', r'error'],
     },
 }
@@ -96,6 +97,36 @@ _ANSI = re.compile(
 def strip_ansi(s):
     return _ANSI.sub('', s)
 
+_CLAUDE_WORKING_MARKERS = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏·✢✳∗✻✽]|esc to cancel', re.IGNORECASE)
+
+def _is_claude_idle(line):
+    line = line.strip()
+    if line == '>':
+        return True
+    if re.fullmatch(r'❯[\s\xa0]*', line):
+        return True
+    if not re.search(r'❯[\s\xa0]*$', line):
+        return False
+    return _CLAUDE_WORKING_MARKERS.search(line) is None
+
+def _is_claude_insert_redraw(line):
+    return line.strip().startswith('--INSERT--')
+
+
+def _has_braille(line):
+    return re.search(r'[\u2800-\u28ff]', line) is not None
+
+
+def _is_vibe_logo_line(line):
+    return ('Mistral Vibe' in line or
+            ('models' in line and 'MCP server' in line) or
+            'skills' in line)
+
+
+def _is_vibe_idle(line):
+    line = line.strip()
+    return line == '>' or '│ >' in line
+
 
 class Monitor:
     def __init__(self, agent_type='unknown', socket_path=None, log_size=500, debug_file=None, state_log=None):
@@ -110,6 +141,7 @@ class Monitor:
         # ring buffer of last 20 raw lines for debug query
         self._raw = deque(maxlen=20)
         self._last_working_at = None
+        self._last_ingest_at = None
         self._pending_idle_at = None
         self._pending_idle_line = None
         self._emit_state('init', self.state)
@@ -131,12 +163,20 @@ class Monitor:
     def _refresh_state_locked(self, now=None):
         if now is None:
             now = monotonic()
-        if self.agent_type != 'gemini':
+        if self.agent_type not in _IDLE_HOLDOFF_AGENTS:
             return False
         if self.state != 'working':
             return False
         if self._pending_idle_at is None or self._last_working_at is None:
-            return False
+            if self._last_ingest_at is None or self._last_working_at is None:
+                return False
+            if now - self._last_working_at < IDLE_HOLDOFF_SECS:
+                return False
+            if now - self._last_ingest_at < QUIET_IDLE_SECS:
+                return False
+            self.state = 'idle'
+            self._emit_state('change', self.state)
+            return True
         if now - self._last_working_at < IDLE_HOLDOFF_SECS:
             return False
         self.state = 'idle'
@@ -146,13 +186,25 @@ class Monitor:
         return True
 
     def classify(self, line):
-        # synchronized output marker — Claude uses this for in-place spinner updates
-        if '\x1b[?2026' in line:
-            return 'working'
+        has_sync = '\x1b[?2026' in line
         # Skip title bar updates (contain OSC sequences like ]0;)
         if '\x1b]' in line and 'Claude Code' in line:
             return None  # Don't classify title bar as working
         line = strip_ansi(line)
+        if self.agent_type == 'claude' and _is_claude_insert_redraw(line):
+            return None
+        if self.agent_type == 'claude' and _is_claude_idle(line):
+            return 'idle'
+        if self.agent_type == 'vibe' and _is_vibe_idle(line):
+            return 'idle'
+        if self.agent_type in {'gemini', 'qwen'} and _has_braille(line):
+            return 'working'
+        if self.agent_type == 'vibe' and 'esc to interrupt' in line.lower():
+            return 'working'
+        if self.agent_type == 'vibe' and _has_braille(line) and not _is_vibe_logo_line(line) and 'analyse' in line.lower():
+            return 'working'
+        if self.agent_type == 'claude' and has_sync:
+            return 'working'
         for state, pats in self.patterns.items():
             for p in pats:
                 if re.search(p, line, re.IGNORECASE):
@@ -166,6 +218,7 @@ class Monitor:
             self._debug.flush()
         line = raw.rstrip()
         with self._lock:
+            self._last_ingest_at = monotonic()
             self._raw.append(raw)
             self.log.append(line)
             self._refresh_state_locked()
@@ -175,7 +228,7 @@ class Monitor:
                 self._last_working_at = now
                 self._pending_idle_at = None
                 self._pending_idle_line = None
-            elif self.agent_type == 'gemini' and new_state == 'idle' and self._last_working_at is not None:
+            elif self.agent_type in _IDLE_HOLDOFF_AGENTS and new_state == 'idle' and self._last_working_at is not None:
                 if now - self._last_working_at < IDLE_HOLDOFF_SECS:
                     self._pending_idle_at = now
                     self._pending_idle_line = line

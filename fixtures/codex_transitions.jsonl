@@ -1,0 +1,6 @@
+{"ts":"2026-03-14T23:06:41Z","event":"init","agent":"codex","state":"unknown"}
+{"ts":"2026-03-14T23:06:44Z","event":"change","agent":"codex","state":"idle","line":"╭───────────────────────────────────────╮│ >_ OpenAI Codex (v0.114.0)            ││                                       ││ model:     loading   /model to change ││ directory: ~/dev/nudge                │╰───────────────────────────────────────╯›Summarize recent commits? for shortcuts100% context left"}
+{"ts":"2026-03-14T23:06:44Z","event":"change","agent":"codex","state":"working","line":"Tip: New 2x rate limits until April 2nd.•Starting MCP servers (0/2): backlog, pal(0s • esc to interrupt)›Summarize recent commits  gpt-5.4 medium · 100% left · ~/dev/nudge"}
+{"ts":"2026-03-14T23:06:47Z","event":"change","agent":"codex","state":"idle"}
+{"ts":"2026-03-14T23:06:49Z","event":"change","agent":"codex","state":"working","line":"Summarize recent commits•Working(0s • esc to interrupt)›Summarize recent commits  gpt-5.4 medium · 100% left · ~/dev/nudge"}
+{"ts":"2026-03-14T23:06:52Z","event":"change","agent":"codex","state":"idle"}

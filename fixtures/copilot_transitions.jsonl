@@ -1,0 +1,5 @@
+{"ts":"2026-03-14T22:58:19Z","event":"init","agent":"copilot","state":"unknown"}
+{"ts":"2026-03-14T22:58:22Z","event":"change","agent":"copilot","state":"working","line":"● Loading environment:"}
+{"ts":"2026-03-14T22:58:24Z","event":"change","agent":"copilot","state":"idle","line":"❯  Type @ to mention files, # for issues/PRs, / for commands, or ? for"}
+{"ts":"2026-03-14T22:58:26Z","event":"change","agent":"copilot","state":"working","line":"● Thinking (Esc to cancel)"}
+{"ts":"2026-03-14T22:58:31Z","event":"change","agent":"copilot","state":"idle","line":"❯  Type @ to mention files, # for issues/PRs, / for commands, or ? for"}

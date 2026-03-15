@@ -98,6 +98,10 @@ Defaults:
 
 Capture fixtures are repr-encoded raw pane lines from the monitor's ingest stream, scrubbed for common sensitive tokens. Capture also writes exact state transitions to `fixtures/<agent>_transitions.jsonl`. They are intended to be committed and replayed in tests. Re-capture only when agent output format or classifier behavior changes.
 
+Current note: fixture replay currently covers `claude`, `codex`, `copilot`, `gemini`, and `qwen`. `vibe` still has unit/integration coverage in the test suite, but its committed live fixture is intentionally paused until the upstream service is responsive enough to complete a clean `say hello -> idle` capture.
+
+What went wrong: the earlier tests were incomplete, not wholly wrong. They replayed raw captures, but they were too permissive about transition fixtures, and they missed live tmux behaviors where an agent could redraw an idle-looking prompt during active work or settle visually to idle without emitting a fresh idle line. The monitor now handles both cases, and the tests are stricter about transition fixtures for the agents with committed captures.
+
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
 ## Two-pane interaction

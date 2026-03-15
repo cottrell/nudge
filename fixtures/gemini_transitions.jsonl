@@ -1,0 +1,5 @@
+{"ts":"2026-03-14T22:58:01Z","event":"init","agent":"gemini","state":"unknown"}
+{"ts":"2026-03-14T22:58:09Z","event":"change","agent":"gemini","state":"working","line":"│ ⠋ Waiting for auth... (Press ESC or CTRL+C to cancel)                        │"}
+{"ts":"2026-03-14T22:58:10Z","event":"change","agent":"gemini","state":"idle","line":">   Type your message or @path/to/file"}
+{"ts":"2026-03-14T22:58:12Z","event":"change","agent":"gemini","state":"working","line":"⠋  (esc to cancel, 0s)"}
+{"ts":"2026-03-14T22:58:16Z","event":"change","agent":"gemini","state":"idle","line":">   Type your message or @path/to/file"}

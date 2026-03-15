@@ -32,7 +32,6 @@ static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited",
 typedef struct { const char *agent; State state; const char *pat; } Pat;
 static const Pat PATS[] = {
     /* claude */
-    {"claude", ST_IDLE,         "bypasspermissions"},
     {"claude", ST_WORKING,      "esc to cancel"},
     {"claude", ST_WORKING,      "✻"},
     {"claude", ST_WORKING,      "✽"},
@@ -62,12 +61,16 @@ static const Pat PATS[] = {
     {"gemini", ST_ERROR,        "request failed after all retries"},
     {"gemini", ST_ERROR,        "error"},
     /* codex */
+    {"codex",  ST_WORKING,      "working"},
+    {"codex",  ST_WORKING,      "esc to interrupt"},
     {"codex",  ST_WORKING,      "thinking"},
     {"codex",  ST_WORKING,      "writing"},
     {"codex",  ST_WORKING,      "running"},
-    {"codex",  ST_RATE_LIMITED, "rate limit"},
+    {"codex",  ST_RATE_LIMITED, "rate limited"},
     {"codex",  ST_RATE_LIMITED, "429"},
     {"codex",  ST_IDLE,         "reply with exactly"},
+    {"codex",  ST_IDLE,         "? for shortcuts"},
+    {"codex",  ST_IDLE,         "context left"},
     {"codex",  ST_ERROR,        "error:"},
     /* copilot */
     {"copilot", ST_WORKING,      "thinking"},
@@ -86,6 +89,8 @@ static const Pat PATS[] = {
     {"vibe",   ST_RATE_LIMITED, "rate limits exceeded"},
     {"vibe",   ST_ERROR,        "error:"},
     /* qwen */
+    {"qwen",   ST_IDLE,         "type your message"},
+    {"qwen",   ST_IDLE,         "? for shortcuts"},
     {"qwen",   ST_RATE_LIMITED, "rate limit"},
     {"qwen",   ST_RATE_LIMITED, "429"},
     {"qwen",   ST_RATE_LIMITED, "too many requests"},
@@ -104,11 +109,13 @@ static char    g_agent[64] = "unknown";
 static FILE   *g_state_log = NULL;
 static FILE   *g_debug_log = NULL;
 static struct timespec g_last_working_at = {0};
+static struct timespec g_last_ingest_at = {0};
 static struct timespec g_pending_idle_at = {0};
 static char    g_pending_idle_line[MAX_LINE] = "";
 static char    g_sock_path[256] = "";  /* for cleanup */
 
 #define IDLE_HOLDOFF_SECS 1.0
+#define QUIET_IDLE_SECS 2.0
 
 static void cleanup_and_exit(int sig) {
     (void)sig;
@@ -127,17 +134,33 @@ static double monotonic_now(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
 }
 
+static int uses_idle_holdoff(void) {
+    return strcmp(g_agent, "gemini") == 0 ||
+           strcmp(g_agent, "copilot") == 0 ||
+           strcmp(g_agent, "codex") == 0 ||
+           strcmp(g_agent, "qwen") == 0 ||
+           strcmp(g_agent, "vibe") == 0;
+}
+
 static void refresh_state_locked(void) {
-    if (strcmp(g_agent, "gemini") != 0) return;
+    if (!uses_idle_holdoff()) return;
     if (g_state != ST_WORKING) return;
-    if (g_pending_idle_at.tv_sec == 0 || g_last_working_at.tv_sec == 0) return;
+    double now = monotonic_now();
     double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
-    if (monotonic_now() - last < IDLE_HOLDOFF_SECS) return;
+    if (g_pending_idle_at.tv_sec != 0 && g_last_working_at.tv_sec != 0 && now - last >= IDLE_HOLDOFF_SECS) {
+        g_state = ST_IDLE;
+        log_state_event("change", g_state, g_pending_idle_line[0] ? g_pending_idle_line : NULL);
+        g_pending_idle_at.tv_sec = 0;
+        g_pending_idle_at.tv_nsec = 0;
+        g_pending_idle_line[0] = '\0';
+        return;
+    }
+    if (g_last_ingest_at.tv_sec == 0 || g_last_working_at.tv_sec == 0) return;
+    double last_ingest = (double)g_last_ingest_at.tv_sec + (double)g_last_ingest_at.tv_nsec / 1000000000.0;
+    if (now - last < IDLE_HOLDOFF_SECS) return;
+    if (now - last_ingest < QUIET_IDLE_SECS) return;
     g_state = ST_IDLE;
-    log_state_event("change", g_state, g_pending_idle_line[0] ? g_pending_idle_line : NULL);
-    g_pending_idle_at.tv_sec = 0;
-    g_pending_idle_at.tv_nsec = 0;
-    g_pending_idle_line[0] = '\0';
+    log_state_event("change", g_state, NULL);
 }
 
 static void *tick_thread(void *arg) {
@@ -278,12 +301,40 @@ static void trim_ascii_ws(char *s) {
     while (len > 0 && isspace((unsigned char)s[len - 1])) s[--len] = '\0';
 }
 
+static int has_claude_working_marker(const char *line) {
+    return has_braille(line) ||
+           icontains(line, "esc to cancel") ||
+           strstr(line, "·") || strstr(line, "✢") || strstr(line, "✳") ||
+           strstr(line, "∗") || strstr(line, "✻") || strstr(line, "✽");
+}
+
+static int prompt_suffix_only(const char *s) {
+    while (*s) {
+        if (*s == ' ') {
+            s++;
+            continue;
+        }
+        if ((unsigned char)s[0] == 0xC2 && (unsigned char)s[1] == 0xA0) {
+            s += 2;
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
 static int is_claude_idle(const char *line) {
     if (line[0] == '>' && line[1] == '\0') return 1;
-    if ((unsigned char)line[0] == 0xE2 &&
-        (unsigned char)line[1] == 0x9D &&
-        (unsigned char)line[2] == 0xAF) return 1; /* ❯ */
+    const char *prompt = NULL;
+    for (const char *p = line; (p = strstr(p, "❯")); p += 3) prompt = p;
+    if (!prompt) return 0;
+    if (prompt == line && prompt_suffix_only(prompt + 3)) return 1;
+    if (prompt_suffix_only(prompt + 3) && !has_claude_working_marker(line)) return 1;
     return 0;
+}
+
+static int is_claude_insert_redraw(const char *line) {
+    return strncmp(line, "--INSERT--", 10) == 0;
 }
 
 static int is_copilot_idle(const char *line) {
@@ -295,15 +346,32 @@ static int is_copilot_idle(const char *line) {
     return 0;
 }
 
+static int is_vibe_logo_line(const char *line) {
+    return icontains(line, "Mistral Vibe") ||
+           (icontains(line, "models") && icontains(line, "MCP server")) ||
+           icontains(line, "skills");
+}
+
+static int is_vibe_idle(const char *line) {
+    if (line[0] == '>' && line[1] == '\0') return 1;
+    return strstr(line, "│ >") != NULL;
+}
+
 static State classify(char *line) {
-    if (strstr(line, "\x1b[?2026")) return ST_WORKING;
+    int has_sync = strstr(line, "\x1b[?2026") != NULL;
     /* Skip title bar updates - they contain spinners but aren't real work */
     if (strstr(line, "\x1b]") && strstr(line, "Claude Code")) return ST_UNKNOWN;
     strip_ansi(line);
     trim_ascii_ws(line);
+    if (!strcmp(g_agent, "claude") && is_claude_insert_redraw(line)) return ST_UNKNOWN;
     if (!strcmp(g_agent, "claude") && is_claude_idle(line)) return ST_IDLE;
+    if (!strcmp(g_agent, "claude") && has_claude_working_marker(line)) return ST_WORKING;
     if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
-    if (has_braille(line)) return ST_WORKING;
+    if (!strcmp(g_agent, "vibe") && is_vibe_idle(line)) return ST_IDLE;
+    if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen")) && has_braille(line)) return ST_WORKING;
+    if (!strcmp(g_agent, "vibe") && icontains(line, "esc to interrupt")) return ST_WORKING;
+    if (!strcmp(g_agent, "vibe") && has_braille(line) && !is_vibe_logo_line(line) && icontains(line, "analyse")) return ST_WORKING;
+    if (!strcmp(g_agent, "claude") && has_sync) return ST_WORKING;
     for (int i = 0; PATS[i].agent; i++)
         if (!strcmp(PATS[i].agent, g_agent) && icontains(line, PATS[i].pat))
             return PATS[i].state;
@@ -313,6 +381,7 @@ static State classify(char *line) {
 static void ingest(const char *line) {
     pthread_mutex_lock(&lock);
     log_debug_line(line);
+    clock_gettime(CLOCK_MONOTONIC, &g_last_ingest_at);
     strncpy(g_log[g_head], line, MAX_LINE - 1);
     g_log[g_head][MAX_LINE - 1] = '\0';
     g_head = (g_head + 1) % MAX_LOG;
@@ -324,7 +393,7 @@ static void ingest(const char *line) {
         g_pending_idle_at.tv_sec = 0;
         g_pending_idle_at.tv_nsec = 0;
         g_pending_idle_line[0] = '\0';
-    } else if (!strcmp(g_agent, "gemini") && s == ST_IDLE && g_last_working_at.tv_sec != 0) {
+    } else if (uses_idle_holdoff() && s == ST_IDLE && g_last_working_at.tv_sec != 0) {
         double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
         if (monotonic_now() - last < IDLE_HOLDOFF_SECS) {
             clock_gettime(CLOCK_MONOTONIC, &g_pending_idle_at);

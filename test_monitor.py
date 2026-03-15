@@ -9,6 +9,9 @@ import time
 import pytest
 
 from monitor import Monitor
+from monitor import _IDLE_HOLDOFF_AGENTS
+
+FIXTURE_AGENTS = ['claude', 'codex', 'copilot', 'gemini', 'qwen']
 
 
 def _fixture_lines(path):
@@ -36,21 +39,8 @@ def _sock_status(sock_path):
 
 def _expected_final_state(agent):
     path = os.path.join('fixtures', f'{agent}_transitions.jsonl')
-    if os.path.exists(path):
-        last = None
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
-            for raw in f:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                obj = json.loads(raw)
-                if isinstance(obj, dict) and isinstance(obj.get('state'), str):
-                    last = obj['state']
-        if last:
-            return last
-    path = os.path.join('fixtures', f'{agent}_states.jsonl')
     if not os.path.exists(path):
-        return None
+        raise AssertionError(f'missing transition fixture: {path}')
     last = None
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
         for raw in f:
@@ -58,10 +48,8 @@ def _expected_final_state(agent):
             if not raw:
                 continue
             obj = json.loads(raw)
-            if isinstance(obj, dict):
-                st = obj.get('status')
-                if isinstance(st, dict) and isinstance(st.get('state'), str):
-                    last = st['state']
+            if isinstance(obj, dict) and isinstance(obj.get('state'), str):
+                last = obj['state']
     return last
 
 
@@ -90,13 +78,25 @@ def test_classify_claude_idle_prompt():
     assert m.classify('> ') == 'idle'
 
 def test_classify_claude_idle_insert_mode():
-    # real raw line: cursor-forward stripped, ❯ triggers idle
+    # real prompt line after ANSI stripping
     m = Monitor('claude')
     assert m.classify('\u276f\u00a0 ') == 'idle'
 
 def test_classify_claude_idle_chevron():
     m = Monitor('claude')
     assert m.classify('❯ ') == 'idle'
+
+def test_classify_claude_insert_redraw_is_not_idle():
+    m = Monitor('claude')
+    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)') is None
+
+def test_classify_claude_insert_redraw_with_effort_is_ignored():
+    m = Monitor('claude')
+    assert m.classify('--INSERT--⏵⏵bypasspermissionson (shift+tabtocycle)◐medium·/effo…') is None
+
+def test_classify_claude_final_response_with_prompt_is_idle():
+    m = Monitor('claude')
+    assert m.classify('\x1b[?2026l\x1b[?2026h\r\x1b[7A\x1b[38;2;255;255;255m●\x1b[1C\x1b[39mHello!    \r\x1b[3B❯\u00a0') == 'idle'
 
 def test_classify_rate_limited_overloaded():
     m = Monitor('claude')
@@ -146,6 +146,18 @@ def test_classify_vibe_idle():
     m = Monitor('vibe')
     assert m.classify('> ') == 'idle'
 
+def test_classify_vibe_boxed_idle():
+    m = Monitor('vibe')
+    assert m.classify('│ >                                                                                                                                 │') == 'idle'
+
+def test_classify_vibe_logo_is_not_working():
+    m = Monitor('vibe')
+    assert m.classify('  ⡠⣒⠄  ⡔⢄⠔⡄  Mistral Vibe v2.4.2 · devstral-2') is None
+
+def test_classify_vibe_status_banner_is_not_working():
+    m = Monitor('vibe')
+    assert m.classify('⢸⠸⣀⡔⢉⠱⣃⡠⣀⡣   3 models · 1 MCP server · 0 skills') is None
+
 def test_classify_qwen_working_braille():
     m = Monitor('qwen')
     assert m.classify('⠙ Thinking...') == 'working'
@@ -157,6 +169,14 @@ def test_classify_qwen_working_braille_variant():
 def test_classify_qwen_idle():
     m = Monitor('qwen')
     assert m.classify('> ') == 'idle'
+
+def test_classify_qwen_idle_real():
+    m = Monitor('qwen')
+    assert m.classify('>   Type your message or @path/to/file') == 'idle'
+
+def test_classify_qwen_idle_shortcuts():
+    m = Monitor('qwen')
+    assert m.classify('? for shortcuts') == 'idle'
 
 def test_classify_qwen_rate_limited():
     m = Monitor('qwen')
@@ -186,9 +206,21 @@ def test_classify_codex_idle_reply():
     m = Monitor('codex')
     assert m.classify('› Reply with exactly: OK') == 'idle'
 
+def test_classify_codex_idle_ready_screen():
+    m = Monitor('codex')
+    assert m.classify('› Summarize recent commits ? for shortcuts 100% context left') == 'idle'
+
 def test_classify_codex_working():
     m = Monitor('codex')
     assert m.classify('thinking') == 'working'
+
+def test_classify_codex_working_real():
+    m = Monitor('codex')
+    assert m.classify('• Working (0s • esc to interrupt)') == 'working'
+
+def test_classify_codex_rate_limit_tip_is_not_rate_limited():
+    m = Monitor('codex')
+    assert m.classify('Tip: New 2x rate limits until April 2nd.') is None
 
 def test_classify_unrecognised_line_returns_none():
     m = Monitor('claude')
@@ -230,6 +262,43 @@ def test_idle_holdoff_prevents_spinner_redraw_flap():
     assert m.state == 'working'
     m.ingest('*   Type your message or @path/to/file')
     assert m.state == 'working'
+
+def test_copilot_idle_holdoff_prevents_spinner_redraw_flap():
+    m = Monitor('copilot')
+    m.ingest('● Thinking (Esc to cancel)')
+    assert m.state == 'working'
+    m.ingest('❯  Type @ to mention files, # for issues/PRs, / for commands, or ? for')
+    assert m.state == 'working'
+
+def test_codex_idle_holdoff_prevents_prompt_redraw_flap():
+    m = Monitor('codex')
+    m.ingest('thinking')
+    assert m.state == 'working'
+    m.ingest('› Find and fix a bug in @filename')
+    assert m.state == 'working'
+
+def test_qwen_idle_holdoff_prevents_spinner_redraw_flap():
+    m = Monitor('qwen')
+    m.ingest('⠙ Aligning the stars for optimal response... (esc to cancel, 4s)')
+    assert m.state == 'working'
+    m.ingest('>   Type your message or @path/to/file')
+    assert m.state == 'working'
+
+def test_vibe_idle_holdoff_prevents_prompt_redraw_flap():
+    m = Monitor('vibe')
+    m.ingest('⠉⠁ Generating… (0s esc to interrupt)')
+    assert m.state == 'working'
+    m.ingest('>')
+    assert m.state == 'working'
+
+def test_codex_quiet_working_falls_back_to_idle():
+    m = Monitor('codex')
+    m.ingest('• Starting MCP servers (0/2): backlog, pal (0s • esc to interrupt)')
+    assert m.state == 'working'
+    time.sleep(2.2)
+    with m._lock:
+        m._refresh_state_locked()
+    assert m.state == 'idle'
 
 def test_state_log_records_init_and_changes(tmp_path):
     path = tmp_path / 'state.jsonl'
@@ -322,7 +391,7 @@ def test_socket_multiple_queries(sock_path):
 
 def test_fixture_replay_classifies_for_python():
     checked = 0
-    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen']:
+    for agent in FIXTURE_AGENTS:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue
@@ -333,13 +402,12 @@ def test_fixture_replay_classifies_for_python():
             m.ingest(line)
             seen.add(m.state)
         assert any(state != 'unknown' for state in seen), f'no classified state in {path}'
-        if agent == 'gemini':
-            time.sleep(1.05)
+        if agent in _IDLE_HOLDOFF_AGENTS:
+            time.sleep(2.25)
             with m._lock:
                 m._refresh_state_locked()
         expected = _expected_final_state(agent)
-        if expected:
-            assert m.state == expected, f'python final state mismatch for {agent}'
+        assert m.state == expected, f'python final state mismatch for {agent}'
     if checked == 0:
         pytest.skip('no capture fixtures found')
 
@@ -349,7 +417,7 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
         pytest.skip('monitor-bin not built')
 
     checked = 0
-    for agent in ['claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen']:
+    for agent in FIXTURE_AGENTS:
         path = os.path.join('fixtures', f'{agent}_capture.txt')
         if not os.path.exists(path):
             continue
@@ -361,8 +429,8 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
         py_monitor = Monitor(agent)
         for line in lines:
             py_monitor.ingest(line)
-        if agent == 'gemini':
-            time.sleep(1.05)
+        if agent in _IDLE_HOLDOFF_AGENTS:
+            time.sleep(2.25)
             with py_monitor._lock:
                 py_monitor._refresh_state_locked()
 
@@ -385,8 +453,7 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
                     break
                 time.sleep(0.05)
 
-            # Gemini idle recovery uses a 1.0s holdoff plus a 100ms background tick.
-            time.sleep(1.25 if agent == 'gemini' else 0.1)
+            time.sleep(2.4 if agent in _IDLE_HOLDOFF_AGENTS else 0.1)
             c_state = _sock_status(sock_path)
         finally:
             proc.terminate()
@@ -396,8 +463,7 @@ def test_fixture_replay_c_matches_python_final_state(tmp_path):
                 proc.kill()
 
         expected = _expected_final_state(agent)
-        if expected:
-            assert c_state == expected, f'c final state mismatch for {agent}'
+        assert c_state == expected, f'c final state mismatch for {agent}'
         assert c_state == py_monitor.state
 
     if checked == 0:
@@ -422,13 +488,15 @@ def test_c_state_log_records_init_and_changes(tmp_path):
         proc.stdin.write('⠙ Thinking...\n')
         proc.stdin.write('> \n')
         proc.stdin.flush()
-        time.sleep(0.1)
+        proc.stdin.close()
+        proc.wait(timeout=1)
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
     rows = _load_jsonl(state_log)
     assert [row['event'] for row in rows] == ['init', 'change', 'change']
@@ -489,6 +557,161 @@ def test_c_idle_holdoff_prevents_spinner_redraw_flap(tmp_path):
             time.sleep(0.05)
         time.sleep(0.1)
         assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+def test_c_copilot_idle_holdoff_prevents_spinner_redraw_flap(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-copilot-holdoff.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'copilot', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('● Thinking (Esc to cancel)\n')
+        proc.stdin.write('❯  Type @ to mention files, # for issues/PRs, / for commands, or ? for\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+def test_c_codex_idle_holdoff_prevents_prompt_redraw_flap(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-codex-holdoff.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'codex', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('thinking\n')
+        proc.stdin.write('› Find and fix a bug in @filename\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+def test_c_qwen_idle_holdoff_prevents_spinner_redraw_flap(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-qwen-holdoff.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'qwen', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('⠙ Aligning the stars for optimal response... (esc to cancel, 4s)\n')
+        proc.stdin.write('>   Type your message or @path/to/file\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+def test_c_vibe_idle_holdoff_prevents_prompt_redraw_flap(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-vibe-holdoff.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'vibe', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('⠉⠁ Generating… (0s esc to interrupt)\n')
+        proc.stdin.write('>\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+def test_c_codex_quiet_working_falls_back_to_idle(tmp_path):
+    if not os.path.exists('./monitor-bin'):
+        pytest.skip('monitor-bin not built')
+
+    sock_path = str(tmp_path / 'c-codex-quiet.sock')
+    proc = subprocess.Popen(
+        ['./monitor-bin', '--agent', 'codex', '--socket', sock_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write('• Starting MCP servers (0/2): backlog, pal (0s • esc to interrupt)\n')
+        proc.stdin.flush()
+        for _ in range(20):
+            if os.path.exists(sock_path):
+                break
+            time.sleep(0.05)
+        time.sleep(0.1)
+        assert _sock_status(sock_path) == 'working'
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            if _sock_status(sock_path) == 'idle':
+                break
+            time.sleep(0.1)
+        assert _sock_status(sock_path) == 'idle'
     finally:
         proc.terminate()
         try:
