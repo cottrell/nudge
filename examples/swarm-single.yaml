@@ -1,0 +1,16 @@
+session:
+  name: single_agent
+  window: main
+
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "source ~/.bash_aliases && aiclaude"
+    monitor: true
+    babysit:
+      enabled: false

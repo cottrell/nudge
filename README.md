@@ -20,6 +20,7 @@ States: `unknown` `working` `idle` `rate_limited` `error`
 - `examples/launch-single-pane.sh <session> <agent>` — create or resume a monitored single-pane session
 - `examples/launch-2pane.sh <session> <agent> [command]` — create a monitored split-pane session with a dedicated input pane
 - `examples/launch-agent-grid.sh [session] [window]` — six-pane mixed-agent grid example using explicit pane monitors
+- `examples/swarm-single.yaml` — minimal declarative single-agent config
 - `examples/swarm-grid.yaml` — declarative grid config for the experimental Python swarm apply tools
 
 The repo name still fits if you think of "nudge" as the original behavior plus
@@ -112,8 +113,10 @@ What went wrong: the earlier tests were incomplete, not wholly wrong. They repla
 There is now an experimental config-driven orchestration path under `swarm/`:
 
 ```bash
+python swarm/apply.py examples/swarm-single.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml --dry-run
 python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
+python swarm/babysit_apply.py examples/swarm-grid.yaml status
 ```
 
 The current config model is:
