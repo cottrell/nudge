@@ -81,6 +81,13 @@ make capture_all DUR=60
 make tmux-test  # manual test with a plain session, no agent needed
 ```
 
+Python helpers and swarm scripts are now declared in `pyproject.toml`.
+If you want the project environment explicitly:
+
+```bash
+uv sync
+```
+
 `attach.sh` uses the C binary by default. Set `MONITOR_BACKEND=python` to use the Python version instead.
 
 ## Backend status
