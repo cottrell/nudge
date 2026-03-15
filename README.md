@@ -15,6 +15,7 @@ States: `unknown` `working` `idle` `rate_limited` `error`
 - `babysit.sh <session>` — poll state, nudge on idle, back off on rate_limited
 - `keyboard-2pane.sh [target-pane]` — relay typed lines to another pane without prompt clobbering
 - `tmux-send <target> <text...>` — send literal text plus Enter to a pane
+  When run from inside tmux, it prefixes the message with the sender pane target in `session:window.pane` form.
 
 **Examples:**
 - `examples/launch-single-pane.sh <session> <agent>` — create or resume a monitored single-pane session

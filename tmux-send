@@ -36,7 +36,7 @@ shift
 
 MSG="$*"
 if [ -n "$TMUX" ]; then
-    SENDER=$(tmux display-message -p '#S')
+    SENDER=$(tmux display-message -p '#S:#{window_index}.#{pane_index}')
     MSG="${SENDER}: ${MSG}"
 fi
 
