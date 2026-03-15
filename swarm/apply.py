@@ -148,10 +148,18 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
         write_runtime_map(cfg)
         write_self_awareness_text(cfg)
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
-    print(f"Runtime map: {cfg.runtime_map_path}")
-    print(f"Self-awareness note: {cfg.self_awareness_path}")
-    print(f"Status: python swarm/apply.py {cfg.path} status --brief")
-    print(f"Watch: python swarm/apply.py {cfg.path} status --brief --watch")
+    print()
+    print("For AGENTS.md:")
+    print()
+    print("  - When using the swarm workflow, consult these files:")
+    print(f"    - Runtime map: {cfg.runtime_map_path}")
+    print(f"    - Self-awareness note: {cfg.self_awareness_path}")
+    print()
+    print("Operator reminders:")
+    print()
+    print(f"  - Status: python swarm/apply.py {cfg.path} status --brief")
+    print(f"  - Watch: python swarm/apply.py {cfg.path} status --brief --watch")
+    print()
 
 
 def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
