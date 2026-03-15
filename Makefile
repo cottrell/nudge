@@ -10,10 +10,13 @@ test-c: build
 	bash test_c.sh
 	uv run pytest test_monitor.py -v
 
+test-swarm:
+	uv run pytest test_swarm.py -v
+
 test-python: build
 	uv run pytest test_monitor.py -v
 
-test: test-c
+test: test-c test-swarm
 
 capture:
 	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|copilot|gemini|vibe|qwen> [DUR=60]"; exit 1)

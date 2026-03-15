@@ -68,6 +68,7 @@ make build      # compile C binary (default backend)
 make test       # C smoke + fixture replay parity check
 make test-python # Python unit tests (optional, may be out of sync)
 make test-c     # Same as 'make test'
+make test-swarm # Swarm config/apply unit tests
 make capture AGENT=claude DUR=60  # real tmux capture -> fixtures/claude_capture.txt
 make capture_claude DUR=60
 make capture_codex DUR=60
@@ -130,6 +131,10 @@ The split between the two entry points is deliberate:
 - `swarm/babysit_apply.py` reconciles babysit workers from the same YAML config
 
 The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.
+
+Runtime notes:
+- babysit worker pid/spec/log files live under `/tmp/nudge-swarm/<session>/`
+- `make test` now includes `test_swarm.py`, which validates config loading and apply/babysit reconciliation logic without needing live tmux agents
 
 To add an agent: add a key to `PATTERNS` in `monitor.py`.
 
