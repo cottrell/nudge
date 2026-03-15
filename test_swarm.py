@@ -45,8 +45,9 @@ panes:
     assert pane.title == "claude"
     assert pane.babysit.enabled is True
     assert pane.babysit.interval_secs == 123
-    assert pane.babysit.prompt == "nudge gently"
-    assert pane.babysit.prompt_file == prompt.resolve()
+    assert pane.babysit.long_prompt == "nudge gently"
+    assert pane.babysit.long_prompt_file == prompt.resolve()
+    assert pane.babysit.short_prompt == "nudge gently"
 
 
 def test_load_config_requires_full_grid(tmp_path: Path):
@@ -128,6 +129,33 @@ panes:
 """)
     with pytest.raises(ValueError, match="cannot enable babysit when monitor=false"):
         load_config(cfg_path)
+
+
+def test_load_config_supports_long_and_short_babysit_prompts(tmp_path: Path):
+    long_prompt = tmp_path / "long.txt"
+    short_prompt = tmp_path / "short.txt"
+    long_prompt.write_text("full operating instructions")
+    short_prompt.write_text("keep going")
+    cfg_path = write_config(tmp_path, f"""
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      long_prompt_file: "{long_prompt.name}"
+      short_prompt_file: "{short_prompt.name}"
+""")
+    pane = load_config(cfg_path).panes[0]
+    assert pane.babysit.long_prompt == "full operating instructions"
+    assert pane.babysit.short_prompt == "keep going"
 
 
 def test_apply_invokes_grid_monitor_and_command(monkeypatch, tmp_path: Path):
@@ -239,20 +267,21 @@ panes:
   "pane": "0.0",
   "target": "demo:0.0",
   "interval_secs": 600,
-  "prompt": "old"
+  "long_prompt": "old long",
+  "short_prompt": "old short"
 }
 """)
     actions: list[tuple[str, ...]] = []
 
     monkeypatch.setattr(babysit_apply, "process_running", lambda pid: pid == 1234)
     monkeypatch.setattr(babysit_apply, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
-    monkeypatch.setattr(babysit_apply, "start_worker", lambda cfg, pane, interval, prompt, dry_run: actions.append(("start", pane, str(interval), prompt, str(dry_run))))
+    monkeypatch.setattr(babysit_apply, "start_worker", lambda cfg, pane, interval, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), long_prompt, short_prompt, str(dry_run))))
 
     babysit_apply.apply(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
-        ("start", "0.0", "321", "please continue", "False"),
+        ("start", "0.0", "321", "please continue", "please continue", "False"),
     ]
 
 
@@ -407,3 +436,5 @@ panes:
     assert data["panes"]["0.0"]["socket"] is None
     assert data["panes"]["0.1"]["socket"] == "/tmp/demo_0.1.sock"
     assert data["panes"]["0.1"]["babysit"]["pid"] == "/tmp/nudge-swarm/demo/babysit-0-1.pid"
+    assert data["panes"]["0.1"]["babysit"]["has_long_prompt"] is True
+    assert data["panes"]["0.1"]["babysit"]["has_short_prompt"] is True

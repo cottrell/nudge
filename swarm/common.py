@@ -18,8 +18,10 @@ PANE_RE = re.compile(r"^0\.(\d+)$")
 class BabysitSpec:
     enabled: bool
     interval_secs: int = 600
-    prompt: str = ""
-    prompt_file: Path | None = None
+    long_prompt: str = ""
+    long_prompt_file: Path | None = None
+    short_prompt: str = ""
+    short_prompt_file: Path | None = None
 
 
 @dataclass
@@ -117,15 +119,26 @@ def load_config(path: str | Path) -> SwarmConfig:
             raise ValueError(f"pane {pane_name} needs a non-empty title")
 
         babysit_raw = raw.get("babysit") or {}
-        prompt_file = babysit_raw.get("prompt_file")
-        prompt = str(babysit_raw.get("prompt") or "")
-        prompt_path = None
-        if prompt_file:
-            prompt_path = (cfg_path.parent / str(prompt_file)).resolve()
-            if not prompt_path.exists():
-                raise ValueError(f"pane {pane_name} prompt_file not found: {prompt_file}")
-            if not prompt:
-                prompt = prompt_path.read_text()
+        long_prompt_file = babysit_raw.get("long_prompt_file") or babysit_raw.get("prompt_file")
+        short_prompt_file = babysit_raw.get("short_prompt_file")
+        long_prompt = str(babysit_raw.get("long_prompt") or babysit_raw.get("prompt") or "")
+        short_prompt = str(babysit_raw.get("short_prompt") or "")
+        long_prompt_path = None
+        short_prompt_path = None
+        if long_prompt_file:
+            long_prompt_path = (cfg_path.parent / str(long_prompt_file)).resolve()
+            if not long_prompt_path.exists():
+                raise ValueError(f"pane {pane_name} long_prompt_file not found: {long_prompt_file}")
+            if not long_prompt:
+                long_prompt = long_prompt_path.read_text()
+        if short_prompt_file:
+            short_prompt_path = (cfg_path.parent / str(short_prompt_file)).resolve()
+            if not short_prompt_path.exists():
+                raise ValueError(f"pane {pane_name} short_prompt_file not found: {short_prompt_file}")
+            if not short_prompt:
+                short_prompt = short_prompt_path.read_text()
+        if not short_prompt:
+            short_prompt = long_prompt
         if bool(babysit_raw.get("enabled", False)) and not monitor:
             raise ValueError(f"pane {pane_name} cannot enable babysit when monitor=false")
 
@@ -138,8 +151,10 @@ def load_config(path: str | Path) -> SwarmConfig:
             babysit=BabysitSpec(
                 enabled=bool(babysit_raw.get("enabled", False)),
                 interval_secs=int(babysit_raw.get("interval_secs", 600)),
-                prompt=prompt,
-                prompt_file=prompt_path,
+                long_prompt=long_prompt,
+                long_prompt_file=long_prompt_path,
+                short_prompt=short_prompt,
+                short_prompt_file=short_prompt_path,
             ),
         ))
 
@@ -181,7 +196,11 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
             "socket": str(monitor_socket_path(cfg.session_name, pane.pane)) if pane.monitor else None,
         }
         if pane.babysit.enabled:
-            entry["babysit"] = babysit_runtime_paths(cfg, pane.pane)
+            entry["babysit"] = {
+                **babysit_runtime_paths(cfg, pane.pane),
+                "has_long_prompt": bool(pane.babysit.long_prompt),
+                "has_short_prompt": bool(pane.babysit.short_prompt),
+            }
         panes[pane.pane] = entry
     return {
         "session_name": cfg.session_name,

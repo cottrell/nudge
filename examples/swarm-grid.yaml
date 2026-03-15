@@ -24,7 +24,8 @@ panes:
     babysit:
       enabled: true
       interval_secs: 600
-      prompt_file: "../prompts/claude_main.md"
+      long_prompt_file: "../prompts/claude_main.md"
+      short_prompt: "Please continue. Stay in role and keep moving."
 
   - pane: "0.2"
     title: copilot
