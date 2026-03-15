@@ -178,19 +178,19 @@ matches the top pane created by `examples/launch-2pane.sh`.
 
 ## Similar projects
 
-- [ccmanager](https://github.com/kbwo/ccmanager) — Go TUI, supports Claude/Gemini/Codex/Cursor/etc, state detection
-- [tallr](https://github.com/kaihochak/tallr) — desktop dashboard, real-time state detection + native notifications
-- [agent-tmux-monitor](https://github.com/damelLP/agent-tmux-monitor) — uses Claude Code hooks rather than pipe-pane, TUI dashboard
-- [tmuxcc](https://github.com/nyanko3141592/tmuxcc) — TUI dashboard for the same agent set
-- [agent-deck](https://github.com/asheshgoplani/agent-deck) — full session manager with state detection and MCP management
-- [agent-of-empires](https://github.com/njbrake/agent-of-empires) — Rust, tmux + git worktrees, parallel agents
-- [tmux-agent-indicator](https://github.com/accessd/tmux-agent-indicator) — tmux plugin for visual state feedback (running/needs-input/done)
-- [tmuxp](https://tmuxp.git-pull.com/) — declarative tmux session manager with YAML/JSON configs
-- [tmuxinator](https://github.com/tmuxinator/tmuxinator) — declarative tmux project/session launcher
-- [teamocil](https://github.com/remiprev/teamocil) — YAML tmux session layout manager
-- [Zellij](https://zellij.dev/) — alternative terminal multiplexer with built-in layout/config support
-- [Agent Hand (HN)](https://news.ycombinator.com/item?id=47192207) — Rust, TTL-based idle detection
-- [Adventures in Babysitting Coding Agents (HN)](https://news.ycombinator.com/item?id=44205137)
+- [ccmanager](https://github.com/kbwo/ccmanager) — Go TUI, supports Claude/Gemini/Codex/Cursor/etc, state detection; missing the small socket-first/no-TUI control surface used here
+- [tallr](https://github.com/kaihochak/tallr) — desktop dashboard, real-time state detection + native notifications; missing tmux-native babysit/control loops
+- [agent-tmux-monitor](https://github.com/damelLP/agent-tmux-monitor) — uses Claude Code hooks rather than pipe-pane, TUI dashboard; less useful if you want hook-free multi-agent monitoring across CLIs
+- [tmuxcc](https://github.com/nyanko3141592/tmuxcc) — TUI dashboard for the same agent set; missing the scriptable socket/CLI orchestration angle
+- [agent-deck](https://github.com/asheshgoplani/agent-deck) — full session manager with state detection and MCP management; heavier and less minimal than this repo’s shell/C/Python toolbox
+- [agent-of-empires](https://github.com/njbrake/agent-of-empires) — Rust, tmux + git worktrees, parallel agents; more opinionated around worktrees/session management than simple monitoring + nudging
+- [tmux-agent-indicator](https://github.com/accessd/tmux-agent-indicator) — tmux plugin for visual state feedback (running/needs-input/done); missing process control, sockets, and babysit behavior
+- [tmuxp](https://tmuxp.git-pull.com/) — declarative tmux session manager with YAML/JSON configs; missing agent-state monitoring and babysit semantics
+- [tmuxinator](https://github.com/tmuxinator/tmuxinator) — declarative tmux project/session launcher; missing monitor/socket integration and agent-specific state handling
+- [teamocil](https://github.com/remiprev/teamocil) — YAML tmux session layout manager; missing monitoring and reconciliation logic for agent panes
+- [Zellij](https://zellij.dev/) — alternative terminal multiplexer with built-in layout/config support; would require rebuilding the tmux-specific `pipe-pane`/`send-keys` model
+- [Agent Hand (HN)](https://news.ycombinator.com/item?id=47192207) — Rust, TTL-based idle detection; narrower than this repo’s monitor + orchestration + babysit toolset
+- [Adventures in Babysitting Coding Agents (HN)](https://news.ycombinator.com/item?id=44205137) — useful background/motivation, but not an operator tool you can run directly
 
 This project's angle: no-TUI, socket-first IPC queryable with `nc`, C binary with no runtime deps, babysit loop as first-class feature.
 
