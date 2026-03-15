@@ -39,6 +39,5 @@ Python (`monitor.py`) is the **reference implementation and test oracle**:
 - Pattern config file (JSON/TOML) to avoid recompiling for pattern updates
 - Additional agents (cursor, windsurf, etc.)
 - Enhanced state detection (e.g., "waiting for user input" vs "idle")
-- Swarm apply status/reconcile command for tmux topology, not just babysit workers
 - More layout recipes beyond `tiled` while keeping `rows`/`cols` explicit in config
 - Replace `babysit-manager.sh` with the YAML-driven swarm path once apply/reconcile semantics settle

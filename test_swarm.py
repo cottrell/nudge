@@ -163,3 +163,48 @@ panes:
         ("stop", "0.0", "False"),
         ("start", "0.0", "321", "please continue", "False"),
     ]
+
+
+def test_swarm_status_reports_window_command_and_monitor(monkeypatch, tmp_path: Path, capsys):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+  window: grid
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      prompt: "nudge"
+"""))
+
+    def fake_run(*args, **kwargs):
+        class Proc:
+            def __init__(self, returncode=0, stdout=""):
+                self.returncode = returncode
+                self.stdout = stdout
+        if args[:3] == ("tmux", "has-session", "-t"):
+            return Proc(0, "")
+        if args[:3] == ("tmux", "list-windows", "-t"):
+            return Proc(0, "0: grid\n")
+        if args[:3] == ("tmux", "list-panes", "-t"):
+            return Proc(0, "%0\n")
+        if args[:3] == ("tmux", "display-message", "-p"):
+            return Proc(0, "claude\n")
+        raise AssertionError(f"unexpected tmux call: {args}")
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 1)
+    monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "idle")
+
+    swarm_apply.status(cfg)
+    out = capsys.readouterr().out
+
+    assert "session=demo window=grid exists=yes panes=1/1" in out
+    assert "demo:0.0 cmd=claude monitor=idle babysit=on" in out

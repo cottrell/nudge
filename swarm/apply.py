@@ -20,6 +20,10 @@ def pane_count(cfg: SwarmConfig) -> int:
     return len([line for line in proc.stdout.splitlines() if line.strip()])
 
 
+def socket_path(cfg: SwarmConfig, pane: str) -> str:
+    return f"/tmp/{cfg.session_name}_{pane}.sock"
+
+
 def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
     created_session = False
     created_window = False
@@ -70,6 +74,20 @@ def socket_ready(session_name: str, pane: str) -> bool:
     return '"state"' in proc.stdout
 
 
+def monitor_state(cfg: SwarmConfig, pane: str) -> str:
+    sock = socket_path(cfg, pane)
+    proc = subprocess.run(
+        ["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"],
+        text=True, capture_output=True
+    )
+    if proc.returncode != 0 or '"state"' not in proc.stdout:
+        return "unreachable"
+    for token in ('"working"', '"idle"', '"unknown"', '"rate_limited"', '"error"'):
+        if token in proc.stdout:
+            return token.strip('"')
+    return "unparseable"
+
+
 def ensure_monitor(cfg: SwarmConfig, pane: str, agent: str, dry_run: bool) -> None:
     if socket_ready(cfg.session_name, pane):
         return
@@ -108,21 +126,43 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
 
 
+def status(cfg: SwarmConfig) -> None:
+    session_exists = run("tmux", "has-session", "-t", cfg.session_name, check=False).returncode == 0
+    window_exists = run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) != -1 if session_exists else False
+    actual_count = pane_count(cfg) if window_exists else 0
+    print(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
+    if not window_exists:
+        return
+    for pane in cfg.panes:
+        target = f"{cfg.session_name}:{pane.pane}"
+        proc = run("tmux", "list-panes", "-t", target, check=False)
+        if proc.returncode != 0:
+            print(f"{target} missing")
+            continue
+        command = pane_current_command(cfg, pane.pane)
+        monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
+        print(f"{target} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply tmux swarm topology from YAML config.")
     parser.add_argument("config", help="Path to YAML config")
+    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status"])
     parser.add_argument("--attach", action="store_true", help="Attach to the tmux session after apply")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without changing tmux")
     args = parser.parse_args()
 
     try:
         cfg = load_config(args.config)
-        apply(cfg, args.dry_run)
+        if args.command == "apply":
+            apply(cfg, args.dry_run)
+        else:
+            status(cfg)
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1
 
-    if args.attach and not args.dry_run:
+    if args.command == "apply" and args.attach and not args.dry_run:
         subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
     return 0
 
