@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from common import ROOT_DIR, SHELL_NAMES, SwarmConfig, load_config
+from common import ROOT_DIR, SHELL_NAMES, SwarmConfig, load_config, write_runtime_map
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -141,6 +141,10 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     for pane in cfg.panes:
         ensure_title(cfg, pane.pane, pane.title, dry_run)
         ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
+    if dry_run:
+        print(f"would write runtime map to {cfg.runtime_map_path}")
+    else:
+        write_runtime_map(cfg)
     print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
 
 

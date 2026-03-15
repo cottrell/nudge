@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import apply as swarm_apply
 import babysit_apply
-from common import load_config
+from common import build_runtime_map, load_config
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -376,3 +376,34 @@ panes:
 
 def test_shell_prefixed_command_sets_ps1_prefix():
     assert swarm_apply.shell_prefixed_command("codex", "aicodex") == "export PS1='[codex] '\"$PS1\"; aicodex"
+
+
+def test_runtime_map_contains_only_derived_runtime_paths(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 2
+panes:
+  - pane: "0.0"
+    title: shell
+    command: "htop"
+    monitor: false
+  - pane: "0.1"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      prompt: "continue"
+"""))
+    data = build_runtime_map(cfg)
+    assert data["session_name"] == "demo"
+    assert data["runtime_dir"] == "/tmp/nudge-swarm/demo"
+    assert data["panes"]["0.0"]["target"] == "demo:0.0"
+    assert data["panes"]["0.0"]["socket"] is None
+    assert data["panes"]["0.1"]["socket"] == "/tmp/demo_0.1.sock"
+    assert data["panes"]["0.1"]["babysit"]["pid"] == "/tmp/nudge-swarm/demo/babysit-0-1.pid"

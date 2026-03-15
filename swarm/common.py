@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import yaml
@@ -55,6 +56,10 @@ class SwarmConfig:
     @property
     def runtime_dir(self) -> Path:
         return Path("/tmp/nudge-swarm") / self.session_name
+
+    @property
+    def runtime_map_path(self) -> Path:
+        return self.runtime_dir / "runtime.json"
 
 
 def load_config(path: str | Path) -> SwarmConfig:
@@ -153,3 +158,40 @@ def load_config(path: str | Path) -> SwarmConfig:
         cols=cols,
         panes=panes,
     )
+
+
+def monitor_socket_path(session_name: str, pane: str) -> Path:
+    return Path(f"/tmp/{session_name}_{pane}.sock")
+
+
+def babysit_runtime_paths(cfg: SwarmConfig, pane: str) -> dict[str, str]:
+    stem = f"babysit-{pane.replace('.', '-')}"
+    return {
+        "pid": str(cfg.runtime_dir / f"{stem}.pid"),
+        "log": str(cfg.runtime_dir / f"{stem}.log"),
+        "spec": str(cfg.runtime_dir / f"{stem}.json"),
+    }
+
+
+def build_runtime_map(cfg: SwarmConfig) -> dict:
+    panes: dict[str, dict[str, object]] = {}
+    for pane in cfg.panes:
+        entry: dict[str, object] = {
+            "target": pane.target(cfg.session_name),
+            "socket": str(monitor_socket_path(cfg.session_name, pane.pane)) if pane.monitor else None,
+        }
+        if pane.babysit.enabled:
+            entry["babysit"] = babysit_runtime_paths(cfg, pane.pane)
+        panes[pane.pane] = entry
+    return {
+        "session_name": cfg.session_name,
+        "window_name": cfg.window_name,
+        "runtime_dir": str(cfg.runtime_dir),
+        "runtime_map": str(cfg.runtime_map_path),
+        "panes": panes,
+    }
+
+
+def write_runtime_map(cfg: SwarmConfig) -> None:
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    cfg.runtime_map_path.write_text(json.dumps(build_runtime_map(cfg), indent=2) + "\n")

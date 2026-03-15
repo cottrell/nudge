@@ -8,19 +8,19 @@ import signal
 import subprocess
 import sys
 
-from common import ROOT_DIR, SwarmConfig, load_config
+from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, load_config, write_runtime_map
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
-    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.pid"
+    return Path(babysit_runtime_paths(cfg, pane)["pid"])
 
 
 def log_path(cfg: SwarmConfig, pane: str) -> Path:
-    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.log"
+    return Path(babysit_runtime_paths(cfg, pane)["log"])
 
 
 def spec_path(cfg: SwarmConfig, pane: str) -> Path:
-    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.json"
+    return Path(babysit_runtime_paths(cfg, pane)["spec"])
 
 
 def process_running(pid: int) -> bool:
@@ -116,6 +116,10 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
             stop_worker(cfg, pane, dry_run)
         start_worker(cfg, pane, interval, prompt, dry_run)
 
+    if dry_run:
+        print(f"would write runtime map to {cfg.runtime_map_path}")
+    else:
+        write_runtime_map(cfg)
     print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
 
 
@@ -123,6 +127,8 @@ def stop(cfg: SwarmConfig, dry_run: bool) -> None:
     for path in cfg.runtime_dir.glob("babysit-*.pid"):
         pane = path.name.removeprefix("babysit-").removesuffix(".pid").replace("-", ".")
         stop_worker(cfg, pane, dry_run)
+    if not dry_run:
+        write_runtime_map(cfg)
     print(f"{'Planned stop for' if dry_run else 'Stopped'} babysit workers for {cfg.session_name}")
 
 

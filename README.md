@@ -127,6 +127,7 @@ python swarm/apply.py examples/swarm-grid.yaml status --brief
 python swarm/apply.py examples/swarm-grid.yaml status --brief --watch
 python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
 python swarm/babysit_apply.py examples/swarm-grid.yaml status
+cat /tmp/nudge-swarm/agent_grid/runtime.json
 ```
 
 The current config model is:
@@ -147,6 +148,7 @@ The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` wi
 
 Runtime notes:
 - babysit worker pid/spec/log files live under `/tmp/nudge-swarm/<session>/`
+- `swarm/apply.py` and `swarm/babysit_apply.py` write a derived runtime map to `/tmp/nudge-swarm/<session>/runtime.json`
 - `make test` now includes `test_swarm.py`, which validates config loading and apply/babysit reconciliation logic without needing live tmux agents
 - `swarm/apply.py ... status --watch` redraws in place; use `--brief` for a compact per-pane state view and `--interval` to change the default 1s refresh cadence
 - `title` sets the tmux pane title and the initial shell prompt prefix; if omitted it defaults to the `agent` name or the pane id, and some agent CLIs may later overwrite the terminal title themselves
