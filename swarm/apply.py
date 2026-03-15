@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from common import ROOT_DIR, SHELL_NAMES, SwarmConfig, load_config, write_runtime_map, write_self_awareness_text
+from common import ROOT_DIR, SHELL_NAMES, SWARM_APPLY, SwarmConfig, load_config, write_runtime_map, write_self_awareness_text
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -157,8 +157,8 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     print()
     print("Operator reminders:")
     print()
-    print(f"  - Status: python swarm/apply.py {cfg.path} status --brief")
-    print(f"  - Watch: python swarm/apply.py {cfg.path} status --brief --watch")
+    print(f"  - Status: python {SWARM_APPLY} {cfg.path} status --brief")
+    print(f"  - Watch: python {SWARM_APPLY} {cfg.path} status --brief --watch")
     print()
 
 
