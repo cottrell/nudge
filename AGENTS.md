@@ -45,7 +45,7 @@ When adding or modifying agent patterns:
 - **Implement in C first** (`monitor.c` PATS array)
 - **Also update Python** (`monitor.py` PATTERNS dict) — keeps test oracle accurate
 - Add tests for new patterns in `test_monitor.py`
-- Update help text in `launch.sh`, `attach.sh`, `capture_fixture.sh`, `Makefile`
+- Update help text in `examples/launch-single-pane.sh`, `attach.sh`, `capture_fixture.sh`, `Makefile`
 
 ## Questions?
 

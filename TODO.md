@@ -28,7 +28,7 @@ Python (`monitor.py`) is the **reference implementation and test oracle**:
 
 2. **UTF-8 handling** — The C code validates braille UTF-8 sequences but doesn't fully validate all Unicode. Malformed input could cause issues.
 
-3. **Race conditions** — The `launch-2pane.sh` retry loop helps but doesn't eliminate all timing issues with socket readiness.
+3. **Race conditions** — The `examples/launch-2pane.sh` retry loop helps but doesn't eliminate all timing issues with socket readiness.
 
 4. **Pattern gaps** — Some agents may have unclassified states. Add patterns as new output formats are observed.
 

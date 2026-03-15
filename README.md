@@ -11,12 +11,15 @@ jobs:
 States: `unknown` `working` `idle` `rate_limited` `error`
 
 **User-facing scripts:**
-- `launch.sh <session> <agent>` — create or resume a monitored single-pane session
 - `attach.sh <session-or-target> <agent>` — attach the monitor to an existing session or pane target
 - `babysit.sh <session>` — poll state, nudge on idle, back off on rate_limited
-- `launch-2pane.sh <session> <agent> [command]` — create a monitored split-pane session with a dedicated input pane
 - `keyboard-2pane.sh [target-pane]` — relay typed lines to another pane without prompt clobbering
 - `tmux-send <target> <text...>` — send literal text plus Enter to a pane
+
+**Examples:**
+- `examples/launch-single-pane.sh <session> <agent>` — create or resume a monitored single-pane session
+- `examples/launch-2pane.sh <session> <agent> [command]` — create a monitored split-pane session with a dedicated input pane
+- `examples/launch-agent-grid.sh [session] [window]` — six-pane mixed-agent grid example using explicit pane monitors
 
 The repo name still fits if you think of "nudge" as the original behavior plus
 the surrounding operator tools, but the project is better described as a small
@@ -39,7 +42,7 @@ For multiple panes you must be explicit: `claude_myproject_alice:0.0`.
 
 ```bash
 # create or resume a monitored session and attach to it
-./launch.sh claude_myproject_alice claude
+./examples/launch-single-pane.sh claude_myproject_alice claude
 
 # start the agent inside tmux if the session is new
 tmux send-keys -t claude_myproject_alice:0.0 -l -- "claude --dangerously-skip-permissions"
@@ -89,7 +92,7 @@ Debug helpers for either backend:
 ```bash
 MONITOR_DEBUG=1 ./attach.sh mysession claude
 MONITOR_STATE_LOG=1 ./attach.sh mysession claude
-MONITOR_DEBUG=1 MONITOR_STATE_LOG=1 ./launch-2pane.sh mysession gemini
+MONITOR_DEBUG=1 MONITOR_STATE_LOG=1 ./examples/launch-2pane.sh mysession gemini
 ```
 
 Defaults:
@@ -107,12 +110,12 @@ To add an agent: add a key to `PATTERNS` in `monitor.py`.
 ## Two-pane interaction
 
 For a monitored split-pane setup where your typing happens in a dedicated input
-pane, use `launch-2pane.sh`:
+pane, use `examples/launch-2pane.sh`:
 
 ```bash
 # top pane: agent or shell, monitored on :0.0
 # bottom pane: input relay on :0.1
-./launch-2pane.sh mychat codex
+./examples/launch-2pane.sh mychat codex
 ```
 
 This creates one tmux window with:
@@ -125,7 +128,7 @@ To send text from another terminal:
 ```
 
 `tmux-send` defaults a bare session name like `mychat` to `mychat:0.0`, which
-matches the top pane created by `launch-2pane.sh`.
+matches the top pane created by `examples/launch-2pane.sh`.
 
 ## Similar projects
 

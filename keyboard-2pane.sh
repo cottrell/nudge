@@ -1,7 +1,7 @@
 #!/bin/bash
 # Read lines in one tmux pane and forward them to another pane.
 # Usage: ./keyboard-2pane.sh [target-pane]
-# launch-2pane.sh passes an explicit target like session:0.0.
+# examples/launch-2pane.sh passes an explicit target like session:0.0.
 
 # Verify we are in tmux
 if [ -z "$TMUX" ]; then
