@@ -139,10 +139,16 @@ matches the top pane created by `examples/launch-2pane.sh`.
 - [agent-deck](https://github.com/asheshgoplani/agent-deck) — full session manager with state detection and MCP management
 - [agent-of-empires](https://github.com/njbrake/agent-of-empires) — Rust, tmux + git worktrees, parallel agents
 - [tmux-agent-indicator](https://github.com/accessd/tmux-agent-indicator) — tmux plugin for visual state feedback (running/needs-input/done)
+- [tmuxp](https://tmuxp.git-pull.com/) — declarative tmux session manager with YAML/JSON configs
+- [tmuxinator](https://github.com/tmuxinator/tmuxinator) — declarative tmux project/session launcher
+- [teamocil](https://github.com/remiprev/teamocil) — YAML tmux session layout manager
+- [Zellij](https://zellij.dev/) — alternative terminal multiplexer with built-in layout/config support
 - [Agent Hand (HN)](https://news.ycombinator.com/item?id=47192207) — Rust, TTL-based idle detection
 - [Adventures in Babysitting Coding Agents (HN)](https://news.ycombinator.com/item?id=44205137)
 
 This project's angle: no-TUI, socket-first IPC queryable with `nc`, C binary with no runtime deps, babysit loop as first-class feature.
+
+For now, tmux remains the primary substrate here because `pipe-pane`, `send-keys`, and pane-target naming are the core control primitives the monitor and babysit loops already rely on. A useful later experiment would be to ask agents to re-implement the same config-driven topology/orchestration layer on top of `tmuxp`, `tmuxinator`, or `zellij` and compare complexity, reliability, and operator ergonomics.
 
 ## Community patterns
 
