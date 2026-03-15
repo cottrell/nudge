@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -16,6 +17,10 @@ def pid_path(cfg: SwarmConfig, pane: str) -> Path:
 
 def log_path(cfg: SwarmConfig, pane: str) -> Path:
     return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.log"
+
+
+def spec_path(cfg: SwarmConfig, pane: str) -> Path:
+    return cfg.runtime_dir / f"babysit-{pane.replace('.', '-')}.json"
 
 
 def process_running(pid: int) -> bool:
@@ -35,6 +40,22 @@ def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, str]]:
     return out
 
 
+def desired_spec(cfg: SwarmConfig, pane: str, interval: int, prompt: str) -> dict:
+    return {
+        "session": cfg.session_name,
+        "pane": pane,
+        "target": f"{cfg.session_name}:{pane}",
+        "interval_secs": interval,
+        "prompt": prompt,
+    }
+
+
+def load_spec(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())
+
+
 def start_worker(cfg: SwarmConfig, pane: str, interval: int, prompt: str, dry_run: bool) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     if dry_run:
@@ -49,6 +70,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, prompt: str, dry_ru
             text=True,
         )
     pid_path(cfg, pane).write_text(str(proc.pid))
+    spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, prompt), indent=2) + "\n")
 
 
 def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
@@ -66,6 +88,7 @@ def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
     finally:
         if not dry_run:
             path.unlink(missing_ok=True)
+            spec_path(cfg, pane).unlink(missing_ok=True)
 
 
 def os_kill(pid: int, sig: signal.Signals) -> None:
@@ -84,12 +107,13 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
 
     for pane, (interval, prompt) in desired.items():
         path = pid_path(cfg, pane)
+        wanted = desired_spec(cfg, pane, interval, prompt)
+        current_spec = load_spec(spec_path(cfg, pane))
         if path.exists():
             pid = int(path.read_text().strip())
-            if process_running(pid):
+            if process_running(pid) and current_spec == wanted:
                 continue
-            if not dry_run:
-                path.unlink(missing_ok=True)
+            stop_worker(cfg, pane, dry_run)
         start_worker(cfg, pane, interval, prompt, dry_run)
 
     print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
@@ -111,7 +135,13 @@ def status(cfg: SwarmConfig) -> None:
             continue
         pid = int(path.read_text().strip())
         state = "running" if process_running(pid) else "stale"
-        print(f"{cfg.session_name}:{pane} {state} pid={pid}")
+        drift = ""
+        spec = load_spec(spec_path(cfg, pane))
+        if spec:
+            desired_interval, desired_prompt = desired[pane]
+            if spec != desired_spec(cfg, pane, desired_interval, desired_prompt):
+                drift = " drifted"
+        print(f"{cfg.session_name}:{pane} {state}{drift} pid={pid}")
 
 
 def main() -> int:
