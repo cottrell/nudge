@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Poll a monitored session and nudge if idle/unknown for too long.
+# Poll a monitored session and nudge if idle for too long.
 # Usage: ./babysit.sh <session-or-target> [interval_secs] [long_nudge] [short_nudge]
 
 if [ -z "$1" ]; then
@@ -55,9 +55,12 @@ while true; do
     sleep "$INTERVAL"
     STATE=$(echo status | nc -U "$SOCK" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['state'])" 2>/dev/null)
     case "$STATE" in
-        idle|unknown)
-            echo "$(date '+%H:%M:%S') $SESSION is $STATE — nudging"
+        idle)
+            echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
             send_message "$SHORT_NUDGE"
+            ;;
+        unknown)
+            echo "$(date '+%H:%M:%S') $SESSION is unknown — waiting"
             ;;
         rate_limited)
             echo "$(date '+%H:%M:%S') $SESSION is rate_limited — waiting"
