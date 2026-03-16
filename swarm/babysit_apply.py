@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 import signal
 import subprocess
 import sys
 
-from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, load_config, write_runtime_map, write_self_awareness_text
+from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
@@ -155,24 +154,8 @@ def status(cfg: SwarmConfig) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Apply config-driven babysit workers from YAML config.")
-    parser.add_argument("config", help="Path to YAML config")
-    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "stop", "status"])
-    parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without starting/stopping workers")
-    args = parser.parse_args()
-
-    try:
-        cfg = load_config(args.config)
-        if args.command == "apply":
-            apply(cfg, args.dry_run)
-        elif args.command == "stop":
-            stop(cfg, args.dry_run)
-        else:
-            status(cfg)
-    except Exception as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    return 0
+    import cli as swarm_cli
+    return swarm_cli.main(["babysit", *sys.argv[1:]])
 
 
 if __name__ == "__main__":

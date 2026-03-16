@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 import apply as swarm_apply
 import babysit_apply
 import cli as swarm_cli
-from common import ROOT_DIR, SWARM_APPLY, build_runtime_map, build_self_awareness_text, load_config
+from common import ROOT_DIR, SWARM_CLI, build_runtime_map, build_self_awareness_text, load_config
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -461,8 +461,8 @@ panes:
 """))
     text = build_self_awareness_text(cfg)
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
-    assert f"Status: python {SWARM_APPLY} {cfg.path} status --brief" in text
-    assert f"Watch: python {SWARM_APPLY} {cfg.path} status --brief --watch" in text
+    assert f"Status: python {SWARM_CLI} status {cfg.path} --brief" in text
+    assert f"Watch: python {SWARM_CLI} status {cfg.path} --brief -w" in text
 
 
 def test_broadcast_targets_monitored_panes_by_default(monkeypatch, tmp_path: Path, capsys):

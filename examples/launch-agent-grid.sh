@@ -29,12 +29,24 @@ wait
 sleep 1
 
 echo "Starting agents..."
-tmux send-keys -t "$SESSION:$WINDOW.0" "${CMD}aicodex" C-m
-tmux send-keys -t "$SESSION:$WINDOW.1" "${CMD}aiclaude" C-m
-tmux send-keys -t "$SESSION:$WINDOW.2" "${CMD}aicopilot" C-m
-tmux send-keys -t "$SESSION:$WINDOW.3" "${CMD}aigemini" C-m
-tmux send-keys -t "$SESSION:$WINDOW.4" "${CMD}aiqwen" C-m
-tmux send-keys -t "$SESSION:$WINDOW.5" "${CMD}aimistral" C-m
+tmux send-keys -t "$SESSION:$WINDOW.0" -l -- "${CMD}aicodex"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.0" C-m
+tmux send-keys -t "$SESSION:$WINDOW.1" -l -- "${CMD}aiclaude"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.1" C-m
+tmux send-keys -t "$SESSION:$WINDOW.2" -l -- "${CMD}aicopilot"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.2" C-m
+tmux send-keys -t "$SESSION:$WINDOW.3" -l -- "${CMD}aigemini"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.3" C-m
+tmux send-keys -t "$SESSION:$WINDOW.4" -l -- "${CMD}aiqwen"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.4" C-m
+tmux send-keys -t "$SESSION:$WINDOW.5" -l -- "${CMD}aimistral"
+sleep 0.1
+tmux send-keys -t "$SESSION:$WINDOW.5" C-m
 
 echo "Done. Query with: echo status | nc -U /tmp/${SESSION}_${WINDOW}.0.sock"
 tmux attach -t "$SESSION"

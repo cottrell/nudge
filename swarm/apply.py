@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from common import ROOT_DIR, SHELL_NAMES, SWARM_APPLY, SwarmConfig, load_config, write_runtime_map, write_self_awareness_text
+from common import ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -177,8 +177,8 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     print()
     print("Operator reminders:")
     print()
-    print(f"  - Status: python {SWARM_APPLY} {cfg.path} status --brief")
-    print(f"  - Watch: python {SWARM_APPLY} {cfg.path} status --brief --watch")
+    print(f"  - Status: python {SWARM_CLI} status {cfg.path} --brief")
+    print(f"  - Watch: python {SWARM_CLI} status {cfg.path} --brief -w")
     print()
 
 
@@ -235,38 +235,8 @@ def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Apply tmux swarm topology from YAML config.")
-    parser.add_argument("config", help="Path to YAML config")
-    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status", "broadcast"])
-    parser.add_argument("message", nargs="*", help="Broadcast message text when using the broadcast command")
-    parser.add_argument("--attach", action="store_true", help="Attach to the tmux session after apply")
-    parser.add_argument("--brief", action="store_true", help="With status, print a compact per-pane state view")
-    parser.add_argument("--watch", action="store_true", help="With status, refresh the output in place until interrupted")
-    parser.add_argument("--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
-    parser.add_argument("--include-nonmonitored", action="store_true", help="With broadcast, also send to panes with monitor=false")
-    parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without changing tmux")
-    args = parser.parse_args()
-
-    try:
-        cfg = load_config(args.config)
-        if args.command == "apply":
-            apply(cfg, args.dry_run)
-        elif args.command == "status":
-            if args.interval <= 0:
-                raise ValueError("--interval must be > 0")
-            if args.watch:
-                watch_status(cfg, args.brief, args.interval)
-            else:
-                print_status(cfg, args.brief)
-        else:
-            broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
-    except Exception as e:
-        print(str(e), file=sys.stderr)
-        return 1
-
-    if args.command == "apply" and args.attach and not args.dry_run:
-        subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
-    return 0
+    import cli as swarm_cli
+    return swarm_cli.main(["apply", *sys.argv[1:]])
 
 
 if __name__ == "__main__":

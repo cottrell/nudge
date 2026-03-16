@@ -9,6 +9,7 @@ import yaml
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
 SWARM_APPLY = ROOT_DIR / "swarm" / "apply.py"
 SWARM_BABYSIT_APPLY = ROOT_DIR / "swarm" / "babysit_apply.py"
 VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "vibe", "qwen")
@@ -227,8 +228,8 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
     lines = [
         f"Swarm session: {cfg.session_name}:{cfg.window_name}",
         f"Runtime map: {cfg.runtime_map_path}",
-        f"Status: python {SWARM_APPLY} {config_path} status --brief",
-        f"Watch: python {SWARM_APPLY} {config_path} status --brief --watch",
+        f"Status: python {SWARM_CLI} status {config_path} --brief",
+        f"Watch: python {SWARM_CLI} status {config_path} --brief -w",
         "",
         "If you need to coordinate with other panes, inspect the runtime map for:",
         "- tmux pane targets",
