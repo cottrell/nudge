@@ -126,6 +126,7 @@ python swarm/apply.py examples/swarm-grid.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml status
 python swarm/apply.py examples/swarm-grid.yaml status --brief
 python swarm/apply.py examples/swarm-grid.yaml status --brief --watch
+python swarm/apply.py examples/swarm-grid.yaml broadcast "AGENTS.md updated; please re-read it before continuing."
 python swarm/babysit_apply.py examples/swarm-grid.yaml apply --dry-run
 python swarm/babysit_apply.py examples/swarm-grid.yaml status
 cat /tmp/nudge-swarm/agent_grid/runtime.json
@@ -146,6 +147,7 @@ Important current limitation:
 
 The split between the two entry points is deliberate:
 - `swarm/apply.py` reconciles tmux topology, monitors, and initial pane commands
+- `swarm/apply.py ... broadcast` sends an operator message immediately to all monitored panes from the config
 - `swarm/babysit_apply.py` reconciles babysit workers from the same YAML config
 
 The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.

@@ -131,6 +131,26 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
     subprocess.run(["tmux", "send-keys", "-t", f"{cfg.session_name}:{pane}", "C-m"], check=True, text=True)
 
 
+def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool) -> None:
+    if not message.strip():
+        raise ValueError("broadcast message must not be empty")
+    sent = 0
+    for pane in cfg.panes:
+        if not include_nonmonitored and not pane.monitor:
+            continue
+        target = f"{cfg.session_name}:{pane.pane}"
+        if dry_run:
+            print(f"would broadcast to {target} ({pane.title})")
+            sent += 1
+            continue
+        subprocess.run([str(ROOT_DIR / "tmux-send"), target, message], check=True, text=True)
+        print(f"broadcast to {target} ({pane.title})")
+        sent += 1
+    if sent == 0:
+        scope = "all panes" if include_nonmonitored else "monitored panes"
+        raise ValueError(f"no {scope} matched for broadcast")
+
+
 def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     ensure_grid(cfg, dry_run)
     for pane in cfg.panes:
@@ -217,11 +237,13 @@ def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply tmux swarm topology from YAML config.")
     parser.add_argument("config", help="Path to YAML config")
-    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status"])
+    parser.add_argument("command", nargs="?", default="apply", choices=["apply", "status", "broadcast"])
+    parser.add_argument("message", nargs="*", help="Broadcast message text when using the broadcast command")
     parser.add_argument("--attach", action="store_true", help="Attach to the tmux session after apply")
     parser.add_argument("--brief", action="store_true", help="With status, print a compact per-pane state view")
     parser.add_argument("--watch", action="store_true", help="With status, refresh the output in place until interrupted")
     parser.add_argument("--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
+    parser.add_argument("--include-nonmonitored", action="store_true", help="With broadcast, also send to panes with monitor=false")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print actions without changing tmux")
     args = parser.parse_args()
 
@@ -229,13 +251,15 @@ def main() -> int:
         cfg = load_config(args.config)
         if args.command == "apply":
             apply(cfg, args.dry_run)
-        else:
+        elif args.command == "status":
             if args.interval <= 0:
                 raise ValueError("--interval must be > 0")
             if args.watch:
                 watch_status(cfg, args.brief, args.interval)
             else:
                 print_status(cfg, args.brief)
+        else:
+            broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 1

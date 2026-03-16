@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import apply as swarm_apply
 import babysit_apply
-from common import SWARM_APPLY, build_runtime_map, build_self_awareness_text, load_config
+from common import ROOT_DIR, SWARM_APPLY, build_runtime_map, build_self_awareness_text, load_config
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -462,3 +462,93 @@ panes:
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
     assert f"Status: python {SWARM_APPLY} {cfg.path} status --brief" in text
     assert f"Watch: python {SWARM_APPLY} {cfg.path} status --brief --watch" in text
+
+
+def test_broadcast_targets_monitored_panes_by_default(monkeypatch, tmp_path: Path, capsys):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 2
+panes:
+  - pane: "0.0"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+  - pane: "0.1"
+    title: shell
+    command: "htop"
+    monitor: false
+"""))
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(args, check, text):
+        calls.append(tuple(args))
+        class Proc:
+            returncode = 0
+        return Proc()
+
+    monkeypatch.setattr(swarm_apply.subprocess, "run", fake_run)
+    swarm_apply.broadcast(cfg, "AGENTS updated", include_nonmonitored=False, dry_run=False)
+    out = capsys.readouterr().out
+
+    assert calls == [(str(ROOT_DIR / "tmux-send"), "demo:0.0", "AGENTS updated")]
+    assert "broadcast to demo:0.0 (claude)" in out
+
+
+def test_broadcast_can_include_nonmonitored_panes(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 2
+panes:
+  - pane: "0.0"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+  - pane: "0.1"
+    title: shell
+    command: "htop"
+    monitor: false
+"""))
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(args, check, text):
+        calls.append(tuple(args))
+        class Proc:
+            returncode = 0
+        return Proc()
+
+    monkeypatch.setattr(swarm_apply.subprocess, "run", fake_run)
+    swarm_apply.broadcast(cfg, "hello all", include_nonmonitored=True, dry_run=False)
+
+    assert calls == [
+        (str(ROOT_DIR / "tmux-send"), "demo:0.0", "hello all"),
+        (str(ROOT_DIR / "tmux-send"), "demo:0.1", "hello all"),
+    ]
+
+
+def test_broadcast_rejects_empty_message(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+"""))
+    with pytest.raises(ValueError, match="must not be empty"):
+        swarm_apply.broadcast(cfg, "   ", include_nonmonitored=False, dry_run=False)
