@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import apply as swarm_apply
 import babysit_apply
+import cli as swarm_cli
 from common import ROOT_DIR, SWARM_APPLY, build_runtime_map, build_self_awareness_text, load_config
 
 
@@ -552,3 +553,21 @@ panes:
 """))
     with pytest.raises(ValueError, match="must not be empty"):
         swarm_apply.broadcast(cfg, "   ", include_nonmonitored=False, dry_run=False)
+
+
+def test_cli_status_watch_dispatches_to_watch_status(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(swarm_apply, "watch_status", lambda cfg, brief, interval: calls.append(("watch", cfg, str(brief), str(interval))))
+    rc = swarm_cli.main(["status", "examples/swarm-grid.yaml", "--brief", "-w", "--interval", "2.5"])
+    assert rc == 0
+    assert calls == [("watch", "CFG", "True", "2.5")]
+
+
+def test_cli_babysit_status_dispatches(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(babysit_apply, "status", lambda cfg: calls.append(("status", cfg)))
+    rc = swarm_cli.main(["babysit", "status", "examples/swarm-grid.yaml"])
+    assert rc == 0
+    assert calls == [("status", "CFG")]

@@ -121,6 +121,15 @@ What went wrong: the earlier tests were incomplete, not wholly wrong. They repla
 There is now an experimental config-driven orchestration path under `swarm/`:
 
 ```bash
+python swarm/cli.py apply examples/swarm-single.yaml --dry-run
+python swarm/cli.py apply examples/swarm-grid.yaml --dry-run
+python swarm/cli.py status examples/swarm-grid.yaml --brief
+python swarm/cli.py status examples/swarm-grid.yaml --brief -w
+python swarm/cli.py broadcast examples/swarm-grid.yaml "AGENTS.md updated; please re-read it before continuing."
+python swarm/cli.py babysit apply examples/swarm-grid.yaml --dry-run
+python swarm/cli.py babysit status examples/swarm-grid.yaml
+
+# compatibility entry points
 python swarm/apply.py examples/swarm-single.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml --dry-run
 python swarm/apply.py examples/swarm-grid.yaml status
@@ -149,6 +158,9 @@ The split between the two entry points is deliberate:
 - `swarm/apply.py` reconciles tmux topology, monitors, and initial pane commands
 - `swarm/apply.py ... broadcast` sends an operator message immediately to all monitored panes from the config
 - `swarm/babysit_apply.py` reconciles babysit workers from the same YAML config
+
+`swarm/cli.py` is now the preferred additive front door. The older `swarm/apply.py` and
+`swarm/babysit_apply.py` entry points still work and currently call the same underlying logic.
 
 The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.
 
