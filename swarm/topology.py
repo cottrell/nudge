@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
 import shlex
 import subprocess
 import sys
@@ -71,19 +70,13 @@ def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
 
 def socket_ready(session_name: str, pane: str) -> bool:
     sock = f"/tmp/{session_name}_{pane}.sock"
-    proc = subprocess.run(
-        ["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"],
-        text=True, capture_output=True
-    )
+    proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
     return '"state"' in proc.stdout
 
 
 def monitor_state(cfg: SwarmConfig, pane: str) -> str:
     sock = socket_path(cfg, pane)
-    proc = subprocess.run(
-        ["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"],
-        text=True, capture_output=True
-    )
+    proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
     if proc.returncode != 0 or '"state"' not in proc.stdout:
         return "unreachable"
     for token in ('"working"', '"idle"', '"unknown"', '"rate_limited"', '"error"'):
@@ -232,12 +225,3 @@ def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
             time.sleep(interval)
     except KeyboardInterrupt:
         return
-
-
-def main() -> int:
-    import cli as swarm_cli
-    return swarm_cli.main(["apply", *sys.argv[1:]])
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

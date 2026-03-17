@@ -6,8 +6,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
-import apply as swarm_apply
-import babysit_apply
+import topology as swarm_apply
+import babysitctl
 import cli as swarm_cli
 from common import ROOT_DIR, SWARM_CLI, build_runtime_map, build_self_awareness_text, load_config
 
@@ -266,8 +266,8 @@ panes:
       prompt: "please continue"
 """))
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
-    babysit_apply.pid_path(cfg, "0.0").write_text("1234")
-    babysit_apply.spec_path(cfg, "0.0").write_text("""{
+    babysitctl.pid_path(cfg, "0.0").write_text("1234")
+    babysitctl.spec_path(cfg, "0.0").write_text("""{
   "session": "demo",
   "pane": "0.0",
   "target": "demo:0.0",
@@ -278,11 +278,11 @@ panes:
 """)
     actions: list[tuple[str, ...]] = []
 
-    monkeypatch.setattr(babysit_apply, "process_running", lambda pid: pid == 1234)
-    monkeypatch.setattr(babysit_apply, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
-    monkeypatch.setattr(babysit_apply, "start_worker", lambda cfg, pane, interval, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), long_prompt, short_prompt, str(dry_run))))
+    monkeypatch.setattr(babysitctl, "process_running", lambda pid: pid == 1234)
+    monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
+    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), long_prompt, short_prompt, str(dry_run))))
 
-    babysit_apply.apply(cfg, dry_run=False)
+    babysitctl.apply(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
@@ -567,7 +567,7 @@ def test_cli_status_watch_dispatches_to_watch_status(monkeypatch):
 def test_cli_babysit_status_dispatches(monkeypatch):
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
-    monkeypatch.setattr(babysit_apply, "status", lambda cfg: calls.append(("status", cfg)))
+    monkeypatch.setattr(babysitctl, "status", lambda cfg: calls.append(("status", cfg)))
     rc = swarm_cli.main(["babysit", "status", "examples/swarm-grid.yaml"])
     assert rc == 0
     assert calls == [("status", "CFG")]

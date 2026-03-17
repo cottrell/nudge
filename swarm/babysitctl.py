@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import signal
 import subprocess
-import sys
 
 from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
 
@@ -73,6 +72,11 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, s
     spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, long_prompt, short_prompt), indent=2) + "\n")
 
 
+def os_kill(pid: int, sig: signal.Signals) -> None:
+    import os
+    os.kill(pid, sig)
+
+
 def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
     path = pid_path(cfg, pane)
     if not path.exists():
@@ -83,17 +87,11 @@ def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
             if dry_run:
                 print(f"would stop babysit for {cfg.session_name}:{pane} pid={pid}")
             else:
-                signal_name = signal.SIGTERM
-                os_kill(pid, signal_name)
+                os_kill(pid, signal.SIGTERM)
     finally:
         if not dry_run:
             path.unlink(missing_ok=True)
             spec_path(cfg, pane).unlink(missing_ok=True)
-
-
-def os_kill(pid: int, sig: signal.Signals) -> None:
-    import os
-    os.kill(pid, sig)
 
 
 def apply(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -151,12 +149,3 @@ def status(cfg: SwarmConfig) -> None:
             if spec != desired_spec(cfg, pane, desired_interval, desired_long_prompt, desired_short_prompt):
                 drift = " drifted"
         print(f"{cfg.session_name}:{pane} {state}{drift} pid={pid}")
-
-
-def main() -> int:
-    import cli as swarm_cli
-    return swarm_cli.main(["babysit", *sys.argv[1:]])
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

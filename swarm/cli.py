@@ -5,8 +5,8 @@ import argparse
 import subprocess
 import sys
 
-import apply as swarm_apply
-import babysit_apply as swarm_babysit
+import topology as swarm_topology
+import babysitctl as swarm_babysit
 from common import load_config
 
 
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "apply":
             cfg = load_config(args.config)
-            swarm_apply.apply(cfg, args.dry_run)
+            swarm_topology.apply(cfg, args.dry_run)
             if args.attach and not args.dry_run:
                 subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
             return 0
@@ -59,14 +59,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.interval <= 0:
                 raise ValueError("--interval must be > 0")
             if args.watch:
-                swarm_apply.watch_status(cfg, args.brief, args.interval)
+                swarm_topology.watch_status(cfg, args.brief, args.interval)
             else:
-                swarm_apply.print_status(cfg, args.brief)
+                swarm_topology.print_status(cfg, args.brief)
             return 0
 
         if args.command == "broadcast":
             cfg = load_config(args.config)
-            swarm_apply.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
+            swarm_topology.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
             return 0
 
         cfg = load_config(args.config)

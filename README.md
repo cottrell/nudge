@@ -149,8 +149,6 @@ The swarm interface now lives under one CLI:
 - `swarm/cli.py broadcast` sends an operator message immediately to all monitored panes from the config
 - `swarm/cli.py babysit apply|status|stop` reconciles babysit workers from the same YAML config
 
-The older `swarm/apply.py` and `swarm/babysit_apply.py` scripts remain as compatibility shims.
-
 The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.
 
 Runtime notes:

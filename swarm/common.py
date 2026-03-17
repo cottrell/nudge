@@ -10,8 +10,6 @@ import yaml
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
-SWARM_APPLY = ROOT_DIR / "swarm" / "apply.py"
-SWARM_BABYSIT_APPLY = ROOT_DIR / "swarm" / "babysit_apply.py"
 VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "vibe", "qwen")
 SHELL_NAMES = {"bash", "sh", "zsh", "fish"}
 PANE_RE = re.compile(r"^0\.(\d+)$")
