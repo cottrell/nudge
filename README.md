@@ -152,11 +152,12 @@ The swarm interface now lives under one CLI:
 The intent is to replace ad hoc shell orchestration like `babysit-manager.sh` with short-lived, idempotent Python apply steps.
 
 Runtime notes:
-- babysit worker pid/spec/log files live under `/tmp/nudge-swarm/<session>/`
+- babysit worker pid/spec/log/state files live under `/tmp/nudge-swarm/<session>/`
 - `swarm/cli.py apply` and `swarm/cli.py babysit apply` write a derived runtime map to `/tmp/nudge-swarm/<session>/runtime.json`
 - they also write `/tmp/nudge-swarm/<session>/self-awareness.txt`, a short copy-pastable note with the runtime map path plus status/watch commands you can reference in prompts or `AGENTS.md`
 - `make test` now includes `test_swarm.py`, which validates config loading and apply/babysit reconciliation logic without needing live tmux agents
 - `swarm/cli.py status -w` redraws in place; use `--brief` for a compact per-pane state view and `--interval` to change the default 1s refresh cadence
+- when babysit is enabled, `status` and `status --brief` also show the next babysit countdown from the worker state file
 - `title` sets the tmux pane title and the initial shell prompt prefix; if omitted it defaults to the `agent` name or the pane id, and some agent CLIs may later overwrite the terminal title themselves
 - babysit sends the long prompt once when the worker starts, then uses the short prompt for later idle nudges; if no short prompt is configured it falls back to the long prompt
 - the runtime map is written unconditionally as an operator/runtime artifact, but it is not auto-injected into agent prompts; if you want agents to coordinate or inspect each other, mention the runtime map path explicitly in your long or short babysit prompt

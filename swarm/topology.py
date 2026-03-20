@@ -5,8 +5,10 @@ import shlex
 import subprocess
 import sys
 import time
+import json
 
 from common import ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
+from babysitctl import state_path as babysit_state_path
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -193,12 +195,35 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append(f"{target} missing")
             continue
         monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
+        babysit_note = ""
+        if pane.babysit.enabled:
+            babysit_note = _format_babysit_note(cfg, pane.pane)
         if brief:
-            lines.append(f"{target} {pane.title} {monitor}")
+            lines.append(f"{target} {pane.title} {monitor}{babysit_note}")
         else:
             command = pane_current_command(cfg, pane.pane)
-            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}")
+            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}{babysit_note}")
     return lines
+
+
+def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
+    path = babysit_state_path(cfg, pane)
+    if not path.exists():
+        return " babysit=?"
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return " babysit=?"
+    now = int(time.time())
+    next_poll_at = int(data.get("next_poll_at") or 0)
+    last_monitor_state = str(data.get("last_monitor_state") or "").strip()
+    next_force_at = int(data.get("next_force_nudge_at") or 0)
+    parts: list[str] = []
+    if next_poll_at > 0:
+        parts.append(f"next={max(0, next_poll_at - now)}s")
+    if next_force_at > 0 and last_monitor_state in {"unknown", "working", "error"}:
+        parts.append(f"force={max(0, next_force_at - now)}s")
+    return f" babysit[{', '.join(parts) if parts else '?'}]"
 
 
 def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) -> None:

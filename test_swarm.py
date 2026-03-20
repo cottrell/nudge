@@ -441,8 +441,50 @@ panes:
     assert data["panes"]["0.0"]["socket"] is None
     assert data["panes"]["0.1"]["socket"] == "/tmp/demo_0.1.sock"
     assert data["panes"]["0.1"]["babysit"]["pid"] == "/tmp/nudge-swarm/demo/babysit-0-1.pid"
+    assert data["panes"]["0.1"]["babysit"]["state"] == "/tmp/nudge-swarm/demo/babysit-0-1.state.json"
     assert data["panes"]["0.1"]["babysit"]["has_long_prompt"] is True
     assert data["panes"]["0.1"]["babysit"]["has_short_prompt"] is True
+
+
+def test_swarm_status_brief_includes_babysit_countdown(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      interval_secs: 60
+      prompt: "continue"
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    Path(cfg.runtime_dir / "babysit-0-0.state.json").write_text('{"next_poll_at": 1060, "last_monitor_state": "idle", "next_force_nudge_at": 0}\n')
+    from topology import status_lines
+    import topology
+    real_time = topology.time
+    class FakeTime:
+        @staticmethod
+        def time():
+            return 1000
+        @staticmethod
+        def strftime(fmt):
+            return real_time.strftime(fmt)
+    topology.time = FakeTime
+    topology.run = lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})()
+    topology.monitor_state = lambda cfg, pane: "idle"
+    try:
+        lines = status_lines(cfg, brief=True)
+    finally:
+        topology.time = real_time
+    assert lines[1] == "demo:0.0 claude idle babysit[next=60s]"
 
 
 def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):

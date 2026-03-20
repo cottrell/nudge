@@ -21,6 +21,10 @@ def spec_path(cfg: SwarmConfig, pane: str) -> Path:
     return Path(babysit_runtime_paths(cfg, pane)["spec"])
 
 
+def state_path(cfg: SwarmConfig, pane: str) -> Path:
+    return Path(babysit_runtime_paths(cfg, pane)["state"])
+
+
 def process_running(pid: int) -> bool:
     try:
         Path(f"/proc/{pid}")
@@ -60,6 +64,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, s
     if dry_run:
         print(f"would start babysit for {cfg.session_name}:{pane} interval={interval}")
         return
+    env = dict(**__import__("os").environ, BABYSIT_STATE_FILE=str(state_path(cfg, pane)))
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(
             [str(ROOT_DIR / "babysit.sh"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
@@ -67,6 +72,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, s
             stderr=log,
             start_new_session=True,
             text=True,
+            env=env,
         )
     pid_path(cfg, pane).write_text(str(proc.pid))
     spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, long_prompt, short_prompt), indent=2) + "\n")
@@ -92,6 +98,7 @@ def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
         if not dry_run:
             path.unlink(missing_ok=True)
             spec_path(cfg, pane).unlink(missing_ok=True)
+            state_path(cfg, pane).unlink(missing_ok=True)
 
 
 def apply(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -148,4 +155,15 @@ def status(cfg: SwarmConfig) -> None:
             desired_interval, desired_long_prompt, desired_short_prompt = desired[pane]
             if spec != desired_spec(cfg, pane, desired_interval, desired_long_prompt, desired_short_prompt):
                 drift = " drifted"
-        print(f"{cfg.session_name}:{pane} {state}{drift} pid={pid}")
+        extra = ""
+        state_file = state_path(cfg, pane)
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text())
+                now = int(__import__("time").time())
+                next_poll_at = int(data.get("next_poll_at") or 0)
+                if next_poll_at > 0:
+                    extra = f" next={max(0, next_poll_at - now)}s"
+            except Exception:
+                extra = " next=?"
+        print(f"{cfg.session_name}:{pane} {state}{drift} pid={pid}{extra}")

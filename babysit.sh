@@ -26,6 +26,7 @@ INTERVAL=${2:-60}
 LONG_NUDGE=${3:-"Please continue."}
 SHORT_NUDGE=${4:-"$LONG_NUDGE"}
 MAX_NONIDLE_SECS=${BABYSIT_MAX_NONIDLE_SECS:-1800}
+STATE_FILE=${BABYSIT_STATE_FILE:-}
 
 # Socket matches attach.sh naming: session_window-pane.sock
 WINDOW_PANE="${TARGET#*:}"
@@ -52,9 +53,27 @@ send_message() {
     tmux send-keys -t "$TARGET" C-m
 }
 
+write_state() {
+    [ -n "$STATE_FILE" ] || return 0
+    NOW_TS=${1:-$(date +%s)}
+    LAST_STATE=${2:-""}
+    LAST_ACTION=${3:-""}
+    LAST_NUDGE_AT=${4:-0}
+    NEXT_POLL_AT=$((NOW_TS + INTERVAL))
+    NEXT_FORCE_AT=0
+    if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [[ "$LAST_STATE" =~ ^(unknown|working|error)$ ]]; then
+        NEXT_FORCE_AT=$((NONIDLE_SINCE + MAX_NONIDLE_SECS))
+    fi
+    mkdir -p "$(dirname "$STATE_FILE")"
+    cat >"$STATE_FILE" <<EOF
+{"target":"$TARGET","interval_secs":$INTERVAL,"last_monitor_state":"$LAST_STATE","last_action":"$LAST_ACTION","last_nudge_at":$LAST_NUDGE_AT,"nonidle_since":$NONIDLE_SINCE,"next_poll_at":$NEXT_POLL_AT,"next_force_nudge_at":$NEXT_FORCE_AT}
+EOF
+}
+
 if [ -n "$LONG_NUDGE" ]; then
     echo "$(date '+%H:%M:%S') $SESSION startup babysit prompt"
     send_message "$LONG_NUDGE"
+    write_state "$(date +%s)" "" "startup_nudge" "$(date +%s)"
 fi
 
 NONIDLE_SINCE=0
@@ -80,30 +99,37 @@ while true; do
         idle)
             echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
             send_message "$SHORT_NUDGE"
+            write_state "$NOW" "$STATE" "idle_nudge" "$NOW"
             ;;
         unknown)
             if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [ $((NOW - NONIDLE_SINCE)) -ge "$MAX_NONIDLE_SECS" ]; then
                 echo "$(date '+%H:%M:%S') $SESSION is unknown for $((NOW - NONIDLE_SINCE))s — nudging anyway"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
+                write_state "$NOW" "$STATE" "forced_nudge" "$NOW"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is unknown — waiting"
+                write_state "$NOW" "$STATE" "wait_unknown" 0
             fi
             ;;
         rate_limited)
             echo "$(date '+%H:%M:%S') $SESSION is rate_limited — waiting"
+            write_state "$NOW" "$STATE" "wait_rate_limited" 0
             ;;
         working|error)
             if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [ $((NOW - NONIDLE_SINCE)) -ge "$MAX_NONIDLE_SECS" ]; then
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE for $((NOW - NONIDLE_SINCE))s — nudging anyway"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
+                write_state "$NOW" "$STATE" "forced_nudge" "$NOW"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE"
+                write_state "$NOW" "$STATE" "wait_$STATE" 0
             fi
             ;;
         *)
             echo "$(date '+%H:%M:%S') $SESSION is $STATE"
+            write_state "$NOW" "$STATE" "observe_$STATE" 0
             ;;
     esac
 done

@@ -190,6 +190,7 @@ def babysit_runtime_paths(cfg: SwarmConfig, pane: str) -> dict[str, str]:
         "pid": str(cfg.runtime_dir / f"{stem}.pid"),
         "log": str(cfg.runtime_dir / f"{stem}.log"),
         "spec": str(cfg.runtime_dir / f"{stem}.json"),
+        "state": str(cfg.runtime_dir / f"{stem}.state.json"),
     }
 
 
