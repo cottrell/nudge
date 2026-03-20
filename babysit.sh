@@ -61,12 +61,16 @@ write_state() {
     LAST_NUDGE_AT=${4:-0}
     NEXT_POLL_AT=$((NOW_TS + INTERVAL))
     NEXT_FORCE_AT=0
+    NONIDLE_JSON=null
+    if [ -n "$NONIDLE_SINCE" ] && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null; then
+        NONIDLE_JSON=$NONIDLE_SINCE
+    fi
     if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [[ "$LAST_STATE" =~ ^(unknown|working|error)$ ]]; then
         NEXT_FORCE_AT=$((NONIDLE_SINCE + MAX_NONIDLE_SECS))
     fi
     mkdir -p "$(dirname "$STATE_FILE")"
     cat >"$STATE_FILE" <<EOF
-{"target":"$TARGET","interval_secs":$INTERVAL,"last_monitor_state":"$LAST_STATE","last_action":"$LAST_ACTION","last_nudge_at":$LAST_NUDGE_AT,"nonidle_since":$NONIDLE_SINCE,"next_poll_at":$NEXT_POLL_AT,"next_force_nudge_at":$NEXT_FORCE_AT}
+{"target":"$TARGET","interval_secs":$INTERVAL,"last_monitor_state":"$LAST_STATE","last_action":"$LAST_ACTION","last_nudge_at":$LAST_NUDGE_AT,"nonidle_since":$NONIDLE_JSON,"next_poll_at":$NEXT_POLL_AT,"next_force_nudge_at":$NEXT_FORCE_AT}
 EOF
 }
 
