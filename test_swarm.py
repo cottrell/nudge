@@ -376,8 +376,8 @@ panes:
     out = capsys.readouterr().out
 
     assert "demo:grid panes=2/2" in out
-    assert "demo:0.0 claude working" in out
-    assert "demo:0.1 codex off" in out
+    assert "demo:0.0  claude  working  off" in out
+    assert "demo:0.1  codex   off      off" in out
 
 
 def test_status_lines_handles_missing_window(monkeypatch, tmp_path: Path):
@@ -484,7 +484,7 @@ panes:
         lines = status_lines(cfg, brief=True)
     finally:
         topology.time = real_time
-    assert lines[1] == "demo:0.0 claude idle babysit[next=60s]"
+    assert lines[1] == "demo:0.0  claude  idle  next=60s"
 
 
 def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):

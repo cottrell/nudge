@@ -188,6 +188,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         lines.append(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
     if not window_exists:
         return lines
+    brief_rows: list[tuple[str, str, str, str]] = []
     for pane in cfg.panes:
         target = f"{cfg.session_name}:{pane.pane}"
         proc = run("tmux", "list-panes", "-t", target, check=False)
@@ -199,21 +200,25 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         if pane.babysit.enabled:
             babysit_note = _format_babysit_note(cfg, pane.pane)
         if brief:
-            lines.append(f"{target} {pane.title} {monitor}{babysit_note}")
+            brief_rows.append((target, pane.title, monitor, babysit_note or "off"))
         else:
             command = pane_current_command(cfg, pane.pane)
             lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}{babysit_note}")
+    if brief_rows:
+        widths = [max(len(row[i]) for row in brief_rows) for i in range(4)]
+        for row in brief_rows:
+            lines.append("  ".join(value.ljust(widths[i]) for i, value in enumerate(row)).rstrip())
     return lines
 
 
 def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
     path = babysit_state_path(cfg, pane)
     if not path.exists():
-        return " babysit=?"
+        return "restart-needed"
     try:
         data = json.loads(path.read_text())
     except Exception:
-        return " babysit=?"
+        return "?"
     now = int(time.time())
     next_poll_at = int(data.get("next_poll_at") or 0)
     last_monitor_state = str(data.get("last_monitor_state") or "").strip()
@@ -223,7 +228,9 @@ def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
         parts.append(f"next={max(0, next_poll_at - now)}s")
     if next_force_at > 0 and last_monitor_state in {"unknown", "working", "error"}:
         parts.append(f"force={max(0, next_force_at - now)}s")
-    return f" babysit[{', '.join(parts) if parts else '?'}]"
+    if not parts:
+        return "?"
+    return ", ".join(parts)
 
 
 def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) -> None:
