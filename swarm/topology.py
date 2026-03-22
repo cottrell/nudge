@@ -129,6 +129,7 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
 def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool) -> None:
     if not message.strip():
         raise ValueError("broadcast message must not be empty")
+    payload = f"broadcast: {message.strip()}"
     sent = 0
     for pane in cfg.panes:
         if not include_nonmonitored and not pane.monitor:
@@ -138,7 +139,7 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
             print(f"would broadcast to {target} ({pane.title})")
             sent += 1
             continue
-        subprocess.run([str(ROOT_DIR / "tmux-send"), target, message], check=True, text=True)
+        subprocess.run([str(ROOT_DIR / "tmux-send"), target, payload], check=True, text=True)
         print(f"broadcast to {target} ({pane.title})")
         sent += 1
     if sent == 0:

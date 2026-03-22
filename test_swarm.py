@@ -564,7 +564,7 @@ panes:
     swarm_apply.broadcast(cfg, "AGENTS updated", include_nonmonitored=False, dry_run=False)
     out = capsys.readouterr().out
 
-    assert calls == [(str(ROOT_DIR / "tmux-send"), "demo:0.0", "AGENTS updated")]
+    assert calls == [(str(ROOT_DIR / "tmux-send"), "demo:0.0", "broadcast: AGENTS updated")]
     assert "broadcast to demo:0.0 (claude)" in out
 
 
@@ -599,8 +599,8 @@ panes:
     swarm_apply.broadcast(cfg, "hello all", include_nonmonitored=True, dry_run=False)
 
     assert calls == [
-        (str(ROOT_DIR / "tmux-send"), "demo:0.0", "hello all"),
-        (str(ROOT_DIR / "tmux-send"), "demo:0.1", "hello all"),
+        (str(ROOT_DIR / "tmux-send"), "demo:0.0", "broadcast: hello all"),
+        (str(ROOT_DIR / "tmux-send"), "demo:0.1", "broadcast: hello all"),
     ]
 
 
