@@ -8,7 +8,7 @@ import time
 import json
 
 from common import ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
-from babysitctl import state_path as babysit_state_path
+from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -214,6 +214,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
     path = babysit_state_path(cfg, pane)
     if not path.exists():
+        if not babysit_pid_path(cfg, pane).exists():
+            return "stopped"
         return "restart-needed"
     try:
         data = json.loads(path.read_text())

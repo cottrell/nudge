@@ -487,6 +487,32 @@ panes:
     assert lines[1] == "demo:0.0  claude  idle  next=60s"
 
 
+def test_swarm_status_brief_shows_stopped_when_babysit_not_running(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo_stopped
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    title: claude
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+    babysit:
+      enabled: true
+      interval_secs: 60
+      prompt: "continue"
+"""))
+    import topology
+    topology.run = lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})()
+    topology.monitor_state = lambda cfg, pane: "idle"
+    lines = topology.status_lines(cfg, brief=True)
+    assert lines[1] == "demo_stopped:0.0  claude  idle  stopped"
+
+
 def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session:
