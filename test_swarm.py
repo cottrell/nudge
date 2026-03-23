@@ -632,6 +632,17 @@ def test_cli_status_watch_dispatches_to_watch_status(monkeypatch):
     assert calls == [("watch", "CFG", "True", "2.5")]
 
 
+def test_cli_short_options_dispatch(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(swarm_apply, "print_status", lambda cfg, brief: calls.append(("status", cfg, str(brief))))
+    monkeypatch.setattr(swarm_topology := __import__("topology"), "broadcast", lambda cfg, msg, include_nonmonitored, dry_run: calls.append(("broadcast", cfg, msg, str(include_nonmonitored), str(dry_run))))
+    rc1 = swarm_cli.main(["status", "examples/swarm-grid.yaml", "-b"])
+    rc2 = swarm_cli.main(["broadcast", "examples/swarm-grid.yaml", "hi", "-A", "-n"])
+    assert rc1 == 0 and rc2 == 0
+    assert calls == [("status", "CFG", "True"), ("broadcast", "CFG", "hi", "True", "True")]
+
+
 def test_cli_babysit_status_dispatches(monkeypatch):
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
