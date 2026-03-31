@@ -59,7 +59,7 @@ write_state() {
     LAST_STATE=${2:-""}
     LAST_ACTION=${3:-""}
     LAST_NUDGE_AT=${4:-0}
-    NEXT_POLL_AT=$((NOW_TS + INTERVAL))
+    NEXT_POLL_AT=$((NOW_TS + ${EFFECTIVE_INTERVAL:-$INTERVAL}))
     NEXT_FORCE_AT=0
     NONIDLE_JSON=null
     if [ -n "$NONIDLE_SINCE" ] && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null; then
@@ -81,10 +81,52 @@ if [ -n "$LONG_NUDGE" ]; then
 fi
 
 NONIDLE_SINCE=0
+EFFECTIVE_INTERVAL=$INTERVAL  # may be scaled up when quota is low
+CACHE_FILE="/tmp/nudge-swarm/${SESSION}/usage-${WINDOW_PANE//./-}.json"
+
+# Per-agent slash command that shows usage stats (sent to pane when idle).
+AGENT_TYPE=${BABYSIT_AGENT:-}
+case "$AGENT_TYPE" in
+    claude)  STATS_CMD="/usage" ;;   # matches common.py AGENT_STATS_CMD
+    codex)   STATS_CMD="/status" ;;
+    gemini)  STATS_CMD="/stats" ;;
+    qwen)    STATS_CMD="/stats" ;;
+    copilot) STATS_CMD="/stats" ;;
+    *)       STATS_CMD="" ;;
+esac
+STATS_PROBE_INTERVAL=${BABYSIT_STATS_EVERY:-300}  # seconds between probes
+STATS_LAST_PROBE=0
 
 while true; do
-    sleep "$INTERVAL"
-    STATE=$(echo status | nc -U "$SOCK" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['state'])" 2>/dev/null)
+    sleep "$EFFECTIVE_INTERVAL"
+    STATUS_JSON=$(printf 'status' | nc -U "$SOCK" 2>/dev/null)
+    STATE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['state'])" 2>/dev/null)
+    # Budget-aware interval: scale by (secs_until_reset/86400) * (100/pct_remaining), cap 50x.
+    # Formula: more time until reset + less quota remaining = much longer interval.
+    PREV_EFFECTIVE=$EFFECTIVE_INTERVAL
+    EFFECTIVE_INTERVAL=$INTERVAL
+    if [ -f "$CACHE_FILE" ]; then
+        EFFECTIVE_INTERVAL=$(python3 - <<PYEOF
+import json, time, sys
+now = time.time()
+try:
+    limits = json.load(open("$CACHE_FILE")).get("limits", [])
+    best_factor = 1.0
+    for lim in limits:
+        pct = lim.get("pct", 100)
+        reset_ts = lim.get("reset_ts") or 0
+        secs = (reset_ts - now) if reset_ts > now else 86400
+        factor = max(1.0, min(50.0, (secs / 86400.0) * (100.0 / max(1, pct))))
+        best_factor = max(best_factor, factor)
+    print(int($INTERVAL * best_factor))
+except Exception:
+    print($INTERVAL)
+PYEOF
+)
+    fi
+    if [ "$EFFECTIVE_INTERVAL" -ne "$PREV_EFFECTIVE" ]; then
+        echo "$(date '+%H:%M:%S') $SESSION budget interval → ${EFFECTIVE_INTERVAL}s"
+    fi
     NOW=$(date +%s)
     case "$STATE" in
         idle|rate_limited)
@@ -101,6 +143,14 @@ while true; do
     esac
     case "$STATE" in
         idle)
+            if [ -n "$STATS_CMD" ] && [ $((NOW - STATS_LAST_PROBE)) -ge "$STATS_PROBE_INTERVAL" ]; then
+                echo "$(date '+%H:%M:%S') $SESSION probing usage ($STATS_CMD)"
+                tmux send-keys -t "$TARGET" -l -- "$STATS_CMD"
+                sleep 0.1
+                tmux send-keys -t "$TARGET" C-m
+                STATS_LAST_PROBE=$NOW
+                sleep 2
+            fi
             echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
             send_message "$SHORT_NUDGE"
             write_state "$NOW" "$STATE" "idle_nudge" "$NOW"

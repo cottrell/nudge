@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 import signal
 import subprocess
@@ -64,10 +65,11 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, s
     if dry_run:
         print(f"would start babysit for {cfg.session_name}:{pane} interval={interval}")
         return
-    env = dict(**__import__("os").environ, BABYSIT_STATE_FILE=str(state_path(cfg, pane)))
+    agent = next((p.agent for p in cfg.panes if p.pane == pane), "")
+    env = dict(**__import__("os").environ, BABYSIT_STATE_FILE=str(state_path(cfg, pane)), BABYSIT_AGENT=agent)
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(
-            [str(ROOT_DIR / "babysit.sh"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
+            [sys.executable, str(ROOT_DIR / "babysit.py"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
             stdout=log,
             stderr=log,
             start_new_session=True,

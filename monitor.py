@@ -86,6 +86,34 @@ PATTERNS = {
 VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen')
 VALID_AGENTS_TEXT = ', '.join(VALID_AGENTS)
 
+# Per-agent patterns to extract % of quota remaining from terminal output.
+# Each entry is a list of (pattern, kind) pairs tried in order.
+# kind='pct_left'      → group(1) is % remaining directly
+# kind='pct_used'      → group(1) is % used; remaining = 100 - N
+# kind='hours_used'    → group(1)=used, group(2)=total hours; remaining = (total-used)/total*100
+_USAGE_PATTERNS: dict[str, list[tuple[re.Pattern, str]] | None] = {
+    'claude': [
+        # /usage output: "4.2 / 5.0 hours" (used/total)
+        (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
+        # /usage may also show "87% left" or "13% used"
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+        (re.compile(r'(\d+)%\s*used', re.IGNORECASE), 'pct_used'),
+    ],
+    'codex': [
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+    ],
+    'gemini': [
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+    ],
+    'copilot': [
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+    ],
+    'qwen': [
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+    ],
+    'vibe': None,
+}
+
 
 _ANSI = re.compile(
     r'\x1b(?:'
@@ -148,6 +176,7 @@ class Monitor:
         self._state_log = open(state_log, 'w', encoding='utf-8') if state_log else None
         # ring buffer of last 20 raw lines for debug query
         self._raw = deque(maxlen=20)
+        self._usage_pct: int | None = None  # % of quota remaining (0-100), None if unseen
         self._last_working_at = None
         self._last_ingest_at = None
         self._pending_idle_at = None
@@ -219,6 +248,27 @@ class Monitor:
                     return state
         return None
 
+    def _extract_usage(self, line: str) -> None:
+        patterns = _USAGE_PATTERNS.get(self.agent_type)
+        if not patterns:
+            return
+        for pat, kind in patterns:
+            m = pat.search(line)
+            if not m:
+                continue
+            try:
+                if kind == 'hours_used':
+                    used, total = float(m.group(1)), float(m.group(2))
+                    if total > 0:
+                        self._usage_pct = round((1.0 - used / total) * 100)
+                elif kind == 'pct_used':
+                    self._usage_pct = max(0, 100 - int(m.group(1)))
+                else:  # pct_left
+                    self._usage_pct = int(m.group(1))
+            except (ValueError, ZeroDivisionError):
+                continue
+            break
+
     def ingest(self, line):
         raw = line.rstrip('\n')
         if self._debug:
@@ -229,6 +279,7 @@ class Monitor:
             self._last_ingest_at = monotonic()
             self._raw.append(raw)
             self.log.append(line)
+            self._extract_usage(line)
             self._refresh_state_locked()
             new_state = self.classify(line)
             now = monotonic()
@@ -249,7 +300,10 @@ class Monitor:
         cmd = cmd.strip()
         with self._lock:
             if cmd == 'status':
-                return {'state': self.state}
+                result: dict = {'state': self.state}
+                if self._usage_pct is not None:
+                    result['usage_pct'] = self._usage_pct
+                return result
             elif cmd == 'log':
                 return {'log': list(self.log)[-50:]}
             elif cmd == 'raw':

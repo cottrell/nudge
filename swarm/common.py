@@ -12,6 +12,15 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
 VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "vibe", "qwen")
 SHELL_NAMES = {"bash", "sh", "zsh", "fish"}
+# Slash command to send to each agent to elicit usage output.
+AGENT_STATS_CMD: dict[str, str | None] = {
+    "claude":  "/usage",
+    "codex":   "/status",
+    "gemini":  "/stats",
+    "qwen":    "/stats",
+    "copilot": None,  # /stats unknown command
+    "vibe":    None,
+}
 PANE_RE = re.compile(r"^0\.(\d+)$")
 
 

@@ -1,13 +1,30 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
 import shlex
+from datetime import datetime
 import subprocess
 import sys
 import time
 import json
 
-from common import ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
+from common import AGENT_STATS_CMD, ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
+
+# Patterns tried per line in order; first match wins for that line.
+# Returns list of {"label": str, "pct": int} dicts (pct = % remaining).
+_LINE_PATTERNS = [
+    # codex: "5h limit: [███] 100% left ..."  or  "Weekly limit: [███] 97% left ..."
+    (re.compile(r'(\w+)\s+limit:.*?(\d+)%\s+left', re.IGNORECASE), 'labeled_left'),
+    # generic "N% left"
+    (re.compile(r'(\d+)%\s+left', re.IGNORECASE), 'pct_left'),
+    # claude /usage: "12% used"
+    (re.compile(r'(\d+)%\s+used', re.IGNORECASE), 'pct_used'),
+    # hours: "4.2 / 5.0 hours"
+    (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
+    # gemini /stats: "0%  10:04 PM (24h)" — bare % followed by a clock = % used
+    (re.compile(r'\b(\d+)%\s+\d{1,2}:\d{2}\s+(?:AM|PM)', re.IGNORECASE), 'pct_used'),
+]
 from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
 
 
@@ -76,15 +93,143 @@ def socket_ready(session_name: str, pane: str) -> bool:
     return '"state"' in proc.stdout
 
 
-def monitor_state(cfg: SwarmConfig, pane: str) -> str:
+def _parse_reset_ts(s: str) -> int | None:
+    """Parse a reset string to a Unix timestamp. Returns None if unparseable."""
+    if not s:
+        return None
+    now = datetime.now()
+    # strip timezone hint "(Europe/London)" etc — we work in local time
+    s = re.sub(r'\s*\([^)]*\)', '', s).strip()
+
+    # "02:49 on 31 Mar" or "07:37 on 3 Apr"
+    m = re.match(r'(\d{1,2}):(\d{2})\s+on\s+(\d{1,2})\s+(\w+)', s)
+    if m:
+        hour, minute, day, mon = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
+        for yr in (now.year, now.year + 1):
+            try:
+                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
+                if dt.timestamp() > now.timestamp():
+                    return int(dt.timestamp())
+            except ValueError:
+                pass
+
+    # "Apr 5, 1pm" or "Apr 5, 1:30pm" or "Apr 5, 13:00"
+    m = re.match(r'(\w+)\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', s, re.IGNORECASE)
+    if m:
+        mon, day = m.group(1), int(m.group(2))
+        hour, minute = int(m.group(3)), int(m.group(4) or 0)
+        ampm = (m.group(5) or '').lower()
+        if ampm == 'pm' and hour != 12:
+            hour += 12
+        elif ampm == 'am' and hour == 12:
+            hour = 0
+        for yr in (now.year, now.year + 1):
+            try:
+                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
+                if dt.timestamp() > now.timestamp():
+                    return int(dt.timestamp())
+            except ValueError:
+                pass
+
+    return None
+
+
+def _usage_cache_path(cfg: SwarmConfig, pane: str):
+    return cfg.runtime_dir / f"usage-{pane.replace('.', '-')}.json"
+
+
+def _parse_usage_from_text(text: str) -> list[dict]:
+    """Return list of {label, pct, reset} dicts parsed from pane text."""
+    _reset = re.compile(r'resets\s+(.+)', re.IGNORECASE)
+    limits: list[dict] = []
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        entry: dict | None = None
+        for pat, kind in _LINE_PATTERNS:
+            m = pat.search(line)
+            if not m:
+                continue
+            try:
+                if kind == 'labeled_left':
+                    entry = {"label": m.group(1).lower(), "pct": int(m.group(2))}
+                elif kind == 'pct_left':
+                    entry = {"label": "", "pct": int(m.group(1))}
+                elif kind == 'pct_used':
+                    entry = {"label": "", "pct": max(0, 100 - int(m.group(1)))}
+                elif kind == 'hours_used':
+                    used, total = float(m.group(1)), float(m.group(2))
+                    if total > 0:
+                        entry = {"label": "", "pct": round((1.0 - used / total) * 100)}
+            except (ValueError, ZeroDivisionError):
+                pass
+            if entry:
+                # check same line then next line for reset date
+                search_lines = [line] + ([lines[i + 1]] if i + 1 < len(lines) else [])
+                reset = ""
+                for sl in search_lines:
+                    rm = _reset.search(sl)
+                    if rm:
+                        reset = rm.group(1).strip().rstrip('│╯╰ ')
+                        # strip trailing ) from box-drawing if parens unbalanced
+                        while reset.endswith(')') and reset.count('(') < reset.count(')'):
+                            reset = reset[:-1].rstrip()
+                        break
+                entry["reset"] = reset
+                entry["reset_ts"] = _parse_reset_ts(reset) or 0
+                limits.append(entry)
+                break
+    # If any labeled limits exist, drop unlabeled ones (avoids status-bar noise)
+    labeled = [l for l in limits if l["label"]]
+    return labeled if labeled else limits
+
+
+def _format_limits(limits: list[dict]) -> str:
+    parts = []
+    for lim in limits:
+        s = f"{lim['label']}:{lim['pct']}%" if lim['label'] else f"{lim['pct']}%"
+        reset = lim.get('reset', '').strip()
+        if reset:
+            s += f" (resets {reset})"
+        parts.append(s)
+    return "  ".join(parts)
+
+
+def _write_usage_cache(cfg: SwarmConfig, pane: str, limits: list[dict]) -> None:
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    _usage_cache_path(cfg, pane).write_text(json.dumps({"limits": limits, "ts": int(time.time())}) + "\n")
+
+
+def _read_usage_cache(cfg: SwarmConfig, pane: str) -> list[dict] | None:
+    path = _usage_cache_path(cfg, pane)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        return data.get("limits") or None
+    except Exception:
+        return None
+
+
+def _query_monitor(cfg: SwarmConfig, pane: str) -> dict:
     sock = socket_path(cfg, pane)
     proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
     if proc.returncode != 0 or '"state"' not in proc.stdout:
-        return "unreachable"
-    for token in ('"working"', '"idle"', '"unknown"', '"rate_limited"', '"error"'):
-        if token in proc.stdout:
-            return token.strip('"')
-    return "unparseable"
+        result: dict = {'state': 'unreachable'}
+    else:
+        try:
+            result = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            result = {'state': 'unparseable'}
+    if 'usage_limits' not in result:
+        cached = _read_usage_cache(cfg, pane)
+        if cached is not None:
+            result['usage_limits'] = cached
+            result['usage_pct'] = min(lim['pct'] for lim in cached)
+    return result
+
+
+def monitor_state(cfg: SwarmConfig, pane: str) -> str:
+    return _query_monitor(cfg, pane).get('state', 'unreachable')
 
 
 def ensure_monitor(cfg: SwarmConfig, pane: str, agent: str, dry_run: bool) -> None:
@@ -124,6 +269,42 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
     subprocess.run(["tmux", "send-keys", "-t", f"{cfg.session_name}:{pane}", "-l", "--", command], check=True, text=True)
     time.sleep(0.1)
     subprocess.run(["tmux", "send-keys", "-t", f"{cfg.session_name}:{pane}", "C-m"], check=True, text=True)
+
+
+def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
+    targets = []
+    for pane in cfg.panes:
+        if not pane.monitor or not pane.agent:
+            continue
+        cmd = AGENT_STATS_CMD.get(pane.agent)
+        if not cmd:
+            print(f"no stats command known for {pane.agent} ({cfg.session_name}:{pane.pane}), skipping")
+            continue
+        target = f"{cfg.session_name}:{pane.pane}"
+        if dry_run:
+            print(f"would send {cmd!r} to {target} ({pane.title})")
+        else:
+            subprocess.run(["tmux", "send-keys", "-t", target, "-l", "--", cmd], check=True, text=True)
+            time.sleep(0.05)
+            subprocess.run(["tmux", "send-keys", "-t", target, "C-m"], check=True, text=True)
+        targets.append((pane, target, cmd))
+
+    if not targets:
+        print("no monitored panes with a known stats command")
+        return
+
+    if dry_run:
+        return
+
+    time.sleep(2)  # wait for CLIs to render their response
+    for pane, target, cmd in targets:
+        proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
+        limits = _parse_usage_from_text(proc.stdout)
+        if limits:
+            _write_usage_cache(cfg, pane.pane, limits)
+            print(f"{target} ({pane.title}): {_format_limits(limits)}")
+        else:
+            print(f"{target} ({pane.title}): {cmd!r} sent (no usage pattern matched)")
 
 
 def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool) -> None:
@@ -196,7 +377,19 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         if proc.returncode != 0:
             lines.append(f"{target} missing")
             continue
-        monitor = monitor_state(cfg, pane.pane) if pane.monitor else "off"
+        if pane.monitor:
+            mon = _query_monitor(cfg, pane.pane)
+            state_str = mon.get('state', 'unreachable')
+            limits = mon.get('usage_limits')
+            if limits:
+                usage_str = " " + _format_limits(limits)
+            elif mon.get('usage_pct') is not None:
+                usage_str = f" {mon['usage_pct']}%"
+            else:
+                usage_str = ""
+            monitor = state_str + usage_str
+        else:
+            monitor = "off"
         babysit_note = ""
         if pane.babysit.enabled:
             babysit_note = _format_babysit_note(cfg, pane.pane)
@@ -204,7 +397,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             brief_rows.append((target, pane.title, monitor, babysit_note or "off"))
         else:
             command = pane_current_command(cfg, pane.pane)
-            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={'on' if pane.babysit.enabled else 'off'}{babysit_note}")
+            babysit_val = ("on " + babysit_note) if pane.babysit.enabled and babysit_note else ("on" if pane.babysit.enabled else "off")
+            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={babysit_val}")
     if brief_rows:
         widths = [max(len(row[i]) for row in brief_rows) for i in range(4)]
         for row in brief_rows:

@@ -326,7 +326,7 @@ panes:
 
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 1)
-    monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "idle")
+    monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "idle"})
 
     swarm_apply.print_status(cfg)
     out = capsys.readouterr().out
@@ -370,7 +370,7 @@ panes:
 
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     monkeypatch.setattr(swarm_apply, "pane_count", lambda cfg: 2)
-    monkeypatch.setattr(swarm_apply, "monitor_state", lambda cfg, pane: "working")
+    monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "working"})
 
     swarm_apply.print_status(cfg, brief=True)
     out = capsys.readouterr().out
@@ -479,7 +479,7 @@ panes:
             return real_time.strftime(fmt)
     topology.time = FakeTime
     topology.run = lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})()
-    topology.monitor_state = lambda cfg, pane: "idle"
+    topology._query_monitor = lambda cfg, pane: {"state": "idle"}
     try:
         lines = status_lines(cfg, brief=True)
     finally:
@@ -508,7 +508,7 @@ panes:
 """))
     import topology
     topology.run = lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})()
-    topology.monitor_state = lambda cfg, pane: "idle"
+    topology._query_monitor = lambda cfg, pane: {"state": "idle"}
     lines = topology.status_lines(cfg, brief=True)
     assert lines[1] == "demo_stopped:0.0  claude  idle  stopped"
 
