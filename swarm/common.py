@@ -243,6 +243,13 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "- tmux pane targets",
         "- monitor socket paths",
         "- babysit pid/log/spec paths",
+        "",
+        "When messaging another pane, ALWAYS use tmux-send:",
+        f"- {ROOT_DIR / 'tmux-send'} <target> \"message\"",
+        "",
+        "Do NOT use raw tmux send-keys to message agents. Raw send-keys often fails",
+        "to submit Enter reliably, leaving prompts sitting unexecuted until another",
+        "nudge or manual Enter.",
     ]
     return "\n".join(lines) + "\n"
 

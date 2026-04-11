@@ -531,6 +531,8 @@ panes:
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
     assert f"Status: python {SWARM_CLI} status {cfg.path} --brief" in text
     assert f"Watch: python {SWARM_CLI} status {cfg.path} --brief -w" in text
+    assert "ALWAYS use tmux-send" in text
+    assert "Do NOT use raw tmux send-keys" in text
 
 
 def test_broadcast_targets_monitored_panes_by_default(monkeypatch, tmp_path: Path, capsys):
