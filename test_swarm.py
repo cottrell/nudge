@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 import topology as swarm_apply
 import babysitctl
 import cli as swarm_cli
+import init as swarm_init
 from common import ROOT_DIR, SWARM_CLI, build_runtime_map, build_self_awareness_text, load_config
 
 
@@ -49,6 +50,26 @@ panes:
     assert pane.babysit.long_prompt == "nudge gently"
     assert pane.babysit.long_prompt_file == prompt.resolve()
     assert pane.babysit.short_prompt == "nudge gently"
+
+
+def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
+    swarm_init.init("demo", tmp_path)
+    assert (tmp_path / "swarm" / "demo.yaml").exists()
+    assert (tmp_path / "swarm" / "prompts" / "worker_long.md").exists()
+    assert (tmp_path / "swarm" / "prompts" / "worker_short.txt").exists()
+    agents = (tmp_path / "AGENTS.md").read_text()
+    assert "## Swarm" in agents
+    assert "Runtime map: `/tmp/nudge-swarm/demo/runtime.json`" in agents
+    assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
+    assert "ALWAYS use `tmux-send`" in agents
+    assert "Do NOT use raw `tmux send-keys ... Enter`" in agents
+
+
+def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("# Existing\n\n## Swarm\n\ncustom\n")
+    swarm_init.init("demo", tmp_path)
+    assert agents.read_text().count("## Swarm") == 1
 
 
 def test_load_config_requires_full_grid(tmp_path: Path):

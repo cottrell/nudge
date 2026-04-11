@@ -121,6 +121,7 @@ What went wrong: the earlier tests were incomplete, not wholly wrong. They repla
 There is now an experimental config-driven orchestration path under `swarm/`:
 
 ```bash
+python swarm/cli.py init my_swarm --root /path/to/project --dry-run
 python swarm/cli.py apply examples/swarm-single.yaml --dry-run
 python swarm/cli.py apply examples/swarm-grid.yaml --dry-run
 python swarm/cli.py status examples/swarm-grid.yaml --brief

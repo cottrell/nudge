@@ -7,12 +7,18 @@ import sys
 
 import topology as swarm_topology
 import babysitctl as swarm_babysit
+import init as swarm_init
 from common import load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Unified CLI for config-driven tmux swarm workflows.")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
+    init_p.add_argument("name", help="Swarm/session name")
+    init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
+    init_p.add_argument("-n", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, and initial commands")
     apply_p.add_argument("config", help="Path to YAML config")
@@ -51,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "init":
+            swarm_init.init(args.name, args.root, args.dry_run)
+            return 0
+
         if args.command == "apply":
             cfg = load_config(args.config)
             swarm_topology.apply(cfg, args.dry_run)
