@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from common import ROOT_DIR
@@ -33,21 +34,31 @@ Swarm scripts: `{ROOT_DIR / "swarm"}`.
 """
 
 
-def config_text(name: str) -> str:
-    return f"""session:
-  name: {name}
-  window: grid
+DEFAULT_AGENTS = ["claude", "codex", "gemini"]
 
-layout:
-  type: grid
-  rows: 1
-  cols: 1
+AGENT_COMMANDS: dict[str, str] = {
+    "claude": "source ~/.bash_aliases && aiclaude",
+    "codex": "codex",
+    "gemini": "gemini",
+    "copilot": "copilot",
+    "vibe": "vibe",
+}
 
-panes:
-  - pane: "0.0"
-    title: claude
-    agent: claude
-    command: "source ~/.bash_aliases && aiclaude"
+
+def _grid_dims(n: int) -> tuple[int, int]:
+    """Return (rows, cols) with rows*cols==n, as square as possible."""
+    rows = math.isqrt(n)
+    while rows > 1 and n % rows != 0:
+        rows -= 1
+    return rows, n // rows
+
+
+def _pane_entry(row: int, agent: str) -> str:
+    cmd = AGENT_COMMANDS.get(agent, agent)
+    return f"""  - pane: "0.{row}"
+    title: {agent}
+    agent: {agent}
+    command: "{cmd}"
     monitor: true
     babysit:
       enabled: false
@@ -57,7 +68,25 @@ panes:
 """
 
 
-def init(name: str, root: str | Path = ".", dry_run: bool = False) -> None:
+def config_text(name: str, agents: list[str] | None = None) -> str:
+    if agents is None:
+        agents = DEFAULT_AGENTS
+    rows, cols = _grid_dims(len(agents))
+    panes_block = "".join(_pane_entry(i, a) for i, a in enumerate(agents))
+    return f"""session:
+  name: {name}
+  window: grid
+
+layout:
+  type: grid
+  rows: {rows}
+  cols: {cols}
+
+panes:
+{panes_block}"""
+
+
+def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[str] | None = None) -> None:
     root_path = Path(root).resolve()
     swarm_dir = root_path / "swarm"
     prompts_dir = swarm_dir / "prompts"
@@ -65,7 +94,7 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False) -> None:
     agents_path = root_path / "AGENTS.md"
 
     files = {
-        config_path: config_text(name),
+        config_path: config_text(name, agents),
         prompts_dir / "worker_long.md": "Continue the assigned work. Read AGENTS.md and follow the project workflow.\n",
         prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
     }

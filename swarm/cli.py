@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
+    init_p.add_argument("--agents", default="claude,codex,gemini", help="Comma-separated list of agents (repeats allowed), default claude,codex,gemini")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, and initial commands")
@@ -58,7 +59,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "init":
-            swarm_init.init(args.name, args.root, args.dry_run)
+            agents = [a.strip() for a in args.agents.split(",") if a.strip()]
+            swarm_init.init(args.name, args.root, args.dry_run, agents)
             return 0
 
         if args.command == "apply":
