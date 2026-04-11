@@ -115,6 +115,7 @@ static char    g_log[MAX_LOG][MAX_LINE];
 static int     g_head  = 0;
 static int     g_count = 0;
 static char    g_agent[64] = "unknown";
+static int     g_usage_pct = -1;  /* -1 means unseen */
 static FILE   *g_state_log = NULL;
 static FILE   *g_debug_log = NULL;
 static struct timespec g_last_working_at = {0};
@@ -201,6 +202,9 @@ static void log_state_event(const char *event, State state, const char *line) {
     fprintf(g_state_log,
             "{\"ts\":\"%s\",\"event\":\"%s\",\"agent\":\"%s\",\"state\":\"%s\"",
             ts, event, g_agent, STATE_STR[state]);
+    if (g_usage_pct >= 0) {
+        fprintf(g_state_log, ",\"usage_pct\":%d", g_usage_pct);
+    }
     if (line) {
         fputs(",\"line\":\"", g_state_log);
         json_write_escaped(g_state_log, line);
@@ -388,6 +392,26 @@ static State classify(char *line) {
     return ST_UNKNOWN;  /* no match — caller keeps existing state */
 }
 
+static void extract_usage(const char *line) {
+    if (!strcmp(g_agent, "claude")) {
+        /* "4.2 / 5.0 hours" */
+        float used, total;
+        if (sscanf(line, "%f / %f hours", &used, &total) == 2 && total > 0)
+            g_usage_pct = (int)((1.0 - used / total) * 100);
+        else if (sscanf(line, "%d%% left", &g_usage_pct) == 1);
+        else if (sscanf(line, "%d%% used", &g_usage_pct) == 1)
+            g_usage_pct = 100 - g_usage_pct;
+    } else if (!strcmp(g_agent, "codex") || !strcmp(g_agent, "gemini") || !strcmp(g_agent, "copilot") || !strcmp(g_agent, "qwen")) {
+        /* "100% left" */
+        const char *p = strstr(line, "% left");
+        if (p && p > line) {
+            const char *start = p - 1;
+            while (start > line && isdigit((unsigned char)*(start - 1))) start--;
+            g_usage_pct = atoi(start);
+        }
+    }
+}
+
 static void ingest(const char *line) {
     pthread_mutex_lock(&lock);
     log_debug_line(line);
@@ -396,6 +420,7 @@ static void ingest(const char *line) {
     g_log[g_head][MAX_LINE - 1] = '\0';
     g_head = (g_head + 1) % MAX_LOG;
     if (g_count < MAX_LOG) g_count++;
+    extract_usage(line);
     refresh_state_locked();
     State s = classify((char *)line);
     if (s == ST_WORKING) {
@@ -448,7 +473,10 @@ static int handle_query(const char *cmd, char *out, int cap) {
     int n = 0;
 
     if (!strncmp(cmd, "status", 6)) {
-        n = snprintf(out, cap, "{\"state\":\"%s\"}", STATE_STR[g_state]);
+        if (g_usage_pct >= 0)
+            n = snprintf(out, cap, "{\"state\":\"%s\",\"usage_pct\":%d}", STATE_STR[g_state], g_usage_pct);
+        else
+            n = snprintf(out, cap, "{\"state\":\"%s\"}", STATE_STR[g_state]);
 
     } else if (!strncmp(cmd, "tail", 4)) {
         if (g_count == 0) {

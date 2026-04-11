@@ -83,6 +83,13 @@ PATTERNS = {
     },
 }
 
+# Patterns to extract usage/quota info (e.g. "100% left", "4.2/5.0h")
+USAGE_PATTERNS = {
+    'claude':  r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours?',
+    'codex':   r'(\d+)%\s+left',
+    'gemini':  r'(\d+)%\s+left',
+}
+
 VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen')
 VALID_AGENTS_TEXT = ', '.join(VALID_AGENTS)
 
