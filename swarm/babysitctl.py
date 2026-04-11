@@ -123,12 +123,11 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
             stop_worker(cfg, pane, dry_run)
         start_worker(cfg, pane, interval, long_prompt, short_prompt, dry_run)
 
+    write_runtime_map(cfg)
+    write_self_awareness_text(cfg)
     if dry_run:
-        print(f"would write runtime map to {cfg.runtime_map_path}")
-        print(f"would write self-awareness note to {cfg.self_awareness_path}")
-    else:
-        write_runtime_map(cfg)
-        write_self_awareness_text(cfg)
+        print(f"wrote runtime map to {cfg.runtime_map_path}")
+        print(f"wrote self-awareness note to {cfg.self_awareness_path}")
     print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
 
 

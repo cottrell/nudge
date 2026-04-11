@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, and initial commands")
     apply_p.add_argument("config", help="Path to YAML config")
-    apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux")
+    apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
     apply_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after apply")
 
     status_p = sub.add_parser("status", help="Report current swarm state")
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp = babysit_sub.add_parser(name, help=f"Babysit {name}")
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
-            sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers")
+            sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; apply still writes runtime notes")
 
     return parser
 

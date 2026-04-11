@@ -100,5 +100,5 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False) -> None:
 
     print()
     print("Next:")
-    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} apply {config_path} --dry-run")
+    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} apply {config_path} -D")
     print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} apply {config_path}")

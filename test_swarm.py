@@ -222,6 +222,40 @@ panes:
     ]
 
 
+def test_apply_dry_run_writes_runtime_notes(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session:
+  name: demo_dry
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "aiclaude"
+    monitor: true
+"""))
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(swarm_apply, "ensure_grid", lambda cfg, dry_run: calls.append(("grid", str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda cfg, pane, agent, dry_run: calls.append(("monitor", str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
+    monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
+
+    swarm_apply.apply(cfg, dry_run=True)
+
+    assert calls == [
+        ("grid", "True"),
+        ("monitor", "True"),
+        ("title", "True"),
+        ("command", "True"),
+        ("runtime_map", "demo_dry"),
+        ("self_awareness", "demo_dry"),
+    ]
+
+
 def test_ensure_grid_allows_new_session_to_expand(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session:
