@@ -10,26 +10,26 @@ def agent_block(name: str) -> str:
     runtime_dir = Path("/tmp/nudge-swarm") / name
     return f"""## Swarm
 
-When using the swarm workflow, read these first:
+Swarm workflow: read first:
 - Runtime map: `{runtime_dir / "runtime.json"}`
 - Self-awareness note: `{runtime_dir / "self-awareness.txt"}`
 
-Treat them as the source of truth for:
+Use as source of truth for:
 - tmux pane targets
-- monitor sockets and live state
+- monitor sockets, live state
 - babysit pid/log/spec/state files
 
-When communicating with another tmux pane, ALWAYS use `tmux-send`.
+Messaging another tmux pane: ALWAYS use `tmux-send`.
 Do NOT use raw `tmux send-keys ... Enter`.
 
 Required form:
 - `{ROOT_DIR / "tmux-send"} <target> "message"`
 
 Reason:
-- raw `tmux send-keys ... Enter` often fails to submit the Enter key
-- prompts can sit unexecuted until another nudge or manual Enter
+- raw `tmux send-keys ... Enter` often fails to submit Enter
+- prompts can sit unexecuted until next nudge or manual Enter
 
-Note swarm scripts are at `{ROOT_DIR / "swarm"}`.
+Swarm scripts: `{ROOT_DIR / "swarm"}`.
 """
 
 
