@@ -18,11 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
-    init_p.add_argument("-n", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
+    init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, and initial commands")
     apply_p.add_argument("config", help="Path to YAML config")
-    apply_p.add_argument("-n", "--dry-run", action="store_true", help="Validate and print actions without changing tmux")
+    apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux")
     apply_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after apply")
 
     status_p = sub.add_parser("status", help="Report current swarm state")
@@ -35,11 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast_p.add_argument("config", help="Path to YAML config")
     broadcast_p.add_argument("message", nargs="+", help="Broadcast message text")
     broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to panes with monitor=false")
-    broadcast_p.add_argument("-n", "--dry-run", action="store_true", help="Print targets without sending")
+    broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
     usage_p = sub.add_parser("usage", help="Send stats command to all monitored panes to refresh usage info")
     usage_p.add_argument("config", help="Path to YAML config")
-    usage_p.add_argument("-n", "--dry-run", action="store_true", help="Print targets without sending")
+    usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
     babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit workers")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp = babysit_sub.add_parser(name, help=f"Babysit {name}")
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
-            sp.add_argument("-n", "--dry-run", action="store_true", help="Validate and print actions without changing workers")
+            sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers")
 
     return parser
 

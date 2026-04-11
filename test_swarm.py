@@ -661,7 +661,7 @@ def test_cli_short_options_dispatch(monkeypatch):
     monkeypatch.setattr(swarm_apply, "print_status", lambda cfg, brief: calls.append(("status", cfg, str(brief))))
     monkeypatch.setattr(swarm_topology := __import__("topology"), "broadcast", lambda cfg, msg, include_nonmonitored, dry_run: calls.append(("broadcast", cfg, msg, str(include_nonmonitored), str(dry_run))))
     rc1 = swarm_cli.main(["status", "examples/swarm-grid.yaml", "-b"])
-    rc2 = swarm_cli.main(["broadcast", "examples/swarm-grid.yaml", "hi", "-A", "-n"])
+    rc2 = swarm_cli.main(["broadcast", "examples/swarm-grid.yaml", "hi", "-A", "-D"])
     assert rc1 == 0 and rc2 == 0
     assert calls == [("status", "CFG", "True"), ("broadcast", "CFG", "hi", "True", "True")]
 
