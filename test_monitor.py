@@ -892,7 +892,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: aiclaude
+    command: claude
     monitor: true
 """)
         cfg = load_config(cfg_path)

@@ -33,7 +33,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -72,7 +72,7 @@ def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
     assert agents.read_text().count("## Swarm") == 1
 
 
-def test_load_config_requires_full_grid(tmp_path: Path):
+def test_load_config_allows_partial_grid_and_autofills(tmp_path: Path):
     cfg_path = write_config(tmp_path, """
 session:
   name: demo
@@ -83,33 +83,42 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
 """)
-    with pytest.raises(ValueError, match="layout expects 4 panes but config defines 1"):
-        load_config(cfg_path)
+    cfg = load_config(cfg_path)
+    assert cfg.pane_count == 4
+    assert len(cfg.panes) == 4
+    assert cfg.panes[0].agent == "claude"
+    assert cfg.panes[1].agent is None
+    assert cfg.panes[1].command == "bash"
 
 
-def test_load_config_requires_contiguous_indices(tmp_path: Path):
+def test_load_config_handles_non_contiguous_indices_by_autofilling(tmp_path: Path):
     cfg_path = write_config(tmp_path, """
 session:
   name: demo
 layout:
   type: grid
   rows: 1
-  cols: 2
+  cols: 3
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.2"
     agent: codex
-    command: "aicodex"
+    command: "codex"
     monitor: true
 """)
-    with pytest.raises(ValueError, match="pane indices must be contiguous 0..1"):
-        load_config(cfg_path)
+    cfg = load_config(cfg_path)
+    assert len(cfg.panes) == 3
+    assert cfg.panes[0].pane == "0.0"
+    assert cfg.panes[1].pane == "0.1"
+    assert cfg.panes[1].agent is None
+    assert cfg.panes[2].pane == "0.2"
+    assert cfg.panes[2].agent == "codex"
 
 
 def test_load_config_allows_non_agent_pane_when_monitor_disabled(tmp_path: Path):
@@ -168,7 +177,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -191,11 +200,11 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.1"
     agent: codex
-    command: "aicodex"
+    command: "codex"
     monitor: false
 """))
     calls: list[tuple[str, ...]] = []
@@ -214,9 +223,9 @@ panes:
         ("grid", "demo", "False"),
         ("monitor", "0.0", "claude", "False"),
         ("title", "0.0", "claude", "False"),
-        ("command", "0.0", "claude", "aiclaude", "False"),
+        ("command", "0.0", "claude", "claude", "False"),
         ("title", "0.1", "codex", "False"),
-        ("command", "0.1", "codex", "aicodex", "False"),
+        ("command", "0.1", "codex", "codex", "False"),
         ("runtime_map", "demo"),
         ("self_awareness", "demo"),
     ]
@@ -233,7 +242,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
 """))
     calls: list[tuple[str, ...]] = []
@@ -267,11 +276,11 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.1"
     agent: codex
-    command: "aicodex"
+    command: "codex"
     monitor: true
 """))
     tmux_calls: list[tuple[str, ...]] = []
@@ -313,7 +322,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -357,7 +366,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -402,11 +411,11 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.1"
     agent: codex
-    command: "aicodex"
+    command: "codex"
     monitor: false
 """))
 
@@ -446,7 +455,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
 """))
 
@@ -464,7 +473,7 @@ panes:
 
 
 def test_shell_prefixed_command_sets_ps1_prefix():
-    assert swarm_apply.shell_prefixed_command("codex", "aicodex") == "export PS1='[codex] '\"$PS1\"; aicodex"
+    assert swarm_apply.shell_prefixed_command("codex", "codex") == "export PS1='[codex] '\"$PS1\"; codex"
 
 
 def test_runtime_map_contains_only_derived_runtime_paths(tmp_path: Path):
@@ -483,7 +492,7 @@ panes:
   - pane: "0.1"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -513,7 +522,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -554,7 +563,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -579,7 +588,7 @@ layout:
 panes:
   - pane: "0.0"
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
 """))
     text = build_self_awareness_text(cfg)
@@ -602,7 +611,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.1"
     title: shell
@@ -637,7 +646,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
   - pane: "0.1"
     title: shell
@@ -673,7 +682,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "aiclaude"
+    command: "claude"
     monitor: true
 """))
     with pytest.raises(ValueError, match="must not be empty"):

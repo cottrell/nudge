@@ -7,7 +7,7 @@ The current monitor (C/Python) reactively detects `rate_limited` based on error 
 | Agent | CLI / Tool | Usage Command | Non-Interactive | Observed UI Pattern |
 |-------|------------|---------------|-----------------|---------------------|
 | Claude| Claude Code| `/stats`, `/context` | `claude --usage --output-format json` | (in-session: `/stats`) |
-| Codex | aicodex    | `/status`, `/stats` | `aicodex stats --json`? | `gpt-5.4 medium · 100% left` |
+| Codex | codex      | `/status`, `/stats` | `codex stats --json`? | `gpt-5.4 medium · 100% left` |
 | Gemini| Gemini CLI | `/stats model` | `gemini stats --json`? | `Thinking (0s, 100% left)` |
 | Qwen  | Qwen CLI   | `/stats` | ? | ? |
 | Vibe  | Mistral Vibe| `vibe stats` | ? | ? |

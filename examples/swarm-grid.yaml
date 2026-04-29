@@ -11,7 +11,7 @@ panes:
   - pane: "0.0"
     title: codex
     agent: codex
-    command: "source ~/.bash_aliases && aicodex"
+    command: "codex"
     monitor: true
     babysit:
       enabled: false
@@ -19,7 +19,7 @@ panes:
   - pane: "0.1"
     title: claude
     agent: claude
-    command: "source ~/.bash_aliases && aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: true
@@ -30,7 +30,7 @@ panes:
   - pane: "0.2"
     title: copilot
     agent: copilot
-    command: "source ~/.bash_aliases && aicopilot"
+    command: "copilot"
     monitor: true
     babysit:
       enabled: false
@@ -38,7 +38,7 @@ panes:
   - pane: "0.3"
     title: gemini
     agent: gemini
-    command: "source ~/.bash_aliases && aigemini"
+    command: "gemini"
     monitor: true
     babysit:
       enabled: false
@@ -46,7 +46,7 @@ panes:
   - pane: "0.4"
     title: qwen
     agent: qwen
-    command: "source ~/.bash_aliases && aiqwen"
+    command: "qwen"
     monitor: true
     babysit:
       enabled: false
@@ -54,7 +54,7 @@ panes:
   - pane: "0.5"
     title: vibe
     agent: vibe
-    command: "source ~/.bash_aliases && aimistral"
+    command: "mistral"
     monitor: true
     babysit:
       enabled: false

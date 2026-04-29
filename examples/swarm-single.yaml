@@ -11,7 +11,7 @@ panes:
   - pane: "0.0"
     title: claude
     agent: claude
-    command: "source ~/.bash_aliases && aiclaude"
+    command: "claude"
     monitor: true
     babysit:
       enabled: false
