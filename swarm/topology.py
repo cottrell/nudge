@@ -46,7 +46,7 @@ def socket_path(cfg: SwarmConfig, pane: str) -> str:
 def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
     created_session = False
     created_window = False
-    if run("tmux", "has-session", "-t", cfg.session_name, check=False).returncode != 0:
+    if run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode != 0:
         if dry_run:
             print(f"would create tmux session {cfg.session_name}:{cfg.window_name}")
             created_session = True
@@ -360,7 +360,7 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
 
 def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
     lines: list[str] = []
-    session_exists = run("tmux", "has-session", "-t", cfg.session_name, check=False).returncode == 0
+    session_exists = run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode == 0
     window_exists = run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) != -1 if session_exists else False
     actual_count = pane_count(cfg) if window_exists else 0
     if brief:

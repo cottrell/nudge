@@ -101,7 +101,7 @@ def load_config(path: str | Path) -> SwarmConfig:
         raise ValueError(f"unsupported layout.type: {layout_type}")
     if rows <= 0 or cols <= 0:
         raise ValueError("layout.rows and layout.cols must be positive integers")
-    if len(panes_data) != rows * cols:
+    if len(panes_data) > rows * cols:
         raise ValueError(f"layout expects {rows * cols} panes but config defines {len(panes_data)}")
 
     panes: list[PaneSpec] = []
@@ -115,8 +115,8 @@ def load_config(path: str | Path) -> SwarmConfig:
             raise ValueError(f"duplicate pane entry: {pane_name}")
         seen.add(pane_name)
 
-        monitor = bool(raw.get("monitor", True))
-        agent = str(raw.get("agent") or "").strip()
+        agent = str(raw.get("agent") or "").strip() or None
+        monitor = bool(raw.get("monitor", bool(agent)))
         if monitor:
             if not agent:
                 raise ValueError(f"pane {pane_name} requires agent when monitor=true")
@@ -125,9 +125,7 @@ def load_config(path: str | Path) -> SwarmConfig:
         elif agent and agent not in VALID_AGENTS:
             raise ValueError(f"unknown agent in config: {agent}")
 
-        command = str(raw.get("command") or "").strip()
-        if not command:
-            raise ValueError(f"pane {pane_name} is missing command")
+        command = str(raw.get("command") or "").strip() or "bash"
         title = str(raw.get("title") or agent or pane_name).strip()
         if not title:
             raise ValueError(f"pane {pane_name} needs a non-empty title")
@@ -158,7 +156,7 @@ def load_config(path: str | Path) -> SwarmConfig:
 
         panes.append(PaneSpec(
             pane=pane_name,
-            agent=agent or None,
+            agent=agent,
             command=command,
             title=title,
             monitor=monitor,
@@ -172,10 +170,17 @@ def load_config(path: str | Path) -> SwarmConfig:
             ),
         ))
 
-    pane_indices = sorted(p.pane_index for p in panes)
-    expected = list(range(rows * cols))
-    if pane_indices != expected:
-        raise ValueError(f"pane indices must be contiguous 0..{rows * cols - 1}: got {pane_indices}")
+    defined = {p.pane_index for p in panes}
+    for i in range(rows * cols):
+        if i not in defined:
+            panes.append(PaneSpec(
+                pane=f"0.{i}",
+                agent=None,
+                command="bash",
+                title=f"0.{i}",
+                monitor=False,
+                babysit=BabysitSpec(enabled=False),
+            ))
 
     panes.sort(key=lambda p: p.pane_index)
     return SwarmConfig(
