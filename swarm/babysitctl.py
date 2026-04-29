@@ -61,13 +61,18 @@ def load_spec(path: Path) -> dict | None:
     return json.loads(path.read_text())
 
 
-def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, short_prompt: str, dry_run: bool) -> None:
+def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, dry_run: bool) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     if dry_run:
-        print(f"would start babysit for {cfg.session_name}:{pane} interval={interval}")
+        print(f"would start babysit for {cfg.session_name}:{pane} interval={interval} clear_every={clear_every}")
         return
     agent = next((p.agent for p in cfg.panes if p.pane == pane), "")
-    env = dict(**__import__("os").environ, BABYSIT_STATE_FILE=str(state_path(cfg, pane)), BABYSIT_AGENT=agent)
+    env = dict(
+        **__import__("os").environ,
+        BABYSIT_STATE_FILE=str(state_path(cfg, pane)),
+        BABYSIT_AGENT=agent,
+        BABYSIT_CLEAR_EVERY=str(clear_every)
+    )
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(
             [sys.executable, str(ROOT_DIR / "babysit.py"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
@@ -78,7 +83,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, s
             env=env,
         )
     pid_path(cfg, pane).write_text(str(proc.pid))
-    spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, long_prompt, short_prompt), indent=2) + "\n")
+    spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt), indent=2) + "\n")
 
 
 def os_kill(pid: int, sig: signal.Signals) -> None:
