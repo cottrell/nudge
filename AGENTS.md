@@ -12,6 +12,17 @@ The nudge project is a toolbox for running and monitoring AI coding agents (clau
 
 This simplicity makes it safe for agents to modify — there's minimal risk of breaking complex abstractions or introducing subtle bugs.
 
+## Statelessness & File-based Memory
+
+Agents in this swarm should be designed to be **stateless**. The babysit loop periodically issues a `/clear` command to the agent to manage token costs and context length.
+
+Because conversation history is regularly wiped:
+- **Do NOT** rely on the agent's memory of past turns for project state.
+- **DO** maintain all critical state (tasks, progress, architectural decisions) in files like `TODO.md`, `GEMINI.md`, or project-specific memory files.
+- **DO** read relevant context files (like the `self-awareness.txt` note) whenever you start a new task.
+
+The babysit loop will re-issue the full project briefing (`long_prompt`) immediately after every `/clear` to restore the agent's awareness of its environment and mission.
+
 ## When to Commit
 
 You should commit your work when:

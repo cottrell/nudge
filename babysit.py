@@ -320,7 +320,9 @@ def main() -> int:
                 print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
                 _send_message(target, "/clear")
                 time.sleep(1.0)
-            _send_message(target, short_nudge)
+                _send_message(target, long_nudge)
+            else:
+                _send_message(target, short_nudge)
             pct_at_nudge = current_pct
             nudge_sent_ts = now_f
             nudge_count += 1

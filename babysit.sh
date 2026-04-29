@@ -74,9 +74,11 @@ write_state() {
 EOF
 }
 
+NUDGE_COUNT=0
 if [ -n "$LONG_NUDGE" ]; then
     echo "$(date '+%H:%M:%S') $SESSION startup babysit prompt"
     send_message "$LONG_NUDGE"
+    NUDGE_COUNT=$((NUDGE_COUNT + 1))
     write_state "$(date +%s)" "" "startup_nudge" "$(date +%s)"
 fi
 
@@ -151,8 +153,16 @@ PYEOF
                 STATS_LAST_PROBE=$NOW
                 sleep 2
             fi
-            echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
-            send_message "$SHORT_NUDGE"
+            if [ "$CLEAR_EVERY" -gt 0 ] && [ "$NUDGE_COUNT" -gt 0 ] && [ $((NUDGE_COUNT % CLEAR_EVERY)) -eq 0 ]; then
+                echo "$(date '+%H:%M:%S') $SESSION clearing context (nudge_count=$NUDGE_COUNT)"
+                send_message "/clear"
+                sleep 1
+                send_message "$LONG_NUDGE"
+            else
+                echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
+                send_message "$SHORT_NUDGE"
+            fi
+            NUDGE_COUNT=$((NUDGE_COUNT + 1))
             write_state "$NOW" "$STATE" "idle_nudge" "$NOW"
             ;;
         unknown)
@@ -160,6 +170,7 @@ PYEOF
                 echo "$(date '+%H:%M:%S') $SESSION is unknown for $((NOW - NONIDLE_SINCE))s — nudging anyway"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
+                NUDGE_COUNT=$((NUDGE_COUNT + 1))
                 write_state "$NOW" "$STATE" "forced_nudge" "$NOW"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is unknown — waiting"
@@ -179,17 +190,6 @@ PYEOF
                 write_state "$NOW" "$STATE" "forced_nudge" "$NOW"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE"
-                write_state "$NOW" "$STATE" "wait_$STATE" 0
-            fi
-            ;;
-        *)
-            echo "$(date '+%H:%M:%S') $SESSION is $STATE"
-            write_state "$NOW" "$STATE" "observe_$STATE" 0
-            ;;
-    esac
-done
-e
-date '+%H:%M:%S') $SESSION is $STATE"
                 write_state "$NOW" "$STATE" "wait_$STATE" 0
             fi
             ;;
