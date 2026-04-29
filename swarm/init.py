@@ -37,11 +37,11 @@ Swarm scripts: `{ROOT_DIR / "swarm"}`.
 DEFAULT_AGENTS = ["codex", "claude", "gemini"]
 
 AGENT_COMMANDS: dict[str, str] = {
-    "claude": "source ~/.bash_aliases && aiclaude",
-    "codex": "codex",
-    "gemini": "gemini",
-    "copilot": "copilot",
-    "vibe": "vibe",
+    "claude": "claude --dangerously-skip-permissions",
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox",
+    "gemini": "gemini -y",
+    "copilot": "copilot --allow-all-tools",
+    "vibe": "vibe --agent auto-approve",
 }
 
 
