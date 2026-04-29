@@ -34,7 +34,7 @@ Swarm scripts: `{ROOT_DIR / "swarm"}`.
 """
 
 
-DEFAULT_AGENTS = ["claude", "codex", "gemini"]
+DEFAULT_AGENTS = ["codex", "claude", "gemini"]
 
 AGENT_COMMANDS: dict[str, str] = {
     "claude": "source ~/.bash_aliases && aiclaude",
