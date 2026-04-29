@@ -88,6 +88,30 @@ Python helpers live in `pyproject.toml`:
 uv sync
 ```
 
+## Capture fixtures
+
+Fixture replay tests depend on real captured agent output in `fixtures/*_capture.txt`.
+
+Re-capture when:
+
+- an agent CLI changes its UI/output patterns
+- monitor classification logic changes
+- replay tests start failing or become obviously stale
+
+Commands:
+
+```bash
+make capture AGENT=claude DUR=60
+make capture_codex DUR=60
+make capture_copilot DUR=60
+make capture_gemini DUR=60
+make capture_vibe DUR=60
+make capture_qwen DUR=60
+make capture_all DUR=60
+```
+
+Practical cadence: re-capture on breakage or visible upstream CLI changes, not on a fixed schedule.
+
 ## Backend status
 
 - **C (`monitor-bin`)**: production backend
