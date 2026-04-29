@@ -316,6 +316,10 @@ def main() -> int:
                     sigma = _ALPHA * abs(C - mu) + (1 - _ALPHA) * sigma
 
             print(f"{ts} {session} is idle — nudging")
+            if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
+                print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
+                _send_message(target, "/clear")
+                time.sleep(1.0)
             _send_message(target, short_nudge)
             pct_at_nudge = current_pct
             nudge_sent_ts = now_f

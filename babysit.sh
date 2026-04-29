@@ -175,9 +175,21 @@ PYEOF
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE for $((NOW - NONIDLE_SINCE))s — nudging anyway"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
+                NUDGE_COUNT=$((NUDGE_COUNT + 1))
                 write_state "$NOW" "$STATE" "forced_nudge" "$NOW"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE"
+                write_state "$NOW" "$STATE" "wait_$STATE" 0
+            fi
+            ;;
+        *)
+            echo "$(date '+%H:%M:%S') $SESSION is $STATE"
+            write_state "$NOW" "$STATE" "observe_$STATE" 0
+            ;;
+    esac
+done
+e
+date '+%H:%M:%S') $SESSION is $STATE"
                 write_state "$NOW" "$STATE" "wait_$STATE" 0
             fi
             ;;

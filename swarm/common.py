@@ -28,6 +28,7 @@ PANE_RE = re.compile(r"^0\.(\d+)$")
 class BabysitSpec:
     enabled: bool
     interval_secs: int = 600
+    clear_every: int = 0
     long_prompt: str = ""
     long_prompt_file: Path | None = None
     short_prompt: str = ""
@@ -163,6 +164,7 @@ def load_config(path: str | Path) -> SwarmConfig:
             babysit=BabysitSpec(
                 enabled=bool(babysit_raw.get("enabled", False)),
                 interval_secs=int(babysit_raw.get("interval_secs", 600)),
+                clear_every=int(babysit_raw.get("clear_every", 0)),
                 long_prompt=long_prompt,
                 long_prompt_file=long_prompt_path,
                 short_prompt=short_prompt,

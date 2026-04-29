@@ -189,6 +189,27 @@ panes:
     assert pane.babysit.short_prompt == "keep going"
 
 
+def test_load_config_supports_clear_every(tmp_path: Path):
+    cfg_path = write_config(tmp_path, """
+session:
+  name: demo
+layout:
+  type: grid
+  rows: 1
+  cols: 1
+panes:
+  - pane: "0.0"
+    agent: claude
+    command: "claude"
+    monitor: true
+    babysit:
+      enabled: true
+      clear_every: 10
+""")
+    pane = load_config(cfg_path).panes[0]
+    assert pane.babysit.clear_every == 10
+
+
 def test_apply_invokes_grid_monitor_and_command(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session:
@@ -344,13 +365,13 @@ panes:
 
     monkeypatch.setattr(babysitctl, "process_running", lambda pid: pid == 1234)
     monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
-    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), long_prompt, short_prompt, str(dry_run))))
+    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, str(dry_run))))
 
     babysitctl.apply(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
-        ("start", "0.0", "321", "please continue", "please continue", "False"),
+        ("start", "0.0", "321", "0", "please continue", "please continue", "False"),
     ]
 
 

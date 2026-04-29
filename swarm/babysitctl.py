@@ -34,21 +34,22 @@ def process_running(pid: int) -> bool:
     return Path(f"/proc/{pid}").exists()
 
 
-def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, str, str]]:
-    out: dict[str, tuple[int, str, str]] = {}
+def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, int, str, str]]:
+    out: dict[str, tuple[int, int, str, str]] = {}
     for pane in cfg.panes:
         if not pane.babysit.enabled:
             continue
-        out[pane.pane] = (pane.babysit.interval_secs, pane.babysit.long_prompt, pane.babysit.short_prompt)
+        out[pane.pane] = (pane.babysit.interval_secs, pane.babysit.clear_every, pane.babysit.long_prompt, pane.babysit.short_prompt)
     return out
 
 
-def desired_spec(cfg: SwarmConfig, pane: str, interval: int, long_prompt: str, short_prompt: str) -> dict:
+def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str) -> dict:
     return {
         "session": cfg.session_name,
         "pane": pane,
         "target": f"{cfg.session_name}:{pane}",
         "interval_secs": interval,
+        "clear_every": clear_every,
         "long_prompt": long_prompt,
         "short_prompt": short_prompt,
     }
@@ -112,16 +113,16 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
         if pane not in desired:
             stop_worker(cfg, pane, dry_run)
 
-    for pane, (interval, long_prompt, short_prompt) in desired.items():
+    for pane, (interval, clear_every, long_prompt, short_prompt) in desired.items():
         path = pid_path(cfg, pane)
-        wanted = desired_spec(cfg, pane, interval, long_prompt, short_prompt)
+        wanted = desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt)
         current_spec = load_spec(spec_path(cfg, pane))
         if path.exists():
             pid = int(path.read_text().strip())
             if process_running(pid) and current_spec == wanted:
                 continue
             stop_worker(cfg, pane, dry_run)
-        start_worker(cfg, pane, interval, long_prompt, short_prompt, dry_run)
+        start_worker(cfg, pane, interval, clear_every, long_prompt, short_prompt, dry_run)
 
     write_runtime_map(cfg)
     write_self_awareness_text(cfg)
@@ -153,8 +154,8 @@ def status(cfg: SwarmConfig) -> None:
         drift = ""
         spec = load_spec(spec_path(cfg, pane))
         if spec:
-            desired_interval, desired_long_prompt, desired_short_prompt = desired[pane]
-            if spec != desired_spec(cfg, pane, desired_interval, desired_long_prompt, desired_short_prompt):
+            desired_interval, desired_clear_every, desired_long_prompt, desired_short_prompt = desired[pane]
+            if spec != desired_spec(cfg, pane, desired_interval, desired_clear_every, desired_long_prompt, desired_short_prompt):
                 drift = " drifted"
         extra = ""
         state_file = state_path(cfg, pane)
