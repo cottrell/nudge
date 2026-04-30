@@ -1,8 +1,5 @@
 # nudge
 
-> [!WARNING]
-> You should probably just use [swarmesh](https://github.com/cottrell/swarmesh) unless you really want these watchers, which rely on fragile state detection logic that is prone to false positives and breakage across agent CLI updates.
-
 Config-driven tmux agent orchestration and monitoring.
 
 Primary workflow is the YAML swarm CLI under `swarm/cli.py`.
@@ -133,6 +130,21 @@ Defaults:
 
 - `MONITOR_DEBUG=1` writes raw lines to `/tmp/<session>_<window-pane>.raw`
 - `MONITOR_STATE_LOG=1` writes transitions to `/tmp/<session>_<window-pane>.state.log`
+
+## Agent state file landscape
+
+State detection approach varies by agent. Claude Code is currently the only CLI that
+writes a real-time process state file; all others only write retrospective session logs.
+
+| Agent  | Real-time state file | Fallback |
+|--------|----------------------|----------|
+| Claude | `~/.claude/sessions/{PID}.json` — `status: idle\|busy`, `updatedAt` ms timestamp | C monitor |
+| Codex  | none known — writes `~/.codex/sessions/` JSONL logs | C monitor |
+| Gemini | none known — writes `~/.gemini/` JSONL logs | C monitor |
+| Qwen   | none known — writes `~/.qwen/sessions/` JSONL logs | C monitor |
+
+For Claude, the session JSON is ground truth and a more reliable source than terminal
+scraping. See backlog TASK-1 for the planned implementation.
 
 ## Similar projects
 
