@@ -1,5 +1,8 @@
 # nudge
 
+> [!WARNING]
+> You should probably just use [swarmesh](https://github.com/cottrell/swarmesh) unless you really want these watchers, which rely on fragile state detection logic that is prone to false positives and breakage across agent CLI updates.
+
 Config-driven tmux agent orchestration and monitoring.
 
 Primary workflow is the YAML swarm CLI under `swarm/cli.py`.

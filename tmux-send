@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Send text + Enter to a tmux target.
 # Usage: tmux-send <target> <text...>
-# Requires two send-keys calls; combining them in one does not reliably send Enter.
+# Uses set-buffer/paste-buffer for reliable multi-line delivery; named buffer avoids concurrent-send collisions.
 # NOTE: sending while an agent is mid-run (still processing) may cause odd behaviour — not fully tested.
 
 if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
@@ -40,7 +40,8 @@ if [ -n "$TMUX" ]; then
     MSG="${SENDER}: ${MSG}"
 fi
 
-# Use -l for literal text sending to handle special chars correctly
-tmux send-keys -t "$TARGET" -l -- "$MSG"
-sleep 0.1
-tmux send-keys -t "$TARGET" C-m
+BUF="nudge-$$-$RANDOM"
+tmux set-buffer -b "$BUF" -- "$MSG"
+tmux paste-buffer -b "$BUF" -p -t "$TARGET"
+tmux send-keys -t "$TARGET" Enter
+tmux delete-buffer -b "$BUF" 2>/dev/null
