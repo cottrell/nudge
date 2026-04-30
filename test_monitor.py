@@ -882,18 +882,15 @@ def test_swarm_status_brief_shows_usage_pct(tmp_path):
         from common import load_config
         cfg_path = tmp_path / 'swarm.yaml'
         cfg_path.write_text("""
-session:
-  name: demo
-  window: grid
-layout:
-  type: grid
-  rows: 1
-  cols: 1
-panes:
-  - pane: "0.0"
-    agent: claude
-    command: claude
-    monitor: true
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
 """)
         cfg = load_config(cfg_path)
         lines = topology.status_lines(cfg, brief=True)

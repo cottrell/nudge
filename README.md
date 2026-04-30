@@ -20,6 +20,7 @@ Apply and run:
 
 ```bash
 python swarm/cli.py apply ./swarm/<project>.yaml
+python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
 python swarm/cli.py status ./swarm/<project>.yaml --brief
 python swarm/cli.py status ./swarm/<project>.yaml --brief -w
 python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
@@ -42,6 +43,13 @@ Attach after apply if needed:
 python swarm/cli.py apply ./swarm/<project>.yaml --attach
 ```
 
+tmuxp-first flow:
+
+```bash
+tmuxp load ./swarm/<project>.yaml
+python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
+```
+
 Built-in examples:
 
 - `examples/swarm-single.yaml`
@@ -50,13 +58,16 @@ Built-in examples:
 ## Config model
 
 - one tmux session
-- one tmux window
-- grid shape via `layout.rows` and `layout.cols`
-- panes with `pane`, optional `title`, `agent`, `command`, `monitor`, optional `babysit`
+- one or more tmux windows
+- each window has `window_name`, `layout`, and `panes`
+- pane command is `shell_command`
+- nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`)
 
 Notes:
 
-- `rows`/`cols` are validated, and layout is applied via tmux `select-layout tiled`
+- pane IDs are derived as `W.N` (window index, pane index)
+- `apply` creates/expands windows and applies per-window tmux layout
+- `apply --skip-grid` skips session/window creation and only sets up monitors/titles/commands
 - `apply` and `babysit apply` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
 - self-awareness note: `/tmp/nudge-swarm/<session>/self-awareness.txt`

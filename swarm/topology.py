@@ -9,7 +9,7 @@ import sys
 import time
 import json
 
-from common import AGENT_STATS_CMD, ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, write_runtime_map, write_self_awareness_text
+from common import AGENT_STATS_CMD, ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, WindowSpec, write_runtime_map, write_self_awareness_text
 
 # Patterns tried per line in order; first match wins for that line.
 # Returns list of {"label": str, "pct": int} dicts (pct = % remaining).
@@ -32,8 +32,8 @@ def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, check=check, text=True, capture_output=True)
 
 
-def pane_count(cfg: SwarmConfig) -> int:
-    proc = run("tmux", "list-panes", "-t", f"{cfg.session_name}:{cfg.window_name}", check=False)
+def _window_pane_count(session_name: str, window_name: str) -> int:
+    proc = run("tmux", "list-panes", "-t", f"{session_name}:{window_name}", check=False)
     if proc.returncode != 0:
         return 0
     return len([line for line in proc.stdout.splitlines() if line.strip()])
@@ -43,48 +43,71 @@ def socket_path(cfg: SwarmConfig, pane: str) -> str:
     return f"/tmp/{cfg.session_name}_{pane}.sock"
 
 
-def ensure_grid(cfg: SwarmConfig, dry_run: bool) -> None:
-    created_session = False
-    created_window = False
-    if run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode != 0:
-        if dry_run:
-            print(f"would create tmux session {cfg.session_name}:{cfg.window_name}")
-            created_session = True
-        else:
-            run("tmux", "new-session", "-d", "-s", cfg.session_name, "-n", cfg.window_name, "bash")
-            created_session = True
-    elif run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) == -1:
-        if dry_run:
-            print(f"would create window {cfg.session_name}:{cfg.window_name}")
-            created_window = True
-        else:
-            run("tmux", "new-window", "-t", cfg.session_name, "-n", cfg.window_name, "bash")
-            created_window = True
+def _ensure_window(
+    session_name: str,
+    win: WindowSpec,
+    dry_run: bool,
+    is_first: bool = False,
+    allow_expand_existing: bool = False,
+) -> None:
+    target = f"{session_name}:{win.window_name}"
+    expected = len(win.panes)
+    existing_windows = run("tmux", "list-windows", "-t", session_name, "-F", "#{window_name}", check=False).stdout
+    win_exists = win.window_name in existing_windows.splitlines()
 
-    count = 1 if dry_run and (created_session or created_window) else pane_count(cfg)
-    if count == 0 and not dry_run:
-        raise RuntimeError(f"could not inspect panes for {cfg.session_name}:{cfg.window_name}")
-    if count == 0 and dry_run:
+    if not win_exists:
+        if dry_run:
+            print(f"would create window {target}")
+        else:
+            if is_first:
+                # first window was already created with the session
+                run("tmux", "rename-window", "-t", f"{session_name}:0", win.window_name)
+            else:
+                run("tmux", "new-window", "-t", session_name, "-n", win.window_name, "bash")
         count = 1
-    if count > 0 and count != cfg.pane_count and not (created_session or created_window):
-        raise RuntimeError(
-            f"{cfg.session_name}:{cfg.window_name} has {count} panes, config expects {cfg.pane_count}. "
-            "Recreate the window/session before applying."
-        )
+    else:
+        count = _window_pane_count(session_name, win.window_name)
+        if count == 0 and not dry_run:
+            raise RuntimeError(f"could not inspect panes for {target}")
+        if count != expected and not allow_expand_existing:
+            raise RuntimeError(
+                f"{target} has {count} panes, config expects {expected}. "
+                "Recreate the window/session before applying."
+            )
 
-    current_count = count
-    while current_count < cfg.pane_count:
+    while count < expected:
         if dry_run:
-            print(f"would split window {cfg.session_name}:{cfg.window_name} to add pane 0.{current_count}")
-            current_count += 1
+            print(f"would split {target} to add pane {win.window_name}.{count}")
+            count += 1
             continue
-        run("tmux", "split-window", "-t", f"{cfg.session_name}:{cfg.window_name}.0", "bash")
-        run("tmux", "select-layout", "-t", f"{cfg.session_name}:{cfg.window_name}", "tiled")
-        current_count = pane_count(cfg)
+        run("tmux", "split-window", "-t", f"{target}.0", "bash")
+        run("tmux", "select-layout", "-t", target, win.layout)
+        count = _window_pane_count(session_name, win.window_name)
+
     if dry_run:
-        print(f"would apply tiled layout to {cfg.session_name}:{cfg.window_name}")
-    elif count == current_count:
-        run("tmux", "select-layout", "-t", f"{cfg.session_name}:{cfg.window_name}", "tiled")
+        print(f"would apply layout {win.layout!r} to {target}")
+    else:
+        run("tmux", "select-layout", "-t", target, win.layout)
+
+
+def setup_grid(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Create the tmux session and all windows. Idempotent. Can be replaced by tmuxp load."""
+    session_exists = run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode == 0
+    created_session = False
+    if not session_exists:
+        if dry_run:
+            print(f"would create session {cfg.session_name}")
+        else:
+            run("tmux", "new-session", "-d", "-s", cfg.session_name, "-n", cfg.windows[0].window_name, "bash")
+        created_session = True
+    for i, win in enumerate(cfg.windows):
+        _ensure_window(
+            cfg.session_name,
+            win,
+            dry_run,
+            is_first=(i == 0 and not session_exists),
+            allow_expand_existing=(i == 0 and created_session),
+        )
 
 
 def socket_ready(session_name: str, pane: str) -> bool:
@@ -328,8 +351,8 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
         raise ValueError(f"no {scope} matched for broadcast")
 
 
-def apply(cfg: SwarmConfig, dry_run: bool) -> None:
-    ensure_grid(cfg, dry_run)
+def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Start monitors, set pane titles, and run agent commands. Run after setup_grid or tmuxp load."""
     for pane in cfg.panes:
         if pane.monitor:
             ensure_monitor(cfg, pane.pane, pane.agent, dry_run)
@@ -340,34 +363,33 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
         ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
     write_runtime_map(cfg)
     write_self_awareness_text(cfg)
+
+
+def apply(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
+    if not skip_grid:
+        setup_grid(cfg, dry_run)
+    setup_monitors(cfg, dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
-    print(f"{'Planned' if dry_run else 'Applied'} swarm topology for {cfg.session_name}:{cfg.window_name}")
+    print(f"{'Planned' if dry_run else 'Applied'} swarm for {cfg.session_name}")
     print()
-    print("For AGENTS.md:")
-    print()
-    print("  - When using the swarm workflow, consult these files:")
-    print(f"    - Runtime map: {cfg.runtime_map_path}")
-    print(f"    - Self-awareness note: {cfg.self_awareness_path}")
-    print()
-    print("Operator reminders:")
-    print()
-    print(f"  - Status: python {SWARM_CLI} status {cfg.path} --brief")
-    print(f"  - Watch: python {SWARM_CLI} status {cfg.path} --brief -w")
+    print(f"  Status: python {SWARM_CLI} status {cfg.path} --brief")
+    print(f"  Watch:  python {SWARM_CLI} status {cfg.path} --brief -w")
     print()
 
 
 def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
     lines: list[str] = []
     session_exists = run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode == 0
-    window_exists = run("tmux", "list-windows", "-t", cfg.session_name, check=False).stdout.find(cfg.window_name) != -1 if session_exists else False
-    actual_count = pane_count(cfg) if window_exists else 0
+    existing_windows = run("tmux", "list-windows", "-t", cfg.session_name, "-F", "#{window_name}", check=False).stdout.splitlines() if session_exists else []
+    actual_count = sum(_window_pane_count(cfg.session_name, w.window_name) for w in cfg.windows if w.window_name in existing_windows)
+    session_ok = session_exists and all(w.window_name in existing_windows for w in cfg.windows)
     if brief:
-        lines.append(f"{cfg.session_name}:{cfg.window_name} panes={actual_count}/{cfg.pane_count}" if window_exists else f"{cfg.session_name}:{cfg.window_name} missing")
+        lines.append(f"{cfg.session_name} panes={actual_count}/{cfg.pane_count}" if session_ok else f"{cfg.session_name} missing")
     else:
-        lines.append(f"session={cfg.session_name} window={cfg.window_name} exists={'yes' if window_exists else 'no'} panes={actual_count}/{cfg.pane_count}")
-    if not window_exists:
+        lines.append(f"session={cfg.session_name} exists={'yes' if session_ok else 'no'} panes={actual_count}/{cfg.pane_count}")
+    if not session_ok:
         return lines
     brief_rows: list[tuple[str, str, str, str]] = []
     for pane in cfg.panes:
