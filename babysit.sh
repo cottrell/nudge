@@ -53,6 +53,24 @@ send_message() {
     tmux send-keys -t "$TARGET" C-m
 }
 
+log_nudge() {
+    REASON="$1"
+    MSG="$2"
+    LOG_FILE="${BABYSIT_LOG_FILE:-nudge.log}"
+    LONG_F="${BABYSIT_LONG_PROMPT_FILE:-}"
+    SHORT_F="${BABYSIT_SHORT_PROMPT_FILE:-}"
+    
+    F_INFO=""
+    case "$REASON" in
+        startup|restore) [ -n "$LONG_F" ] && F_INFO="($LONG_F)" ;;
+        idle|forced_*)   [ -n "$SHORT_F" ] && F_INFO="($SHORT_F)" ;;
+    esac
+
+    TS=$(date '+%Y-%m-%d %H:%M:%S')
+    SUMMARY=$(echo "$MSG" | tr '\n' ' ' | head -c 60)
+    printf "%-19s | %-20s | %-15s | %-60s %s\n" "$TS" "$SESSION" "$REASON" "$SUMMARY" "$F_INFO" >> "$LOG_FILE"
+}
+
 write_state() {
     [ -n "$STATE_FILE" ] || return 0
     NOW_TS=${1:-$(date +%s)}
@@ -77,6 +95,7 @@ EOF
 NUDGE_COUNT=0
 if [ -n "$LONG_NUDGE" ]; then
     echo "$(date '+%H:%M:%S') $SESSION startup babysit prompt"
+    log_nudge "startup" "$LONG_NUDGE"
     send_message "$LONG_NUDGE"
     NUDGE_COUNT=$((NUDGE_COUNT + 1))
     write_state "$(date +%s)" "" "startup_nudge" "$(date +%s)"
@@ -155,11 +174,14 @@ PYEOF
             fi
             if [ "$CLEAR_EVERY" -gt 0 ] && [ "$NUDGE_COUNT" -gt 0 ] && [ $((NUDGE_COUNT % CLEAR_EVERY)) -eq 0 ]; then
                 echo "$(date '+%H:%M:%S') $SESSION clearing context (nudge_count=$NUDGE_COUNT)"
+                log_nudge "clear" "/clear"
                 send_message "/clear"
                 sleep 1
+                log_nudge "restore" "$LONG_NUDGE"
                 send_message "$LONG_NUDGE"
             else
                 echo "$(date '+%H:%M:%S') $SESSION is idle — nudging"
+                log_nudge "idle" "$SHORT_NUDGE"
                 send_message "$SHORT_NUDGE"
             fi
             NUDGE_COUNT=$((NUDGE_COUNT + 1))
@@ -168,6 +190,7 @@ PYEOF
         unknown)
             if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [ $((NOW - NONIDLE_SINCE)) -ge "$MAX_NONIDLE_SECS" ]; then
                 echo "$(date '+%H:%M:%S') $SESSION is unknown for $((NOW - NONIDLE_SINCE))s — nudging anyway"
+                log_nudge "forced_unknown" "$SHORT_NUDGE"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
                 NUDGE_COUNT=$((NUDGE_COUNT + 1))
@@ -184,6 +207,7 @@ PYEOF
         working|error)
             if [ "$MAX_NONIDLE_SECS" -gt 0 ] 2>/dev/null && [ "$NONIDLE_SINCE" -gt 0 ] 2>/dev/null && [ $((NOW - NONIDLE_SINCE)) -ge "$MAX_NONIDLE_SECS" ]; then
                 echo "$(date '+%H:%M:%S') $SESSION is $STATE for $((NOW - NONIDLE_SINCE))s — nudging anyway"
+                log_nudge "forced_$STATE" "$SHORT_NUDGE"
                 send_message "$SHORT_NUDGE"
                 NONIDLE_SINCE=$NOW
                 NUDGE_COUNT=$((NUDGE_COUNT + 1))

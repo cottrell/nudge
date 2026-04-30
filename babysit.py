@@ -188,6 +188,31 @@ def _send_message(target: str, msg: str) -> None:
     subprocess.run(["tmux", "send-keys", "-t", target, "C-m"], check=False)
 
 
+def _log_nudge(session: str, reason: str, msg: str) -> None:
+    log_file = os.environ.get("BABYSIT_LOG_FILE") or "nudge.log"
+    long_f = os.environ.get("BABYSIT_LONG_PROMPT_FILE", "")
+    short_f = os.environ.get("BABYSIT_SHORT_PROMPT_FILE", "")
+    
+    # Determine which file name to show
+    if reason in ("startup", "restore"):
+        f_info = f"({long_f})" if long_f else ""
+    elif reason in ("idle", "forced_unknown", "forced_working", "forced_error"):
+        f_info = f"({short_f})" if short_f else ""
+    else:
+        f_info = ""
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    summary = msg.replace("\n", " ").strip()
+    if len(summary) > 60:
+        summary = summary[:57] + "..."
+    line = f"{ts} | {session:20} | {reason:15} | {summary:60} {f_info}\n"
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
+
+
 def _write_state(
     path: str | None,
     target: str,
@@ -271,6 +296,7 @@ def main() -> int:
     if long_nudge:
         now = int(time.time())
         print(f"{time.strftime('%H:%M:%S')} {session} startup babysit prompt")
+        _log_nudge(session, "startup", long_nudge)
         _send_message(target, long_nudge)
         pct_at_nudge = current_pct  # None until first probe
         nudge_sent_ts = time.time()
@@ -318,10 +344,13 @@ def main() -> int:
             print(f"{ts} {session} is idle — nudging")
             if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
                 print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
+                _log_nudge(session, "clear", "/clear")
                 _send_message(target, "/clear")
                 time.sleep(1.0)
+                _log_nudge(session, "restore", long_nudge)
                 _send_message(target, long_nudge)
             else:
+                _log_nudge(session, "idle", short_nudge)
                 _send_message(target, short_nudge)
             pct_at_nudge = current_pct
             nudge_sent_ts = now_f
@@ -350,6 +379,7 @@ def main() -> int:
         elif state == "unknown":
             if force_deadline > 0 and now >= force_deadline:
                 print(f"{ts} {session} is unknown for {now - nonidle_since}s — nudging anyway")
+                _log_nudge(session, "forced_unknown", short_nudge)
                 _send_message(target, short_nudge)
                 nonidle_since = now
                 nudge_count += 1
@@ -371,6 +401,7 @@ def main() -> int:
         elif state in ("working", "error"):
             if force_deadline > 0 and now >= force_deadline:
                 print(f"{ts} {session} is {state} for {now - nonidle_since}s — nudging anyway")
+                _log_nudge(session, f"forced_{state}", short_nudge)
                 _send_message(target, short_nudge)
                 nonidle_since = now
                 nudge_count += 1

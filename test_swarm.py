@@ -365,13 +365,13 @@ panes:
 
     monkeypatch.setattr(babysitctl, "process_running", lambda pid: pid == 1234)
     monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
-    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, str(dry_run))))
+    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, lp_file, sp_file, str(dry_run))))
 
     babysitctl.apply(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
-        ("start", "0.0", "321", "0", "please continue", "please continue", "False"),
+        ("start", "0.0", "321", "0", "please continue", "please continue", "", "", "False"),
     ]
 
 
