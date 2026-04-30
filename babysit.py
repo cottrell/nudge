@@ -28,6 +28,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+_ROOT_DIR = Path(__file__).resolve().parent
+_TMUX_SEND = _ROOT_DIR / "tmux-send"
 
 # ── EMA scheduling ────────────────────────────────────────────────────────────
 _ALPHA = 0.30        # EMA smoothing
@@ -131,13 +133,13 @@ def _parse_usage_from_text(text: str) -> list[dict]:
     return labeled if labeled else limits
 
 
-def _probe_usage(target: str, cmd: str) -> tuple[float | None, float | None]:
+def _probe_usage(target: str, cmd: str, dismiss: bool = False) -> tuple[float | None, float | None]:
     """Send stats command, wait, capture pane, parse. Returns (min_pct, soonest_reset_ts)."""
-    subprocess.run(["tmux", "send-keys", "-t", target, "-l", "--", cmd], check=False)
-    time.sleep(0.1)
-    subprocess.run(["tmux", "send-keys", "-t", target, "C-m"], check=False)
+    subprocess.run([str(_TMUX_SEND), target, cmd], check=False)
     time.sleep(2)
     r = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], capture_output=True, text=True)
+    if dismiss:
+        subprocess.run(["tmux", "send-keys", "-t", target, "Escape"], check=False)
     limits = _parse_usage_from_text(r.stdout)
     if not limits:
         return None, None
@@ -183,9 +185,7 @@ def _send_message(target: str, msg: str) -> None:
         sender = r.stdout.strip()
         if sender:
             msg = f"{sender}: {msg}"
-    subprocess.run(["tmux", "send-keys", "-t", target, "-l", "--", msg], check=False)
-    time.sleep(0.1)
-    subprocess.run(["tmux", "send-keys", "-t", target, "C-m"], check=False)
+    subprocess.run([str(_TMUX_SEND), target, msg], check=False)
 
 
 def _log_nudge(session: str, reason: str, msg: str) -> None:
@@ -325,7 +325,7 @@ def main() -> int:
             # probe usage on a throttled schedule
             if stats_cmd and (now_f - stats_last_probe) >= stats_every:
                 print(f"{ts} {session} probing usage ({stats_cmd})")
-                new_pct, new_reset_ts = _probe_usage(target, stats_cmd)
+                new_pct, new_reset_ts = _probe_usage(target, stats_cmd, dismiss=(agent == "claude"))
                 if new_pct is not None:
                     current_pct, current_reset_ts = new_pct, new_reset_ts
                 stats_last_probe = now_f

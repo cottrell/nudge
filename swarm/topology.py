@@ -284,9 +284,7 @@ def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
         if dry_run:
             print(f"would send {cmd!r} to {target} ({pane.title})")
         else:
-            subprocess.run(["tmux", "send-keys", "-t", target, "-l", "--", cmd], check=True, text=True)
-            time.sleep(0.05)
-            subprocess.run(["tmux", "send-keys", "-t", target, "C-m"], check=True, text=True)
+            subprocess.run([str(ROOT_DIR / "tmux-send"), target, cmd], check=True, text=True)
         targets.append((pane, target, cmd))
 
     if not targets:
@@ -299,6 +297,8 @@ def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
     time.sleep(2)  # wait for CLIs to render their response
     for pane, target, cmd in targets:
         proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
+        if pane.agent == "claude":
+            subprocess.run(["tmux", "send-keys", "-t", target, "Escape"], check=False)
         limits = _parse_usage_from_text(proc.stdout)
         if limits:
             _write_usage_cache(cfg, pane.pane, limits)
