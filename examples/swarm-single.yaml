@@ -1,17 +1,12 @@
-session:
-  name: single_agent
-  window: main
-
-layout:
-  type: grid
-  rows: 1
-  cols: 1
-
-panes:
-  - pane: "0.0"
-    title: claude
-    agent: claude
-    command: "claude"
-    monitor: true
-    babysit:
-      enabled: false
+session_name: single_agent
+windows:
+  - window_name: main
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          title: claude
+          agent: claude
+          monitor: true
+          babysit:
+            enabled: false

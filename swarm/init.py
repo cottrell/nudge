@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from common import ROOT_DIR
@@ -45,44 +44,30 @@ AGENT_COMMANDS: dict[str, str] = {
 }
 
 
-def _grid_dims(n: int) -> tuple[int, int]:
-    """Return (rows, cols) with rows*cols==n, as square as possible."""
-    rows = math.isqrt(n)
-    while rows > 1 and n % rows != 0:
-        rows -= 1
-    return rows, n // rows
-
-
-def _pane_entry(row: int, agent: str) -> str:
+def _pane_entry(agent: str) -> str:
     cmd = AGENT_COMMANDS.get(agent, agent)
-    return f"""  - pane: "0.{row}"
-    title: {agent}
-    agent: {agent}
-    command: "{cmd}"
-    monitor: true
-    babysit:
-      enabled: false
-      interval_secs: 600
-      long_prompt_file: "prompts/worker_long.md"
-      short_prompt_file: "prompts/worker_short.txt"
+    return f"""      - shell_command: "{cmd}"
+        nudge:
+          title: {agent}
+          agent: {agent}
+          monitor: true
+          babysit:
+            enabled: false
+            interval_secs: 600
+            long_prompt_file: prompts/worker_long.md
+            short_prompt_file: prompts/worker_short.txt
 """
 
 
 def config_text(name: str, agents: list[str] | None = None) -> str:
     if agents is None:
         agents = DEFAULT_AGENTS
-    rows, cols = _grid_dims(len(agents))
-    panes_block = "".join(_pane_entry(i, a) for i, a in enumerate(agents))
-    return f"""session:
-  name: {name}
-  window: grid
-
-layout:
-  type: grid
-  rows: {rows}
-  cols: {cols}
-
-panes:
+    panes_block = "".join(_pane_entry(a) for a in agents)
+    return f"""session_name: {name}
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
 {panes_block}"""
 
 

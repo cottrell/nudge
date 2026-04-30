@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply_p.add_argument("config", help="Path to YAML config")
     apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
     apply_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after apply")
+    apply_p.add_argument("--skip-grid", action="store_true", help="Skip session/pane creation (use after tmuxp load)")
 
     status_p = sub.add_parser("status", help="Report current swarm state")
     status_p.add_argument("config", help="Path to YAML config")
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "apply":
             cfg = load_config(args.config)
-            swarm_topology.apply(cfg, args.dry_run)
+            swarm_topology.apply(cfg, args.dry_run, skip_grid=args.skip_grid)
             if args.attach and not args.dry_run:
                 subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
             return 0
