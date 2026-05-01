@@ -289,9 +289,7 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
     current = pane_current_command(cfg, pane)
     if current and current not in SHELL_NAMES:
         return
-    subprocess.run(["tmux", "send-keys", "-t", f"{cfg.session_name}:{pane}", "-l", "--", command], check=True, text=True)
-    time.sleep(0.1)
-    subprocess.run(["tmux", "send-keys", "-t", f"{cfg.session_name}:{pane}", "C-m"], check=True, text=True)
+    subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", f"{cfg.session_name}:{pane}", command], check=True, text=True)
 
 
 def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -307,7 +305,7 @@ def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
         if dry_run:
             print(f"would send {cmd!r} to {target} ({pane.title})")
         else:
-            subprocess.run([str(ROOT_DIR / "tmux-send"), target, cmd], check=True, text=True)
+            subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", target, cmd], check=True, text=True)
         targets.append((pane, target, cmd))
 
     if not targets:
