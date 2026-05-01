@@ -263,6 +263,7 @@ def main() -> int:
     max_nonidle = int(os.environ.get("BABYSIT_MAX_NONIDLE_SECS", 1800))
     state_file = os.environ.get("BABYSIT_STATE_FILE") or None
     agent = os.environ.get("BABYSIT_AGENT", "")
+    clear_every = int(os.environ.get("BABYSIT_CLEAR_EVERY", 0))
     stats_every = int(os.environ.get("BABYSIT_STATS_EVERY", 300))
 
     stats_cmd = _STATS_CMD.get(agent, "")
