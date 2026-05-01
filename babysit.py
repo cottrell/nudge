@@ -177,15 +177,8 @@ def _query_socket(sock_path: str) -> dict:
 
 
 def _send_message(target: str, msg: str) -> None:
-    if os.environ.get("TMUX"):
-        r = subprocess.run(
-            ["tmux", "display-message", "-p", "#S:#{window_index}.#{pane_index}"],
-            capture_output=True, text=True,
-        )
-        sender = r.stdout.strip()
-        if sender:
-            msg = f"{sender}: {msg}"
-    subprocess.run([str(_TMUX_SEND), target, msg], check=False)
+    # Babysit must send literal commands (e.g. /stats, /clear) unchanged.
+    subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
 def _log_nudge(session: str, reason: str, msg: str) -> None:
