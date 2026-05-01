@@ -22,6 +22,8 @@ if [[ "$TARGET" != *:*.* ]]; then
     fi
 fi
 SESSION=${TARGET%%:*}
+DIR="$(cd "$(dirname "$0")" && pwd)"
+TMUX_SEND="$DIR/tmux-send"
 INTERVAL=${2:-60}
 LONG_NUDGE=${3:-"Please continue."}
 SHORT_NUDGE=${4:-"$LONG_NUDGE"}
@@ -44,13 +46,7 @@ fi
 
 send_message() {
     MSG="$1"
-    if [ -n "$TMUX" ]; then
-        SENDER=$(tmux display-message -p '#S:#{window_index}.#{pane_index}')
-        MSG="${SENDER}: ${MSG}"
-    fi
-    tmux send-keys -t "$TARGET" -l -- "$MSG"
-    sleep 0.1
-    tmux send-keys -t "$TARGET" C-m
+    "$TMUX_SEND" --no-prefix "$TARGET" "$MSG"
 }
 
 log_nudge() {
@@ -166,9 +162,7 @@ PYEOF
         idle)
             if [ -n "$STATS_CMD" ] && [ $((NOW - STATS_LAST_PROBE)) -ge "$STATS_PROBE_INTERVAL" ]; then
                 echo "$(date '+%H:%M:%S') $SESSION probing usage ($STATS_CMD)"
-                tmux send-keys -t "$TARGET" -l -- "$STATS_CMD"
-                sleep 0.1
-                tmux send-keys -t "$TARGET" C-m
+                "$TMUX_SEND" --no-prefix "$TARGET" "$STATS_CMD"
                 STATS_LAST_PROBE=$NOW
                 sleep 2
             fi

@@ -14,6 +14,8 @@ if [ -n "$1" ]; then
 else
     TARGET="$(tmux display-message -p '#S:#{window_index}.0')"
 fi
+DIR="$(cd "$(dirname "$0")" && pwd)"
+TMUX_SEND="$DIR/tmux-send"
 
 # Some tmux/shell startup paths have leaked a trailing } into the argument.
 case "$TARGET" in
@@ -33,9 +35,5 @@ echo "Type safely below. Press Enter to send."
 
 # Loop to read input and send it
 while IFS= read -r -e -p "> " line; do
-    # Send the literal characters of the line
-    tmux send-keys -t "$TARGET" -l -- "$line"
-    sleep 0.1
-    # Send Enter as a separate C-m keypress; this has been more reliable than Enter.
-    tmux send-keys -t "$TARGET" C-m
+    "$TMUX_SEND" --no-prefix "$TARGET" "$line"
 done

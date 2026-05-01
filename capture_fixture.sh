@@ -50,9 +50,7 @@ rm -f "$RAW_TMP" "$TRANSITIONS_TMP" "$SOCK"
 tmux new-session -d -s "$SESSION"
 tmux pipe-pane -t "$TARGET" "$DIR/monitor-bin --agent $AGENT --socket $SOCK --debug $RAW_TMP --state-log $TRANSITIONS_TMP"
 
-tmux send-keys -t "$TARGET" -l -- "$START_CMD"
-sleep 0.1
-tmux send-keys -t "$TARGET" C-m
+"$DIR/tmux-send" --no-prefix "$TARGET" "$START_CMD"
 
 sock_status() {
   printf 'status' | nc -U "$SOCK" 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true
@@ -167,9 +165,7 @@ PROMPT="${CAPTURE_PROMPT:-say hello}"
 echo "Sending prompt: $PROMPT"
 before_lines=$(wc -l < "$RAW_TMP" 2>/dev/null || echo 0)
 before_events=$(transition_count)
-tmux send-keys -t "$TARGET" -l -- "$PROMPT"
-sleep 0.1
-tmux send-keys -t "$TARGET" C-m
+"$DIR/tmux-send" --no-prefix "$TARGET" "$PROMPT"
 
 # Wait for response output + return to idle
 wait_for_output_and_idle "$before_lines" "$before_events" "$DURATION" || {

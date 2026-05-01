@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # Send text + Enter to a tmux target.
-# Usage: tmux-send <target> <text...>
+# Usage: tmux-send [--no-prefix] <target> <text...>
 # Uses set-buffer/paste-buffer for reliable multi-line delivery; named buffer avoids concurrent-send collisions.
 # NOTE: sending while an agent is mid-run (still processing) may cause odd behaviour — not fully tested.
 
-if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    echo "Usage: tmux-send <target> <text...>"
+PREFIX_MODE=1
+if [ "${1:-}" = "--no-prefix" ]; then
+    PREFIX_MODE=0
+    shift
+fi
+
+if [ -z "${1:-}" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "Usage: tmux-send [--no-prefix] <target> <text...>"
     echo ""
     echo "Send literal text plus Enter to a tmux pane."
     echo ""
     echo "Arguments:"
-    echo "  target   tmux session, window, or pane target"
+    echo "  --no-prefix  Do not prepend sender identity when called from inside tmux"
+    echo "  target       tmux session, window, or pane target"
     echo "           Examples: mysession, mysession:0, mysession:0.0"
     echo "           Bare session names default to :0.0"
     echo "  text     Text to send (joined with spaces)"
@@ -35,7 +42,7 @@ fi
 shift
 
 MSG="$*"
-if [ -n "$TMUX" ]; then
+if [ "$PREFIX_MODE" -eq 1 ] && [ -n "$TMUX" ]; then
     SENDER=$(tmux display-message -p '#S:#{window_index}.#{pane_index}')
     MSG="${SENDER}: ${MSG}"
 fi
@@ -43,5 +50,5 @@ fi
 BUF="nudge-$$-$RANDOM"
 tmux set-buffer -b "$BUF" -- "$MSG"
 tmux paste-buffer -b "$BUF" -p -t "$TARGET"
-tmux send-keys -t "$TARGET" Enter
+tmux send-keys -t "$TARGET" C-m
 tmux delete-buffer -b "$BUF" 2>/dev/null
