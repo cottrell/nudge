@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import topology as swarm_apply
+import babysit as babysit_worker
 import babysitctl
 import cli as swarm_cli
 import init as swarm_init
@@ -67,6 +68,18 @@ def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
     agents.write_text("# Existing\n\n## Swarm\n\ncustom\n")
     swarm_init.init("demo", tmp_path)
     assert agents.read_text().count("## Swarm") == 1
+
+
+def test_babysit_log_nudge_includes_target(tmp_path: Path, monkeypatch):
+    log_path = tmp_path / "nudge.log"
+    monkeypatch.setenv("BABYSIT_LOG_FILE", str(log_path))
+
+    babysit_worker._log_nudge("demo", "demo:0.2", "idle", "Please continue.")
+
+    line = log_path.read_text()
+    assert "demo                 | demo:0.2" in line
+    assert "| idle" in line
+    assert "Please continue." in line
 
 
 def test_load_config_multiple_panes(tmp_path: Path):

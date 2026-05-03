@@ -64,7 +64,7 @@ log_nudge() {
 
     TS=$(date '+%Y-%m-%d %H:%M:%S')
     SUMMARY=$(echo "$MSG" | tr '\n' ' ' | head -c 60)
-    printf "%-19s | %-20s | %-15s | %-60s %s\n" "$TS" "$SESSION" "$REASON" "$SUMMARY" "$F_INFO" >> "$LOG_FILE"
+    printf "%-19s | %-20s | %-16s | %-15s | %-60s %s\n" "$TS" "$SESSION" "$TARGET" "$REASON" "$SUMMARY" "$F_INFO" >> "$LOG_FILE"
 }
 
 write_state() {
