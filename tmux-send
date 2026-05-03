@@ -50,5 +50,6 @@ fi
 BUF="nudge-$$-$RANDOM"
 tmux set-buffer -b "$BUF" -- "$MSG"
 tmux paste-buffer -b "$BUF" -p -t "$TARGET"
+sleep "${TMUX_SEND_ENTER_DELAY:-0.1}"
 tmux send-keys -t "$TARGET" C-m
 tmux delete-buffer -b "$BUF" 2>/dev/null
