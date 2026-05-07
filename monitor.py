@@ -39,12 +39,12 @@ PATTERNS = {
     'claude': {
         # idle checked first — these lines are definitive
         'idle':         [r'^\s*>\s*$', r'^❯'],
-        # spinner verbs + braille dots cycling: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏
-        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'[·✢✳∗✻✽]'],
         # 529 overloaded is distinct from 429 rate limit but both mean "back off"
         'rate_limited': [r'rate_limit_error', r'overloaded_error', r'Overloaded',
                          r'exceed.*rate limit', r'429', r'529',
-                         r'Retrying in \d+ seconds'],
+                         r'Retrying in \d+ seconds', r'out of extra usage'],
+        # spinner verbs + braille dots cycling: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏
+        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'[·✢✳∗✻✽]'],
         'error':        [r'API Error:', r'authentication_error', r'invalid_request_error',
                          r'"type"\s*:\s*"error"'],
     },
@@ -235,10 +235,18 @@ class Monitor:
         if '\x1b]' in line and 'Claude Code' in line:
             return None  # Don't classify title bar as working
         line = strip_ansi(line)
-        if self.agent_type == 'claude' and _is_claude_idle(line):
-            return 'idle'
-        if self.agent_type == 'claude' and _is_claude_insert_redraw(line):
-            return 'idle'
+        
+        # High priority specific overrides
+        if self.agent_type == 'claude':
+            # Check for rate limit BEFORE idle/working markers
+            for p in self.patterns.get('rate_limited', []):
+                if re.search(p, line, re.IGNORECASE):
+                    return 'rate_limited'
+            if _is_claude_idle(line) or _is_claude_insert_redraw(line):
+                return 'idle'
+            if _has_braille(line) or _CLAUDE_WORKING_MARKERS.search(line) or (has_sync and line.strip()):
+                return 'working'
+
         if self.agent_type == 'vibe' and _is_vibe_idle(line):
             return 'idle'
         if self.agent_type in {'gemini', 'qwen'} and _has_braille(line):
@@ -247,9 +255,10 @@ class Monitor:
             return 'working'
         if self.agent_type == 'vibe' and _has_braille(line) and not _is_vibe_logo_line(line) and 'analyse' in line.lower():
             return 'working'
-        if self.agent_type == 'claude' and has_sync and line.strip():
-            return 'working'
+
         for state, pats in self.patterns.items():
+            if self.agent_type == 'claude' and state in ('rate_limited', 'idle', 'working'):
+                continue # handled above
             for p in pats:
                 if re.search(p, line, re.IGNORECASE):
                     return state

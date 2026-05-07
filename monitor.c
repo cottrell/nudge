@@ -32,11 +32,12 @@ static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited",
 typedef struct { const char *agent; State state; const char *pat; } Pat;
 static const Pat PATS[] = {
     /* claude */
-    {"claude", ST_WORKING,      "esc to cancel"},
     {"claude", ST_RATE_LIMITED, "rate_limit_error"},
     {"claude", ST_RATE_LIMITED, "overloaded_error"},
     {"claude", ST_RATE_LIMITED, "overloaded"},
     {"claude", ST_RATE_LIMITED, "retrying in"},
+    {"claude", ST_RATE_LIMITED, "out of extra usage"},
+    {"claude", ST_WORKING,      "esc to cancel"},
     {"claude", ST_ERROR,        "api error:"},
     {"claude", ST_ERROR,        "authentication_error"},
     {"claude", ST_ERROR,        "invalid_request_error"},
@@ -372,15 +373,28 @@ static State classify(char *line) {
     if (strstr(line, "\x1b]") && strstr(line, "Claude Code")) return ST_UNKNOWN;
     strip_ansi(line);
     trim_ascii_ws(line);
-    if (!strcmp(g_agent, "claude") && is_claude_idle(line)) return ST_IDLE;
-    if (!strcmp(g_agent, "claude") && is_claude_insert_redraw(line)) return ST_IDLE;
-    if (!strcmp(g_agent, "claude") && has_claude_working_marker(line)) return ST_WORKING;
+
+    if (!strcmp(g_agent, "claude")) {
+        /* High priority rate limit checks */
+        if (icontains(line, "rate_limit_error") || 
+            icontains(line, "overloaded_error") || 
+            icontains(line, "overloaded") || 
+            icontains(line, "retrying in") || 
+            icontains(line, "out of extra usage")) {
+            return ST_RATE_LIMITED;
+        }
+        if (is_claude_idle(line)) return ST_IDLE;
+        if (is_claude_insert_redraw(line)) return ST_IDLE;
+        if (has_claude_working_marker(line)) return ST_WORKING;
+        if (has_sync && line[0] != '\0') return ST_WORKING;
+    }
+
     if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
     if (!strcmp(g_agent, "vibe") && is_vibe_idle(line)) return ST_IDLE;
     if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen")) && has_braille(line)) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && icontains(line, "esc to interrupt")) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && has_braille(line) && !is_vibe_logo_line(line) && icontains(line, "analyse")) return ST_WORKING;
-    if (!strcmp(g_agent, "claude") && has_sync && line[0] != '\0') return ST_WORKING;
+
     for (int i = 0; PATS[i].agent; i++)
         if (!strcmp(PATS[i].agent, g_agent) && icontains(line, PATS[i].pat))
             return PATS[i].state;
