@@ -62,7 +62,17 @@ USAGE_PATTERNS = {
 `0.0 claude [working] (4.2/5.0h)`
 `0.5 codex [idle] (98% left)`
 
-## Safety Considerations: The "Sticky Screen" Problem
+## CLI Commands
+
+### 1. `swarm/cli.py usage` (alias: `probe`)
+Sends the agent-specific stats command (e.g., `/status`, `/stats`, `/usage`) to all monitored panes, waits 2 seconds, and then parses the output to update the local usage cache.
+Because the output passes through the monitor's pipe, it also triggers a state transition in the monitor (e.g., to `rate_limited` if it sees 0% usage or a rate limit message).
+
+### 2. `swarm/cli.py capture <config> <pane>`
+Dumps the current visible content of a specific tmux pane and runs it through the classification logic (using the Python `monitor.py` library). This is useful for debugging why a monitor might be stuck in the wrong state or for identifying new UI patterns to add to the monitor.
+
+## Safety Considerations
+: The "Sticky Screen" Problem
 
 As noted, interactive commands like `/usage` or `/stats` often enter a separate UI buffer. 
 

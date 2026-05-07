@@ -39,9 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to panes with monitor=false")
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
-    usage_p = sub.add_parser("usage", help="Send stats command to all monitored panes to refresh usage info")
+    usage_p = sub.add_parser("usage", aliases=["probe"], help="Send stats command to all monitored panes to refresh usage info")
     usage_p.add_argument("config", help="Path to YAML config")
     usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
+
+    capture_p = sub.add_parser("capture", help="Dump and classify current pane content")
+    capture_p.add_argument("config", help="Path to YAML config")
+    capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
 
     babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit workers")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
@@ -84,6 +88,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "usage":
             cfg = load_config(args.config)
             swarm_topology.probe_usage(cfg, args.dry_run)
+            return 0
+
+        if args.command == "capture":
+            cfg = load_config(args.config)
+            swarm_topology.capture_and_classify(cfg, args.pane)
             return 0
 
         if args.command == "broadcast":
