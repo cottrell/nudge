@@ -58,7 +58,7 @@ PATTERNS = {
     },
     'codex': {
         'working':      [r'working', r'esc to interrupt', r'thinking', r'writing', r'running'],
-        'rate_limited': [r'rate.?limited', r'429'],
+        'rate_limited': [r'rate.?limited', r'429', r'hit your usage limit', r'Upgrade to Pro'],
         'idle':         [r'^\s*\$\s*$', r'^\s*[›>]\s+', r'Reply with exactly', r'\? for shortcuts', r'context left'],
         'error':        [r'Error:'],
     },
@@ -289,6 +289,8 @@ class Monitor:
             self._extract_usage(line)
             self._refresh_state_locked()
             new_state = self.classify(line)
+            if new_state is None and self._usage_pct == 0:
+                new_state = 'rate_limited'
             now = monotonic()
             if new_state == 'working':
                 self._last_working_at = now

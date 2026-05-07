@@ -47,6 +47,7 @@ static const Pat PATS[] = {
     {"gemini", ST_RATE_LIMITED, "quota exceeded"},
     {"gemini", ST_RATE_LIMITED, "rate limit"},
     {"gemini", ST_RATE_LIMITED, "too many requests"},
+    {"gemini", ST_RATE_LIMITED, "0% left"},
     {"gemini", ST_IDLE,         "type your message"},
     {"gemini", ST_IDLE,         "? for shortcuts"},
     {"gemini", ST_ERROR,        "request failed after all retries"},
@@ -58,6 +59,9 @@ static const Pat PATS[] = {
     {"codex",  ST_WORKING,      "writing"},
     {"codex",  ST_WORKING,      "running"},
     {"codex",  ST_RATE_LIMITED, "rate limited"},
+    {"codex",  ST_RATE_LIMITED, "hit your usage limit"},
+    {"codex",  ST_RATE_LIMITED, "Upgrade to Pro"},
+    {"codex",  ST_RATE_LIMITED, "] 0% left"},
     {"codex",  ST_IDLE,         "reply with exactly"},
     {"codex",  ST_IDLE,         "? for shortcuts"},
     {"codex",  ST_IDLE,         "context left"},
@@ -72,16 +76,19 @@ static const Pat PATS[] = {
     {"copilot", ST_IDLE,         "type your message"},
     {"copilot", ST_RATE_LIMITED, "rate limit"},
     {"copilot", ST_RATE_LIMITED, "too many requests"},
+    {"copilot", ST_RATE_LIMITED, "0% left"},
     {"copilot", ST_ERROR,        "error:"},
     /* vibe */
     {"vibe",   ST_WORKING,      "esc to interrupt"},
     {"vibe",   ST_RATE_LIMITED, "rate limits exceeded"},
+    {"vibe",   ST_RATE_LIMITED, "0% left"},
     {"vibe",   ST_ERROR,        "error:"},
     /* qwen */
     {"qwen",   ST_IDLE,         "type your message"},
     {"qwen",   ST_IDLE,         "? for shortcuts"},
     {"qwen",   ST_RATE_LIMITED, "rate limit"},
     {"qwen",   ST_RATE_LIMITED, "too many requests"},
+    {"qwen",   ST_RATE_LIMITED, "0% left"},
     {"qwen",   ST_ERROR,        "error:"},
     {"qwen",   ST_ERROR,        "error"},
     {NULL, 0, NULL}
@@ -408,9 +415,21 @@ static void ingest(const char *line) {
     g_log[g_head][MAX_LINE - 1] = '\0';
     g_head = (g_head + 1) % MAX_LOG;
     if (g_count < MAX_LOG) g_count++;
-    extract_usage(line);
+
+    char work[MAX_LINE];
+    strncpy(work, line, MAX_LINE - 1);
+    work[MAX_LINE - 1] = '\0';
+
+    /* Classify can see sync/OSC markers before they are stripped */
+    State s = classify(work);
+
+    extract_usage(work);  /* Now works on stripped string */
+
+    if (s == ST_UNKNOWN && g_usage_pct == 0) {
+        s = ST_RATE_LIMITED;
+    }
+
     refresh_state_locked();
-    State s = classify((char *)line);
     if (s == ST_WORKING) {
         clock_gettime(CLOCK_MONOTONIC, &g_last_working_at);
         g_pending_idle_at.tv_sec = 0;
@@ -420,14 +439,14 @@ static void ingest(const char *line) {
         double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
         if (monotonic_now() - last < IDLE_HOLDOFF_SECS) {
             clock_gettime(CLOCK_MONOTONIC, &g_pending_idle_at);
-            strncpy(g_pending_idle_line, line, MAX_LINE - 1);
+            strncpy(g_pending_idle_line, work, MAX_LINE - 1);
             g_pending_idle_line[MAX_LINE - 1] = '\0';
             s = ST_UNKNOWN;
         }
     }
     if (s != ST_UNKNOWN && s != g_state) {
         g_state = s;
-        log_state_event("change", g_state, line);
+        log_state_event("change", g_state, work);
     }
     pthread_mutex_unlock(&lock);
 }
