@@ -71,6 +71,23 @@ Because the output passes through the monitor's pipe, it also triggers a state t
 ### 2. `swarm/cli.py capture <config> <pane>`
 Dumps the current visible content of a specific tmux pane and runs it through the classification logic (using the Python `monitor.py` library). This is useful for debugging why a monitor might be stuck in the wrong state or for identifying new UI patterns to add to the monitor.
 
+## Hot-Swapping Monitors
+
+You can update or restart the monitor for an active tmux pane without killing the session.
+
+### Method 1: Re-attach (Replacement)
+Running `attach.sh` on a pane that is already being piped will cause tmux to replace the old pipe process with the new one.
+```bash
+./attach.sh <session>:<window>.<pane> <agent>
+# Example: ./attach.sh tiy:0.0 codex
+```
+
+### Method 2: Swarm Apply (Selective)
+Use the `--skip-grid` flag to re-apply monitors and titles to an existing session.
+```bash
+python swarm/cli.py apply <config> --skip-grid
+```
+
 ## Safety Considerations
 : The "Sticky Screen" Problem
 
