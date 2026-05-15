@@ -1,4 +1,5 @@
 session_name: single_agent
+start_directory: ./
 windows:
   - window_name: main
     layout: tiled
