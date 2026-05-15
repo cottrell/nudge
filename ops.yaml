@@ -1,4 +1,5 @@
-session_name: nudge-ops
+session_name: ops-nudge
+start_directory: ./
 windows:
   - window_name: backlog
     panes:
