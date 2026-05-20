@@ -98,7 +98,10 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     assert "codex:" in out
     assert "list: codex debug models" in out
     assert "gpt-test" in out
-    assert 'shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m <model>"' in out
+    assert (
+        'shell_command: "codex --dangerously-bypass-approvals-and-sandbox '
+        '-m <model>"'
+    ) in out
     assert "claude --dangerously-skip-permissions --model <model>" in out
     assert "gemini -y -m <model>" in out
     assert "qwen -y -m <model>" in out

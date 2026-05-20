@@ -49,7 +49,10 @@ MODEL_HELPERS = {
 }
 
 
-def _run_capture(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
+def _run_capture(
+    argv: list[str],
+    timeout: float = 5.0,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
         check=False,
@@ -162,7 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
     usage_p.add_argument("config", help="Path to YAML config")
     usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
-    sub.add_parser("help", aliases=["models"], help="Show probed model selection commands for agent CLIs")
+    sub.add_parser(
+        "help",
+        aliases=["models"],
+        help="Show probed model selection commands for agent CLIs",
+    )
 
     capture_p = sub.add_parser("capture", help="Dump and classify current pane content")
     capture_p.add_argument("config", help="Path to YAML config")
