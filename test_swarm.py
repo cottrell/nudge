@@ -70,6 +70,41 @@ def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
     assert agents.read_text().count("## Swarm") == 1
 
 
+def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
+    def fake_which(command):
+        return f"/usr/bin/{command}"
+
+    def fake_run(argv, timeout=5.0):
+        class Proc:
+            def __init__(self, stdout="", stderr="", returncode=0):
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        if argv == ["codex", "debug", "models"]:
+            return Proc('{"models":[{"slug":"gpt-test","visibility":"list"}]}')
+        if argv[0] in {"claude", "gemini", "qwen"}:
+            return Proc("Usage\n  -m, --model  Model\n")
+        if argv[0] == "vibe":
+            return Proc("VIBE_ACTIVE_MODEL Override any config field\n")
+        raise AssertionError(f"unexpected command: {argv}")
+
+    monkeypatch.setattr(swarm_cli.shutil, "which", fake_which)
+    monkeypatch.setattr(swarm_cli, "_run_capture", fake_run)
+
+    assert swarm_cli.main(["help"]) == 0
+    out = capsys.readouterr().out
+
+    assert "codex:" in out
+    assert "list: codex debug models" in out
+    assert "gpt-test" in out
+    assert 'shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m <model>"' in out
+    assert "claude --dangerously-skip-permissions --model <model>" in out
+    assert "gemini -y -m <model>" in out
+    assert "qwen -y -m <model>" in out
+    assert "VIBE_ACTIVE_MODEL=<model> vibe --agent auto-approve" in out
+
+
 def test_babysit_log_nudge_includes_target(tmp_path: Path, monkeypatch):
     log_path = tmp_path / "nudge.log"
     monkeypatch.setenv("BABYSIT_LOG_FILE", str(log_path))

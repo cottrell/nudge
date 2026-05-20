@@ -61,3 +61,25 @@ When adding or modifying agent patterns:
 ## Questions?
 
 If unsure about a change, err on the side of making it — the test suite provides good coverage, and the codebase is small enough that mistakes are easy to spot and fix.
+## Swarm
+
+Swarm workflow: read first:
+- Runtime map: `/tmp/nudge-swarm/nudge/runtime.json`
+- Self-awareness note: `/tmp/nudge-swarm/nudge/self-awareness.txt`
+
+Use as source of truth for:
+- tmux pane targets
+- monitor sockets, live state
+- babysit pid/log/spec/state files
+
+Messaging another tmux pane: ALWAYS use `tmux-send`.
+Do NOT use raw `tmux send-keys ... Enter`.
+
+Required form:
+- `/home/cottrell/dev/nudge/tmux-send <target> "message"`
+
+Reason:
+- raw `tmux send-keys ... Enter` often fails to submit Enter
+- prompts can sit unexecuted until next nudge or manual Enter
+
+Swarm scripts: `/home/cottrell/dev/nudge/swarm`.
