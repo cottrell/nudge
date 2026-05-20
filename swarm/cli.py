@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 import subprocess
 import sys
 
@@ -9,6 +11,123 @@ import topology as swarm_topology
 import babysitctl as swarm_babysit
 import init as swarm_init
 from common import load_config
+
+
+MODEL_HELPERS = {
+    "codex": {
+        "command": "codex",
+        "list": ["codex", "debug", "models"],
+        "run": "codex -m <model>",
+        "swarm": (
+            "codex --dangerously-bypass-approvals-and-sandbox -m <model>"
+        ),
+    },
+    "claude": {
+        "command": "claude",
+        "help": ["claude", "--help"],
+        "run": "claude --model <model>",
+        "swarm": "claude --dangerously-skip-permissions --model <model>",
+    },
+    "gemini": {
+        "command": "gemini",
+        "help": ["gemini", "--help"],
+        "run": "gemini -m <model>",
+        "swarm": "gemini -y -m <model>",
+    },
+    "qwen": {
+        "command": "qwen",
+        "help": ["qwen", "--help"],
+        "run": "qwen -m <model>",
+        "swarm": "qwen -y -m <model>",
+    },
+    "vibe": {
+        "command": "vibe",
+        "help": ["vibe", "--help"],
+        "run": "VIBE_ACTIVE_MODEL=<model> vibe",
+        "swarm": "VIBE_ACTIVE_MODEL=<model> vibe --agent auto-approve",
+    },
+}
+
+
+def _run_capture(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _codex_models() -> tuple[list[str], str | None]:
+    proc = _run_capture(MODEL_HELPERS["codex"]["list"])
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "command failed").strip()
+        return [], msg
+    try:
+        data = json.loads(proc.stdout)
+        models = [
+            m["slug"]
+            for m in data.get("models", [])
+            if m.get("visibility") == "list" and m.get("slug")
+        ]
+    except (json.JSONDecodeError, TypeError, KeyError) as e:
+        return [], f"could not parse codex debug models: {e}"
+    return models, None
+
+
+def _model_flag_status(helper: dict[str, object]) -> str:
+    help_argv = helper.get("help")
+    if not isinstance(help_argv, list):
+        return ""
+    proc = _run_capture(help_argv)
+    text = f"{proc.stdout}\n{proc.stderr}"
+    if "--model" in text or "-m," in text:
+        return "model flag: detected in --help"
+    if "VIBE_ACTIVE_MODEL" in text:
+        return "model config: detected VIBE_ACTIVE_MODEL in --help"
+    return "model flag: not found in --help"
+
+
+def print_model_help() -> None:
+    print("Model selection helpers")
+    print()
+    print("Use these in swarm YAML under pane shell_command.")
+    print("Commands are probed from the CLIs installed on this machine.")
+    print()
+
+    for name, helper in MODEL_HELPERS.items():
+        command = str(helper["command"])
+        installed = shutil.which(command) is not None
+        print(f"{name}:")
+        if not installed:
+            print(f"  installed: no ({command} not found)")
+            print()
+            continue
+
+        print(f"  installed: yes ({shutil.which(command)})")
+        if name == "codex":
+            list_cmd = " ".join(str(p) for p in helper["list"])
+            print(f"  list: {list_cmd}")
+            models, error = _codex_models()
+            if error:
+                print(f"  models: unavailable ({error})")
+            elif models:
+                print("  models:")
+                for model in models:
+                    print(f"    {model}")
+            else:
+                print("  models: none returned")
+        else:
+            status = _model_flag_status(helper)
+            if status:
+                print(f"  {status}")
+            print("  list: no list-models command exposed by --help")
+
+        print(f"  run: {helper['run']}")
+        print(f"  swarm YAML: shell_command: \"{helper['swarm']}\"")
+        print()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +161,8 @@ def build_parser() -> argparse.ArgumentParser:
     usage_p = sub.add_parser("usage", aliases=["probe"], help="Send stats command to all monitored panes to refresh usage info")
     usage_p.add_argument("config", help="Path to YAML config")
     usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
+
+    sub.add_parser("help", aliases=["models"], help="Show probed model selection commands for agent CLIs")
 
     capture_p = sub.add_parser("capture", help="Dump and classify current pane content")
     capture_p.add_argument("config", help="Path to YAML config")
@@ -88,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "usage":
             cfg = load_config(args.config)
             swarm_topology.probe_usage(cfg, args.dry_run)
+            return 0
+
+        if args.command in ("help", "models"):
+            print_model_help()
             return 0
 
         if args.command == "capture":
