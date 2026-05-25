@@ -646,7 +646,7 @@ windows:
     assert "broadcast to demo:0.0 (claude)" in out
 
 
-def test_broadcast_can_include_nonmonitored_panes(monkeypatch, tmp_path: Path):
+def test_broadcast_can_include_nonmonitored_agents(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -658,6 +658,11 @@ windows:
           title: claude
           agent: claude
           monitor: true
+      - shell_command: codex
+        nudge:
+          title: unmonitored-codex
+          agent: codex
+          monitor: false
       - shell_command: htop
         nudge:
           title: shell
