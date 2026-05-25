@@ -363,6 +363,8 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
     payload = f"broadcast: {message.strip()}"
     sent = 0
     for pane in cfg.panes:
+        if not pane.agent:
+            continue
         if not include_nonmonitored and not pane.monitor:
             continue
         target = f"{cfg.session_name}:{pane.pane}"

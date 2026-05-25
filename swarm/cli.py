@@ -155,10 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("-w", "--watch", action="store_true", help="Refresh the status in place until interrupted")
     status_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
 
-    broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm panes")
+    broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm agent panes")
     broadcast_p.add_argument("config", help="Path to YAML config")
     broadcast_p.add_argument("message", nargs="+", help="Broadcast message text")
-    broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to panes with monitor=false")
+    broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to agent panes with monitor=false")
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
     usage_p = sub.add_parser("usage", aliases=["probe"], help="Send stats command to all monitored panes to refresh usage info")
