@@ -1,0 +1,40 @@
+{
+  "gateways": [
+    {
+      "name": "default",
+      "listen": ":::8080",
+      "providers": [
+        {
+          "name": "openai",
+          "type": "openai",
+          "api_key": "${OPENAI_API_KEY}"
+        },
+        {
+          "name": "anthropic",
+          "type": "anthropic",
+          "api_key": "${ANTHROPIC_API_KEY}"
+        }
+      ],
+      "routing": {
+        "strategy": "priority",
+        "rules": [
+          { "match": "gpt-*", "provider": "openai" },
+          { "match": "claude-*", "provider": "anthropic" }
+        ]
+      },
+      "rate_limiting": {
+        "enabled": true,
+        "default_limit": 100,
+        "overrides": [
+          { "client_id": "leader", "limit": 1000 },
+          { "client_id": "worker", "limit": 200 }
+        ]
+      },
+      "cache": {
+        "enabled": true,
+        "type": "semantic",
+        "ttl": 3600
+      }
+    }
+  ]
+}

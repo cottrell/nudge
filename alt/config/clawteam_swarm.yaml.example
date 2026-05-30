@@ -1,0 +1,40 @@
+# ClawTeam Swarm Configuration
+swarm_name: nudge-persistent-swarm
+orchestrator:
+  type: leader
+  model: claude-3-opus
+  state_dir: ./alt/state
+  task_board: ./alt/tasks
+
+worker_pools:
+  - name: code-workers
+    count: 3
+    model: claude-3-haiku
+    role: "Specialized in implementation and testing."
+    persistence_mode: session-locked  # Keeps session alive until task DONE
+    communication_channel: filesystem
+    inbox: ./alt/inbox/code
+
+  - name: review-workers
+    count: 1
+    model: gpt-4o-mini
+    role: "Reviewing pull requests and checking against conventions."
+    persistence_mode: event-driven
+    inbox: ./alt/inbox/review
+
+# Task Decomposition Strategy
+decomposition:
+  mode: recursive
+  max_depth: 3
+  validation_required: true
+
+# Cyclical Communications
+feedback_loops:
+  - trigger: test-failure
+    source: code-worker
+    target: leader
+    action: re-plan
+  - trigger: review-comment
+    source: review-worker
+    target: code-worker
+    action: refine
