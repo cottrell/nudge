@@ -5,56 +5,65 @@ Transition from a "single long-running agent with periodic `/clear`" model to a 
 
 ## Key Components
 
-### 1. ClawTeam (The Orchestrator)
-- **Leader Agent:** Persists for the duration of the project or high-level milestone. Responsible for task decomposition using the existing `backlog/` system.
-- **Worker Agents:** Spawned as subagents for specific tasks. They use the `mcp-backlog` tools to read requirements and update progress.
-- **Persistence:** Instead of relying on agent memory, state is maintained in the shared **`backlog/`** structure.
-- **Cyclical Communication:** Workers update the `implementationNotes` and `notesAppend` sections of their assigned tasks. Other workers or the Leader can monitor these files for updates, facilitating feedback loops.
+### 1. The Leader IO Loop (Orchestrator)
+Instead of a long-running, token-burning Leader agent, we use a **Leader IO Loop**:
+- **Event-Driven:** Uses an **Observer Pattern** (via `inotify` or polling) to monitor the `backlog/` directory for status changes or new implementation notes.
+- **Stateless Planning:** When a change is detected, the loop triggers a brief, targeted LLM call (the "Planning Phase") to update the task board or re-assign workers.
+- **Scaling:** Avoids "Infinite Context" issues by only loading relevant task snippets and session manifests into the LLM during planning events.
 
-### 2. Bifrost / LiteLLM (The Gateway)
-- **Rate Limit Management:** Bifrost acts as a high-performance proxy to manage multiple subagents hitting API limits.
-- **Semantic Caching:** Reduces token costs when multiple subagents share large parts of the codebase context.
-- **Centralized Logging:** All subagent interactions are logged through the gateway for audit and debugging.
+### 2. Worker Agents (Persistent & Protocol-Bound)
+- **Session-Bound:** Workers stay alive for a task's duration but follow a **Strict Update Protocol**:
+  - Only append to `implementationNotes` or `notesAppend`.
+  - Update `status` to `blocked`, `in-progress`, or `done`.
+- **Session Manifests:** Each worker maintains a `session_manifest.json` recording `session_id`, `last_worker`, `model_used`, `token_estimate`, and `key_artifacts`.
 
-### 3. Workflow Shift
-| Feature | Current (Nudge) | Alternative (ClawTeam/Bifrost/Backlog) |
+### 3. Bifrost / LiteLLM (The Gateway)
+- **Rate Limit & Cost Management:** Monitor token creep via Bifrost's logging.
+- **Semantic Caching:** Essential for minimizing re-planning costs during cyclical updates.
+
+### 4. Workflow Shift
+| Feature | Current (Nudge) | Alternative (Swarm + IO Loop) |
 | :--- | :--- | :--- |
-| **Lifecycle** | Long-running, periodic `/clear` | Task-bound, persistent workers |
-| **State** | Filesystem + brief context re-injection | **`backlog/` (Task Board)** |
-| **Communication** | Sequential nudges | Async, cyclical updates via `mcp-backlog` |
-| **Efficiency** | Manual token management | Semantic caching + granular tasks |
+| **Lifecycle** | Long-running, periodic `/clear` | Task-bound persistent workers + IO Loop |
+| **State** | Filesystem + context re-injection | **`backlog/` + Session Manifests** |
+| **Communication** | Sequential nudges | Async, event-driven updates via `inotify` |
+| **Efficiency** | Manual token management | Semantic caching + Per-task budgets |
+| **Resumability** | Manual / Re-prime from `GEMINI.md` | **Session ID Persistence & Manifests** |
 
-## Alternatives & Open Ecosystem
+## Swarm Protocols & Best Practices
 
-For Ubuntu-based environments where open-source/free-tier tools are preferred, several alternatives provide robust persistence:
-
-### 1. MetaSwarm (The SDLC Specialist)
-- **Philosophy:** Software Development Life Cycle (SDLC) as a first-class citizen.
-- **Persistence:** Uses the **BEADS** (Git-Native Persistence) system. State, plans, and review cycles are committed to git-native metadata, ensuring the agent's memory lives with the code.
-- **Why Ubuntu?** Runs as a set of CLI tools and background processes that integrate seamlessly with `tmux` and local git repos.
-- **Cost:** Open-source core; cost is tied purely to your chosen LLM (works well with local models via LiteLLM/Ollama).
-
-### 2. ClawTeam (The Swarm Orchestrator)
-- **Philosophy:** Self-organizing teams of specialized workers.
-- **Persistence:** Relies on **Git Worktrees** and filesystem-based Task Boards (like the root `backlog/`).
-- **Ubuntu Advantage:** Leverages standard Linux primitives (filesystem, symlinks, git) without requiring complex container orchestration.
-
-### 3. Hermes Agent (The Long-term Partner)
-- **Philosophy:** Building a deepening model of the user and their projects over months.
-- **Persistence:** Uses **FTS5 (SQLite)** for full-text session search and trajectory compression. It "remembers" how you solved a bug 3 months ago.
+1. **Observer Pattern:** Formalize a "Monitor" subagent (or simple script) that scans for changed task files to trigger re-planning or handoffs.
+2. **Coordination Overhead:** 
+   - Workers: Strictly append-only to implementation notes.
+   - Leader: Summarizes progress only at major milestones.
+3. **Local Model Consistency:** 
+   - Pin model versions (e.g., `llama-3.1:70b-instruct-q4_K_M`).
+   - Use standardized "Worker Onboarding" prompts.
+4. **Git Safety:** Use **Git Worktrees** for worker isolation to prevent merge conflicts on shared backlog files.
 
 ## Comparison of Persistent Workflows
 
-| Tool | State Storage | Best For | Licensing |
-| :--- | :--- | :--- | :--- |
-| **ClawTeam** | Filesystem / Backlog | Parallelized feature work | Open Source |
-| **MetaSwarm** | Git Metadata (BEADS) | TDD, complex refactoring | Open Source |
-| **Hermes** | SQLite / Knowledge Graph | Personal assistant, long-running projects | Open Source |
-| **Nudge (Current)** | Terminal State / `GEMINI.md` | Single-agent interactive coding | Open Source |
+| Tool | State Storage | Best For | Ubuntu Fit | Persistence Strength | Drawbacks |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ClawTeam** | Filesystem / Backlog | Parallel feature work | Excellent | High | Coordination tuning needed |
+| **MetaSwarm** | BEADS (Git-Native) | TDD, SDLC, Refactoring | Excellent | Very High | Heavier on git ops |
+| **Hermes** | SQLite / FTS5 | Personal Partner | Good | Highest | Single-agent focus |
+| **Nudge (Current)** | Terminal / `GEMINI.md` | Interactive coding | Good | Medium | Manual resets |
 
-## Strategy for "Free-ish" Ubuntu Setup
+## Hybrid Infrastructure Strategy (Local + Frontier)
 
-1. **Gateway:** Run **Ollama** or **vLLM** on Ubuntu for local inference (Llama 3, Qwen 2.5).
-2. **Proxy:** Use **Bifrost** (Go-native) or **LiteLLM** to wrap local models with an OpenAI-compatible API.
-3. **Orchestration:** Deploy **ClawTeam** or **MetaSwarm** pointing to the local proxy.
-4. **Persistence:** Use the existing root **`backlog/`** (managed by `mcp-backlog`) as the unified Task Board.
+To balance performance, cost, and intelligence, the workflow uses a **Hybrid Infrastructure** that unifies local models with frontier APIs (Claude, Gemini, Codex):
+
+1. **Gateway Unification:** Use **Bifrost** (preferred for high performance) or **LiteLLM** as the central proxy. It provides a single OpenAI-compatible endpoint for all agents.
+2. **Provider Mix:**
+   - **Frontier Models:** Route "Leader" planning calls or complex refactoring tasks to **Claude 3.5 Sonnet**, **Gemini 1.5 Pro**, or **GPT-4o/Codex**.
+   - **Local Models:** Route repetitive or low-complexity tasks (e.g., unit test generation, linting fixes) to local **Ollama** or **vLLM** instances running Llama 3 or Qwen 2.5.
+3. **Smart Routing:** Use Bifrost/LiteLLM's routing rules to automatically swap models based on task labels in the `backlog/`.
+4. **Efficiency:** Enable **Semantic Caching** at the gateway level to ensure that if a frontier model (expensive) has already seen a large context block, a local model (cheap) can reuse that "understanding" via the cache.
+
+## Setup on Ubuntu
+
+1. **Local Gateway:** Start **Ollama** or **vLLM** for local inference.
+2. **API Proxy:** Configure **Bifrost** or **LiteLLM** with keys for Anthropic (Claude), Google (Gemini), and OpenAI.
+3. **Orchestration:** Deploy **ClawTeam** or **MetaSwarm** pointing to the unified local proxy port (e.g., `:::8080`).
+4. **Persistence:** Use the existing root **`backlog/`** as the unified source of truth.
