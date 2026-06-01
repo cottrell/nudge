@@ -41,6 +41,14 @@ A "Thing" is a discrete unit of agent work with a defined start, execution, and 
 2. **Resumption Protocol:** To resume a "Thing", the Trigger Loop retrieves the `session_id` from the backlog and re-primes the agent session.
 3. **Protocol-Bound Updates:** Agents strictly append implementation notes to the task board, allowing the Trigger Loop (or other agents in the graph) to observe progress.
 
+## Termination & Cleanup
+
+A "Thing" must have a clear exit condition to prevent resource leakage:
+1. **Completion Signal:** Upon finishing its goal, the "Thing" emits a `TASK_DONE` token and updates the `backlog/` status to `Done`.
+2. **Resource Release:** The Trigger Loop detects the `Done` status and shuts down any persistent sessions (e.g., `tmux` panes or background processes) associated with that `session_id`.
+3. **Artifact Archival:** Before terminating, the "Thing" ensures all key artifacts and the final `session_manifest.json` are committed to the `backlog/` or the repository.
+4. **Cleanup Trigger:** An automated cleanup script can periodically prune orphans—`session_id`s in `./alt/state/` that no longer have an active task in the `backlog/`.
+
 ## Comparison of Persistent Workflows
 
 | Tool | State Storage | Best For | Ubuntu Fit | Persistence Strength | Drawbacks |

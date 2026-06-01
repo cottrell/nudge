@@ -79,11 +79,27 @@ def _pane_entry(agent: str, weight: str = "heavy") -> str:
 """
 
 
+SHELL_PANE = """      - shell_command: "bash"
+        nudge:
+          title: shell
+          monitor: false
+"""
+
+
 def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None) -> str:
-    if flavour:
-        flavour_agents = FLAVOUR_AGENTS.get(flavour, DEFAULT_AGENTS)
-        panes_block = "".join(
-            _pane_entry(a, w) for a in flavour_agents for w in ("heavy", "light")
+    if flavour == "3x2":
+        flavour_agents = FLAVOUR_AGENTS["3x2"]
+        # codex+claude: heavy+light; gemini: default only; then shell
+        panes_block = (
+            "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
+            + _pane_entry("gemini", "solo")
+            + SHELL_PANE
+        )
+    elif flavour == "2x2":
+        flavour_agents = FLAVOUR_AGENTS["2x2"]
+        panes_block = (
+            "".join(_pane_entry(a, w) for a in flavour_agents for w in ("heavy", "light"))
+            + SHELL_PANE
         )
     else:
         if agents is None:
