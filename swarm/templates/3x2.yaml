@@ -1,4 +1,5 @@
 session_name: nudge
+start_directory: ./
 windows:
   - window_name: grid
     layout: tiled
@@ -14,6 +15,7 @@ windows:
             clear_every: 1
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
+
       - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m o4-mini"
         nudge:
           title: codex light
@@ -25,6 +27,7 @@ windows:
             clear_every: 6
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
+
       - shell_command: "claude --dangerously-skip-permissions"
         nudge:
           title: claude heavy
@@ -36,6 +39,7 @@ windows:
             clear_every: 1
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
+
       - shell_command: "claude --dangerously-skip-permissions --model haiku"
         nudge:
           title: claude light
@@ -47,6 +51,7 @@ windows:
             clear_every: 6
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
+
       - shell_command: "gemini -y"
         nudge:
           title: gemini heavy
@@ -58,6 +63,7 @@ windows:
             clear_every: 1
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
+
       - shell_command: "gemini -y -m gemini-2.5-flash"
         nudge:
           title: gemini light

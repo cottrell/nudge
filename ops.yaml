@@ -1,6 +1,6 @@
 session_name: ops-nudge
 start_directory: ./
 windows:
-  - window_name: backlog
+  - window_name: backlog-browser
     panes:
-      - backlog browser --no-open -p 6423
+      - backlog browser -p 6423 --no-open
