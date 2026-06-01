@@ -1,40 +1,45 @@
-# ClawTeam Swarm Configuration
-swarm_name: nudge-persistent-swarm
-orchestrator:
-  type: leader
-  model: claude-3-opus
+# ClawTeam Graph Configuration
+swarm_name: nudge-thing-centric-graph
+
+# Trigger Layer
+trigger:
+  type: io-loop
+  monitor_dir: ./backlog/tasks
+  event_filter: "status: To Do"
+
+# Task Session (The "Thing")
+session_defaults:
   state_dir: ./alt/state
-  task_board: ./alt/tasks
+  task_board: ./backlog
+  gateway_url: "http://localhost:8080"
 
-worker_pools:
-  - name: code-workers
-    count: 3
+# Graph Nodes (Roles within the Session Graph)
+node_profiles:
+  - role: planner
+    model: claude-3-opus
+    persistence_mode: session-locked
+    capabilities: ["task-decomposition", "graph-orchestration"]
+
+  - role: implementer
     model: claude-3-haiku
-    role: "Specialized in implementation and testing."
-    persistence_mode: session-locked  # Keeps session alive until task DONE
-    communication_channel: filesystem
-    inbox: ./alt/inbox/code
+    persistence_mode: session-locked
+    capabilities: ["code-writing", "test-generation"]
 
-  - name: review-workers
-    count: 1
+  - role: reviewer
     model: gpt-4o-mini
-    role: "Reviewing pull requests and checking against conventions."
     persistence_mode: event-driven
-    inbox: ./alt/inbox/review
+    capabilities: ["security-audit", "convention-check"]
 
-# Task Decomposition Strategy
-decomposition:
-  mode: recursive
-  max_depth: 3
-  validation_required: true
+# Spawning Logic
+graph_rules:
+  - trigger: sub-task-detected
+    action: spawn-node
+    role-mapping:
+      - type: "feature" -> role: "implementer"
+      - type: "bug" -> role: "implementer"
+      - type: "review" -> role: "reviewer"
 
-# Cyclical Communications
-feedback_loops:
-  - trigger: test-failure
-    source: code-worker
-    target: leader
-    action: re-plan
-  - trigger: review-comment
-    source: review-worker
-    target: code-worker
-    action: refine
+# Persistence & Resumption
+resumption:
+  use_session_id: true
+  reprime_mode: full-transcript

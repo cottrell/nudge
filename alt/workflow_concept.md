@@ -1,45 +1,45 @@
-# Alternative Workflow: Persistent Subagents with ClawTeam & Bifrost
+# Alternative Workflow: Thing-Centric Task Sessions
 
 ## Goal
-Transition from a "single long-running agent with periodic `/clear`" model to a "persistent task-oriented swarm" using ClawTeam for orchestration and Bifrost/LiteLLM for infrastructure.
+Transition from a "single long-running agent with periodic `/clear`" model to a modular architecture focused on **"The Thing" (Task Sessions)**. A "Thing" is a self-contained execution graph triggered by an external loop.
 
 ## Key Components
 
-### 1. The Leader IO Loop (Orchestrator)
-Instead of a long-running, token-burning Leader agent, we use a **Leader IO Loop**:
-- **Event-Driven:** Uses an **Observer Pattern** (via `inotify` or polling) to monitor the `backlog/` directory for status changes or new implementation notes.
-- **Stateless Planning:** When a change is detected, the loop triggers a brief, targeted LLM call (the "Planning Phase") to update the task board or re-assign workers.
-- **Scaling:** Avoids "Infinite Context" issues by only loading relevant task snippets and session manifests into the LLM during planning events.
+### 1. The Trigger Loop (Infrastructure)
+The Trigger Loop is the stateless outer layer that initiates work.
+- **Stateless Triggers:** A human, another agent, or an automated `inotify` loop (watching `backlog/`) triggers a "Thing".
+- **Responsibility:** Its only job is to detect an event and launch a Task Session with the appropriate context and Session ID.
 
-### 2. Worker Agents (Persistent & Protocol-Bound)
-- **Session-Bound:** Workers stay alive for a task's duration but follow a **Strict Update Protocol**:
-  - Only append to `implementationNotes` or `notesAppend`.
-  - Update `status` to `blocked`, `in-progress`, or `done`.
-- **Session Manifests:** Each worker maintains a `session_manifest.json` recording `session_id`, `last_worker`, `model_used`, `token_estimate`, and `key_artifacts`.
+### 2. "The Thing" (Task Session / Execution Graph)
+A "Thing" is a discrete unit of agent work with a defined start, execution, and end.
+- **Hierarchy & Spawning:** A "Thing" can spawn sub-agents ("Sub-Things") to help with specialized sub-tasks.
+- **The Graph:** This creates a Directed Acyclic Graph (DAG) of agent actions and outputs.
+- **Roles:** Terms like "Leader" or "Worker" are simply roles within this hierarchical session graph, not distinct infrastructure requirements.
+- **Persistence:** Each "Thing" is bound to a `session_id`. This allows any task or sub-task to be re-prompted or resumed later, either manually or by the Trigger Loop.
 
-### 3. Bifrost / LiteLLM (The Gateway)
-- **Rate Limit & Cost Management:** Monitor token creep via Bifrost's logging.
-- **Semantic Caching:** Essential for minimizing re-planning costs during cyclical updates.
+### 3. State & Persistence (The Task Board)
+- **Unified Board:** The existing **`backlog/`** directory acts as the shared persistence layer for the entire graph.
+- **Session Manifests:** Each "Thing" records its state, `session_id`, token usage, and artifacts in its assigned backlog task.
+- **Resumability:** Because state lives in the `backlog/` and `session_id`s are tracked, a "Thing" can be "paused" (terminated) and later "re-prompted" by the Trigger Loop with full continuity.
 
-### 4. Workflow Shift
-| Feature | Current (Nudge) | Alternative (Swarm + IO Loop) |
+### 4. Hybrid Infrastructure (Gateway)
+- **Gateway Unification:** **Bifrost** or **LiteLLM** unifies **Local Models** (Ollama) and **Frontier APIs** (Claude, Gemini, Codex).
+- **Semantic Caching:** Essential for making re-prompting and cyclical communication token-efficient across the session graph.
+
+## Workflow Shift
+| Feature | Current (Nudge) | Alternative (Thing-Centric) |
 | :--- | :--- | :--- |
-| **Lifecycle** | Long-running, periodic `/clear` | Task-bound persistent workers + IO Loop |
-| **State** | Filesystem + context re-injection | **`backlog/` + Session Manifests** |
-| **Communication** | Sequential nudges | Async, event-driven updates via `inotify` |
-| **Efficiency** | Manual token management | Semantic caching + Per-task budgets |
-| **Resumability** | Manual / Re-prime from `GEMINI.md` | **Session ID Persistence & Manifests** |
+| **Execution** | Continuous Process | **Discrete "Things" (Task Sessions)** |
+| **Trigger** | Manual / Sequential Nudges | **Event-Driven IO Loop / Human** |
+| **State** | Filesystem + Context Re-injection | **`backlog/` + Session ID Persistence** |
+| **Hierarchy** | Single Agent | **DAG of Spawning Agents** |
+| **Lifecycle** | Forever (until `/clear`) | **Defined Start -> Execution -> End** |
 
-## Swarm Protocols & Best Practices
+## Swarm Protocols
 
-1. **Observer Pattern:** Formalize a "Monitor" subagent (or simple script) that scans for changed task files to trigger re-planning or handoffs.
-2. **Coordination Overhead:** 
-   - Workers: Strictly append-only to implementation notes.
-   - Leader: Summarizes progress only at major milestones.
-3. **Local Model Consistency:** 
-   - Pin model versions (e.g., `llama-3.1:70b-instruct-q4_K_M`).
-   - Use standardized "Worker Onboarding" prompts.
-4. **Git Safety:** Use **Git Worktrees** for worker isolation to prevent merge conflicts on shared backlog files.
+1. **Task Spawning:** When a "Thing" needs help, it creates a new task in `backlog/` which the Trigger Loop detects and launches as a "Sub-Thing".
+2. **Resumption Protocol:** To resume a "Thing", the Trigger Loop retrieves the `session_id` from the backlog and re-primes the agent session.
+3. **Protocol-Bound Updates:** Agents strictly append implementation notes to the task board, allowing the Trigger Loop (or other agents in the graph) to observe progress.
 
 ## Comparison of Persistent Workflows
 
