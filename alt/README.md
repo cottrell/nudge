@@ -4,9 +4,10 @@ This directory contains conceptual notes and initial setup for an alternative ag
 
 ## Key Ideas
 - **Persistence:** Subagents stay "alive" for the duration of a task.
+- **Resumability:** Session IDs are persisted in task metadata to allow resuming work later.
 - **Task Board:** Uses the existing **`backlog/`** directory. This is the source of truth for all agent activity.
 - **Cyclical Comms:** Communication happens through `mcp-backlog` task updates (notes, status changes).
-- **Infrastructure Gateway:** Use **Bifrost** (preferred for performance) or **LiteLLM** to manage rate limits and semantic caching.
+- **Infrastructure Gateway:** Use **Bifrost** (preferred for performance) or **LiteLLM** to unify **Local Models** (Ollama) and **Frontier APIs** (Claude, Gemini, Codex) while managing rate limits, semantic caching, and session states.
 
 ## Structure
 - `config/`: Example configurations for Bifrost, LiteLLM, and ClawTeam.
