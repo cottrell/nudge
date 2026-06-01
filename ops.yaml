@@ -3,7 +3,4 @@ start_directory: ./
 windows:
   - window_name: backlog
     panes:
-      - shell_command: |
-          PORT=$(python3 -c "import random; print(random.randint(30000, 40000))")
-          echo "Starting backlog browser on port $PORT"
-          backlog browser --no-open -p $PORT
+      - backlog browser --no-open -p 6423
