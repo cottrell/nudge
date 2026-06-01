@@ -1,52 +1,33 @@
-# Alt: Thing-Centric Task Sessions
+# Alt: Minimal Session-Based Swarm (Bifrost + ClawTeam)
 
 ## Goal
-Transition from long-running agents to modular **"Things" (Task Sessions)**—discrete execution graphs triggered by a stateless outer loop.
+Get a feel for a "cross-agent agent" workflow using the simplest possible setup: **Bifrost** for the gateway and **ClawTeam** for orchestration.
 
-## Key Components
+## Core Abstraction: "The Thing"
+A "Thing" is simply an **Agent Session Graph**.
+- **Trigger:** A prompt (e.g., "Deal with task-123" or "Refactor this file").
+- **Persistence:** Bound to a `session_id`.
+- **Composition:** A "Thing" can spawn sub-agents to handle specific parts of the prompt, creating a session DAG.
 
-### 1. Trigger Loop (Infrastructure)
-Stateless outer layer (human, agent, or `inotify` on `backlog/`) that initiates a "Thing". It is the *observer* that calls the Dispatcher when an event occurs.
+## Minimal Components
 
-### 2. The Prompt Dispatcher (Unified Interface)
-The single entry point for all interactions with "The Thing".
-- **Function:** `dispatch(prompt, session_id=None)`
-- **Behavior:** 
-  - If `session_id` exists: Resumes the specific Task Session via Bifrost/LiteLLM.
-  - If `session_id` is None: Creates a new unique ID, registers it in the `backlog/`, and initializes the session.
-- **Universal Access:** Can be called by a **Human** (CLI), another **Agent** (Tool Call), or a **Script/IO Loop**.
+### 1. Bifrost (The Gateway)
+Acts as a simple, high-performance proxy to manage rate limits and provides a single endpoint for all agents.
 
-### 3. "The Thing" (Task Session / Execution Graph)
-Discrete unit of work with a defined start, execution DAG, and end. 
-- **Hierarchy:** Can spawn "Sub-Things" (child nodes in the DAG) by calling the Dispatcher.
-- **Persistence:** Bound to the `session_id` stored in `backlog/` metadata for seamless resumption.
+### 2. ClawTeam (The Logic)
+Provides the ability for an agent to spawn other agents. It manages the `session_id` and the context handoff between the caller and the spawned sub-agent.
 
-### 4. State & Persistence (The Task Board)
-Unified source of truth: root **`backlog/`** directory. Agents strictly append to `implementationNotes` and update status to `blocked|in-progress|done`.
+### 3. Dispatcher (The Entry Point)
+A simple script: `./dispatch.sh "prompt" [session_id]`
+- **No ID:** Starts a new session via ClawTeam + Bifrost.
+- **With ID:** Resumes the existing session.
 
-### 5. Hybrid Infrastructure (Gateway)
-**Bifrost** or **LiteLLM** unifies local (Ollama) and frontier (Claude, Gemini, Codex) models. Uses **Semantic Caching** for efficient re-prompting and cyclical comms.
+## Why this works
+- **Stateless Infrastructure:** The dispatcher and scripts don't need to know *what* the agent is doing, only *which* session it belongs to.
+- **Optional Backlog:** While we can record results in `backlog/`, the "Thing" exists independently as a session graph.
+- **Local + Remote:** Bifrost allows us to mix Ollama (local) with Claude/Gemini (frontier) seamlessly.
 
-## Workflow Comparison
-| Feature | Current (Nudge) | Alternative (Thing-Centric) |
-| :--- | :--- | :--- |
-| **Execution** | Continuous Process | **Discrete Task Sessions** |
-| **Interface** | Direct Terminal Input | **Unified Prompt Dispatcher** |
-| **Trigger** | Manual / Sequential | **Event-Driven / Human / Agent** |
-| **State** | Filesystem + Context | **`backlog/` + Session ID** |
-| **Lifecycle** | Forever (until `/clear`) | **Start -> Execution -> End** |
-
-## Protocols
-
-1. **Dispatching:** All prompts (manual or automated) go through the Dispatcher to ensure `session_id` continuity.
-2. **Spawning:** "Things" create dependency tasks in `backlog/` which the Trigger Loop (via Dispatcher) launches as "Sub-Things".
-3. **Resumption:** Dispatcher retrieves `session_id` to re-prime sessions.
-4. **Termination:** Upon goal completion, emit `TASK_DONE`, update status to `Done`, and archive `session_manifest.json`.
-
-## Ecosystem Comparison
-| Tool | State Storage | Best For | Ubuntu Fit |
-| :--- | :--- | :--- | :--- |
-| **ClawTeam** | Filesystem / Backlog | Parallel feature work | Excellent |
-| **MetaSwarm** | BEADS (Git-Native) | TDD, SDLC, Refactoring | Excellent |
-| **Hermes** | SQLite / FTS5 | Long-term memory/recall | Good |
-| **Nudge** | Terminal / `GEMINI.md` | Interactive coding | Good |
+## Getting Started (The "Feel" Test)
+1. Run Bifrost locally.
+2. Use ClawTeam to dispatch a multi-step prompt.
+3. Observe how ClawTeam spawns a sub-agent and how the `session_id` allows us to track the work.

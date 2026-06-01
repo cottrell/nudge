@@ -5,13 +5,14 @@ This directory contains conceptual notes and initial setup for an alternative ag
 ## Key Ideas
 - **"The Thing" (Task Session):** A discrete unit of agent work (an execution graph) with a defined start and end. It can spawn sub-tasks ("Sub-Things") as needed.
 - **Trigger Loop:** A stateless infrastructure layer (human or IO Loop) that initiates "Things" based on events.
-- **Resumability:** Session IDs are persisted in **`backlog/`** task metadata, allowing any "Thing" in the graph to be re-prompted or resumed with full context.
-- **Task Board:** Uses the root **`backlog/`** directory as the shared source of truth for the entire session graph.
+- **Hybrid Persistence:**
+  - **Interface:** **`backlog/`** (Markdown) for transparency and git-native versioning.
+  - **Index:** **`alt/state/`** (SQLite/JSONL) for efficient session resumption and log searching.
 - **Infrastructure Gateway:** Use **Bifrost** or **LiteLLM** to unify **Local Models** (Ollama) and **Frontier APIs** (Claude, Gemini, Codex).
 
 ## Structure
 - `config/`: Example configurations for Bifrost, LiteLLM, and ClawTeam.
-- `templates/`: Markdown templates for persistent tasks.
+- `scripts/`: Implementation of the Trigger Loop and Prompt Dispatcher.
 - `backlog/` (Root): Shared state managed via `mcp-backlog` tools.
 
 ## Getting Started (Conceptual)
