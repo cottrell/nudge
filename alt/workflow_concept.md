@@ -1,6 +1,9 @@
 # Alt: Minimal Session-Based Swarm (Bifrost + ClawTeam)
 
 ## Goal
+
+Transition from long-running agents (nudge swarm) to simplest possible resumable agent session workflows with subagents also resumable. All triggerable either by human, agent or some script/IO loop.
+
 Get a feel for a "cross-agent agent" workflow using the simplest possible setup: **Bifrost** for the gateway and **ClawTeam** for orchestration.
 
 ## Core Abstraction: "The Thing"
