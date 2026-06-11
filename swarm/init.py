@@ -45,7 +45,7 @@ AGENT_COMMANDS: dict[str, str] = {
 
 AGENT_LIGHT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions --model haiku",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m 5.4-mini",
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4-mini",
     "gemini": "gemini -y -m gemini-2.5-flash",
 }
 
