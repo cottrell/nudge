@@ -63,6 +63,21 @@ def _run_capture(
     )
 
 
+def _stop_tmux_session(session_name: str, dry_run: bool) -> None:
+    if dry_run:
+        print(f"would stop tmux session {session_name}")
+        return
+    proc = subprocess.run(
+        ["tmux", "has-session", "-t", f"={session_name}"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if proc.returncode == 0:
+        subprocess.run(["tmux", "kill-session", "-t", session_name], check=False, text=True)
+
+
 def _codex_models() -> tuple[list[str], str | None]:
     proc = _run_capture(MODEL_HELPERS["codex"]["list"])
     if proc.returncode != 0:
@@ -162,6 +177,10 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to agent panes with monitor=false")
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
+    stop_p = sub.add_parser("stop", help="Stop babysit workers and the tmux session")
+    stop_p.add_argument("config", help="Path to YAML config")
+    stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
+
     usage_p = sub.add_parser("usage", aliases=["probe"], help="Send stats command to all monitored panes to refresh usage info")
     usage_p.add_argument("config", help="Path to YAML config")
     usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
@@ -231,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "broadcast":
             cfg = load_config(args.config)
             swarm_topology.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
+            return 0
+
+        if args.command == "stop":
+            cfg = load_config(args.config)
+            swarm_babysit.stop(cfg, args.dry_run)
+            _stop_tmux_session(cfg.session_name, args.dry_run)
             return 0
 
         cfg = load_config(args.config)

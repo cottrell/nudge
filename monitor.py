@@ -339,6 +339,14 @@ class Monitor:
         finally:
             conn.close()
 
+    def _cleanup(self):
+        if self.socket_path and os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+        if self._state_log:
+            self._state_log.close()
+        if self._debug:
+            self._debug.close()
+
     def serve(self):
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
@@ -372,13 +380,16 @@ class Monitor:
         HTTPServer(('', port), Handler).serve_forever()
 
     def run(self, http_port=None):
-        if self.socket_path:
-            threading.Thread(target=self.serve, daemon=True).start()
-        if http_port:
-            threading.Thread(target=self.serve_http, args=(http_port,), daemon=True).start()
-        threading.Thread(target=self._tick, daemon=True).start()
-        for line in sys.stdin:
-            self.ingest(line)
+        try:
+            if self.socket_path:
+                threading.Thread(target=self.serve, daemon=True).start()
+            if http_port:
+                threading.Thread(target=self.serve_http, args=(http_port,), daemon=True).start()
+            threading.Thread(target=self._tick, daemon=True).start()
+            for line in sys.stdin:
+                self.ingest(line)
+        finally:
+            self._cleanup()
 
     def _tick(self):
         while True:
