@@ -16,7 +16,7 @@ windows:
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
 
-      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m 5.4-mini"
+      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4-mini"
         nudge:
           title: codex light
           agent: codex
