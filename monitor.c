@@ -131,6 +131,12 @@ static void cleanup_and_exit(int sig) {
     _exit(0);
 }
 
+static void cleanup_resources(void) {
+    if (g_sock_path[0]) unlink(g_sock_path);
+    if (g_state_log) fclose(g_state_log);
+    if (g_debug_log) fclose(g_debug_log);
+}
+
 static void log_state_event(const char *event, State state, const char *line);
 static void log_debug_line(const char *line);
 
@@ -657,5 +663,6 @@ int main(int argc, char **argv) {
             line[--len] = '\0';
         ingest(line);
     }
+    cleanup_resources();
     return 0;
 }

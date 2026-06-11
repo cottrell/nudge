@@ -722,6 +722,15 @@ def test_cli_short_options_dispatch(monkeypatch):
     assert calls == [("status", "CFG", "True"), ("broadcast", "CFG", "hi", "True", "True")]
 
 
+def test_cli_stop_dispatches_to_babysit_and_tmux_stop(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(babysitctl, "stop", lambda cfg, dry_run: calls.append(("babysit", cfg.session_name, str(dry_run))))
+    monkeypatch.setattr(swarm_cli, "_stop_tmux_session", lambda session_name, dry_run: calls.append(("tmux", session_name, str(dry_run))))
+    rc = swarm_cli.main(["stop", "examples/swarm-grid.yaml"])
+    assert rc == 0
+    assert calls == [("babysit", "agent_grid", "False"), ("tmux", "agent_grid", "False")]
+
+
 def test_cli_babysit_status_dispatches(monkeypatch):
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")

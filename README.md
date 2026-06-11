@@ -25,6 +25,7 @@ python swarm/cli.py status ./swarm/<project>.yaml --brief
 python swarm/cli.py status ./swarm/<project>.yaml --brief -w
 python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
 python swarm/cli.py usage ./swarm/<project>.yaml
+python swarm/cli.py stop ./swarm/<project>.yaml
 python swarm/cli.py babysit apply ./swarm/<project>.yaml
 python swarm/cli.py babysit status ./swarm/<project>.yaml
 python swarm/cli.py babysit stop ./swarm/<project>.yaml
