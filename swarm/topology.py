@@ -318,7 +318,7 @@ def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
     time.sleep(2)  # wait for CLIs to render their response
     for pane, target, cmd in targets:
         proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
-        if pane.agent == "claude":
+        if pane.agent in {"claude", "grok"}:
             subprocess.run(["tmux", "send-keys", "-t", target, "Escape"], check=False)
         limits = _parse_usage_from_text(proc.stdout)
         if limits:

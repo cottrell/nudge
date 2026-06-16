@@ -34,6 +34,13 @@ MODEL_HELPERS = {
         "run": "gemini -m <model>",
         "swarm": "gemini -y -m <model>",
     },
+    "grok": {
+        "command": "grok",
+        "help": ["grok", "--help"],
+        "list": ["grok", "models"],
+        "run": "grok -m <model>",
+        "swarm": "grok --always-approve -m <model>",
+    },
     "antigravity": {
         "command": "agy",
         "help": ["agy", "--help"],
@@ -84,6 +91,23 @@ def _stop_tmux_session(session_name: str, dry_run: bool) -> None:
         subprocess.run(["tmux", "kill-session", "-t", session_name], check=False, text=True)
 
 
+def _grok_models() -> tuple[list[str], str | None]:
+    proc = _run_capture(MODEL_HELPERS["grok"]["list"])
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "command failed").strip()
+        return [], msg
+    models: list[str] = []
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("- ", "* ")):
+            model = stripped.lstrip("-* ").split()[0]
+            if model:
+                models.append(model)
+    if not models:
+        return [], "could not parse grok models output"
+    return models, None
+
+
 def _codex_models() -> tuple[list[str], str | None]:
     proc = _run_capture(MODEL_HELPERS["codex"]["list"])
     if proc.returncode != 0:
@@ -131,10 +155,11 @@ def print_model_help() -> None:
             continue
 
         print(f"  installed: yes ({shutil.which(command)})")
-        if name == "codex":
+        if name in {"codex", "grok"}:
             list_cmd = " ".join(str(p) for p in helper["list"])
             print(f"  list: {list_cmd}")
-            models, error = _codex_models()
+            models_fn = _codex_models if name == "codex" else _grok_models
+            models, error = models_fn()
             if error:
                 print(f"  models: unavailable ({error})")
             elif models:
@@ -161,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
-    init_p.add_argument("--agents", default="codex,claude,antigravity", help="Comma-separated list of agents (repeats allowed), default codex,claude,antigravity")
+    init_p.add_argument("--agents", default="codex,claude,antigravity,grok", help="Comma-separated list of agents (repeats allowed), default codex,claude,antigravity,grok")
     init_p.add_argument("--flavour", default="3x2", choices=["2x2", "3x2"], help="Pane flavour: NxM where N=agents, M=instances (heavy+light). Default: 1 pane per agent")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 

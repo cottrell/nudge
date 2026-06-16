@@ -11,7 +11,7 @@ import pytest
 from monitor import Monitor
 from monitor import _IDLE_HOLDOFF_AGENTS
 
-FIXTURE_AGENTS = ['claude', 'codex', 'copilot', 'gemini', 'qwen', 'antigravity']
+FIXTURE_AGENTS = ['claude', 'codex', 'copilot', 'gemini', 'grok', 'qwen', 'antigravity']
 
 
 def _fixture_lines(path):
@@ -63,6 +63,16 @@ def _load_jsonl(path):
 def test_initial_state_is_unknown():
     m = Monitor('claude')
     assert m.state == 'unknown'
+
+def test_classify_grok_idle_prompt():
+    m = Monitor('grok')
+    assert m.classify('> ') == 'idle'
+
+
+def test_classify_grok_working_braille():
+    m = Monitor('grok')
+    assert m.classify('⠙ Thinking…') == 'working'
+
 
 def test_classify_claude_working_braille():
     m = Monitor('claude')
@@ -367,7 +377,7 @@ def test_python_cli_rejects_unknown_agent(tmp_path):
     )
     assert proc.returncode == 2
     assert 'unknown agent type: mistral' in proc.stderr
-    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen, antigravity' in proc.stderr
+    assert 'Valid agent types: claude, codex, copilot, gemini, grok, vibe, qwen, antigravity' in proc.stderr
 
 def test_c_cli_rejects_unknown_agent(tmp_path):
     if not os.path.exists('./monitor-bin'):
@@ -380,7 +390,7 @@ def test_c_cli_rejects_unknown_agent(tmp_path):
     )
     assert proc.returncode == 2
     assert 'unknown agent type: mistral' in proc.stderr
-    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen, antigravity' in proc.stderr
+    assert 'Valid agent types: claude, codex, copilot, gemini, grok, vibe, qwen, antigravity' in proc.stderr
 
 def test_python_cli_help_lists_valid_agents():
     proc = subprocess.run(
@@ -390,7 +400,8 @@ def test_python_cli_help_lists_valid_agents():
         cwd='.'
     )
     assert proc.returncode == 0
-    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen, antigravity' in proc.stdout
+    normalized = proc.stdout.replace('\n', ' ')
+    assert 'Valid agent types: claude, codex, copilot, gemini, grok, vibe, qwen, antigravity' in normalized
 
 def test_c_cli_help_lists_valid_agents():
     if not os.path.exists('./monitor-bin'):
@@ -402,7 +413,7 @@ def test_c_cli_help_lists_valid_agents():
         cwd='.'
     )
     assert proc.returncode == 0
-    assert 'Valid agent types: claude, codex, copilot, gemini, vibe, qwen, antigravity' in proc.stdout
+    assert 'Valid agent types: claude, codex, copilot, gemini, grok, vibe, qwen, antigravity' in proc.stdout
 
 
 # --- socket ---

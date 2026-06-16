@@ -10,7 +10,7 @@ import yaml
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
-VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "vibe", "qwen", "antigravity")
+VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity")
 SHELL_NAMES = {"bash", "sh", "zsh", "fish"}
 AGENT_STATS_CMD: dict[str, str | None] = {
     "claude":  "/usage",
@@ -18,6 +18,7 @@ AGENT_STATS_CMD: dict[str, str | None] = {
     "gemini":  "/stats",
     "antigravity": "/stats",
     "qwen":    "/stats",
+    "grok":    None,
     "copilot": None,
     "vibe":    None,
 }
