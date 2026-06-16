@@ -106,7 +106,7 @@ AGENT_TYPE=${BABYSIT_AGENT:-}
 case "$AGENT_TYPE" in
     claude)  STATS_CMD="/usage" ;;   # matches common.py AGENT_STATS_CMD
     codex)   STATS_CMD="/status" ;;
-    gemini)  STATS_CMD="/stats" ;;
+    gemini|antigravity)  STATS_CMD="/stats" ;;
     qwen)    STATS_CMD="/stats" ;;
     copilot) STATS_CMD="/stats" ;;
     *)       STATS_CMD="" ;;

@@ -6,7 +6,7 @@ set -e
 if [ -z "$1" ] || [ -z "$2" ]; then
     echo "Usage: $0 <session-or-target> <agent>"
     echo "  session-or-target  tmux session or pane target (e.g. claude_myproject_alice or claude_myproject_alice:0.0)"
-    echo "  agent    claude, codex, copilot, gemini, vibe, qwen"
+    echo "  agent    claude, codex, copilot, gemini, vibe, qwen, antigravity"
     exit 1
 fi
 

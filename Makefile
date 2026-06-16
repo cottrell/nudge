@@ -19,7 +19,7 @@ test-python: build
 test: test-c test-swarm
 
 capture:
-	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|copilot|gemini|vibe|qwen> [DUR=60]"; exit 1)
+	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|copilot|gemini|vibe|qwen|antigravity> [DUR=60]"; exit 1)
 	./capture_fixture.sh $(AGENT) $(DUR)
 
 capture_claude:
@@ -34,13 +34,16 @@ capture_copilot:
 capture_gemini:
 	$(MAKE) capture AGENT=gemini DUR="$(DUR)"
 
+capture_antigravity:
+	$(MAKE) capture AGENT=antigravity DUR="$(DUR)"
+
 capture_vibe:
 	$(MAKE) capture AGENT=vibe DUR="$(DUR)"
 
 capture_qwen:
 	$(MAKE) capture AGENT=qwen DUR="$(DUR)"
 
-capture_all: capture_claude capture_codex capture_copilot capture_gemini capture_vibe capture_qwen
+capture_all: capture_claude capture_codex capture_copilot capture_gemini capture_antigravity capture_vibe capture_qwen
 
 # Manual tmux test — no agent needed, just pipes text through a plain session.
 # Open a second terminal and run: echo "status" | nc -U /tmp/test-monitor.sock
