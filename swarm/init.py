@@ -33,12 +33,13 @@ Swarm scripts: `{ROOT_DIR / "swarm"}`.
 """
 
 
-DEFAULT_AGENTS = ["codex", "claude", "gemini"]
+DEFAULT_AGENTS = ["codex", "claude", "antigravity"]
 
 AGENT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions",
     "codex": "codex --dangerously-bypass-approvals-and-sandbox",
     "gemini": "gemini -y",
+    "antigravity": "agy --dangerously-skip-permissions",
     "copilot": "copilot --allow-all-tools",
     "vibe": "vibe --agent auto-approve",
 }
@@ -47,10 +48,11 @@ AGENT_LIGHT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions --model haiku",
     "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4-mini",
     "gemini": "gemini -y -m gemini-2.5-flash",
+    "antigravity": "agy --dangerously-skip-permissions --model mini",
 }
 
 FLAVOUR_AGENTS: dict[str, list[str]] = {
-    "3x2": ["codex", "claude", "gemini"],
+    "3x2": ["codex", "claude", "antigravity"],
     "2x2": ["codex", "claude"],
 }
 
@@ -89,10 +91,10 @@ SHELL_PANE = """      - shell_command: "bash"
 def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None) -> str:
     if flavour == "3x2":
         flavour_agents = FLAVOUR_AGENTS["3x2"]
-        # codex+claude: heavy+light; gemini: default only; then shell
+        # codex+claude: heavy+light; antigravity: default only; then shell
         panes_block = (
             "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
-            + _pane_entry("gemini", "solo")
+            + _pane_entry("antigravity", "solo")
             + SHELL_PANE
         )
     elif flavour == "2x2":

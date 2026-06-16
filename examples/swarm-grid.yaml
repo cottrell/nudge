@@ -23,10 +23,10 @@ windows:
             long_prompt_file: "../prompts/claude_main.md"
             short_prompt: "Please continue. Stay in role and keep moving."
 
-      - shell_command: gemini
+      - shell_command: "agy --dangerously-skip-permissions"
         nudge:
-          title: gemini
-          agent: gemini
+          title: antigravity
+          agent: antigravity
           monitor: true
           babysit:
             enabled: false

@@ -34,6 +34,12 @@ MODEL_HELPERS = {
         "run": "gemini -m <model>",
         "swarm": "gemini -y -m <model>",
     },
+    "antigravity": {
+        "command": "agy",
+        "help": ["agy", "--help"],
+        "run": "agy -m <model>",
+        "swarm": "agy --dangerously-skip-permissions -m <model>",
+    },
     "qwen": {
         "command": "qwen",
         "help": ["qwen", "--help"],
@@ -155,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
-    init_p.add_argument("--agents", default="codex,claude,gemini", help="Comma-separated list of agents (repeats allowed), default codex,claude,gemini")
+    init_p.add_argument("--agents", default="codex,claude,antigravity", help="Comma-separated list of agents (repeats allowed), default codex,claude,antigravity")
     init_p.add_argument("--flavour", default="3x2", choices=["2x2", "3x2"], help="Pane flavour: NxM where N=agents, M=instances (heavy+light). Default: 1 pane per agent")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 

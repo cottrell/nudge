@@ -92,10 +92,21 @@ static const Pat PATS[] = {
     {"qwen",   ST_RATE_LIMITED, "0% left"},
     {"qwen",   ST_ERROR,        "error:"},
     {"qwen",   ST_ERROR,        "error"},
+    /* antigravity */
+    {"antigravity", ST_WORKING,      "thinking ..."},
+    {"antigravity", ST_WORKING,      "esc to cancel"},
+    {"antigravity", ST_RATE_LIMITED, "quota exceeded"},
+    {"antigravity", ST_RATE_LIMITED, "rate limit"},
+    {"antigravity", ST_RATE_LIMITED, "too many requests"},
+    {"antigravity", ST_RATE_LIMITED, "0% left"},
+    {"antigravity", ST_IDLE,         "type your message"},
+    {"antigravity", ST_IDLE,         "? for shortcuts"},
+    {"antigravity", ST_ERROR,        "request failed after all retries"},
+    {"antigravity", ST_ERROR,        "error"},
     {NULL, 0, NULL}
 };
 
-static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, vibe, qwen";
+static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, vibe, qwen, antigravity";
 
 static int valid_agent(const char *agent) {
     for (int i = 0; PATS[i].agent; i++) {
@@ -151,7 +162,8 @@ static int uses_idle_holdoff(void) {
            strcmp(g_agent, "copilot") == 0 ||
            strcmp(g_agent, "codex") == 0 ||
            strcmp(g_agent, "qwen") == 0 ||
-           strcmp(g_agent, "vibe") == 0;
+           strcmp(g_agent, "vibe") == 0 ||
+           strcmp(g_agent, "antigravity") == 0;
 }
 
 static void refresh_state_locked(void) {
@@ -397,7 +409,7 @@ static State classify(char *line) {
 
     if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
     if (!strcmp(g_agent, "vibe") && is_vibe_idle(line)) return ST_IDLE;
-    if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen")) && has_braille(line)) return ST_WORKING;
+    if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen") || !strcmp(g_agent, "antigravity")) && has_braille(line)) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && icontains(line, "esc to interrupt")) return ST_WORKING;
     if (!strcmp(g_agent, "vibe") && has_braille(line) && !is_vibe_logo_line(line) && icontains(line, "analyse")) return ST_WORKING;
 
@@ -416,7 +428,7 @@ static void extract_usage(const char *line) {
         else if (sscanf(line, "%d%% left", &g_usage_pct) == 1);
         else if (sscanf(line, "%d%% used", &g_usage_pct) == 1)
             g_usage_pct = 100 - g_usage_pct;
-    } else if (!strcmp(g_agent, "codex") || !strcmp(g_agent, "gemini") || !strcmp(g_agent, "copilot") || !strcmp(g_agent, "qwen")) {
+    } else if (!strcmp(g_agent, "codex") || !strcmp(g_agent, "gemini") || !strcmp(g_agent, "copilot") || !strcmp(g_agent, "qwen") || !strcmp(g_agent, "antigravity")) {
         /* "100% left" */
         const char *p = strstr(line, "% left");
         if (p && p > line) {

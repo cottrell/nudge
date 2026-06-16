@@ -83,8 +83,9 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
 
         if argv == ["codex", "debug", "models"]:
             return Proc('{"models":[{"slug":"gpt-test","visibility":"list"}]}')
-        if argv[0] in {"claude", "gemini", "qwen"}:
+        if argv[0] in {"claude", "gemini", "qwen", "agy"}:
             return Proc("Usage\n  -m, --model  Model\n")
+
         if argv[0] == "vibe":
             return Proc("VIBE_ACTIVE_MODEL Override any config field\n")
         raise AssertionError(f"unexpected command: {argv}")

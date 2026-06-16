@@ -29,7 +29,7 @@ from time import monotonic
 
 IDLE_HOLDOFF_SECS = 1.0
 QUIET_IDLE_SECS = 2.0
-_IDLE_HOLDOFF_AGENTS = {'gemini', 'copilot', 'codex', 'qwen', 'vibe'}
+_IDLE_HOLDOFF_AGENTS = {'gemini', 'copilot', 'codex', 'qwen', 'vibe', 'antigravity'}
 
 # Keyed by agent type, then state name -> list of patterns (case-insensitive)
 # Patterns sourced directly from each CLI's own output / source.
@@ -49,6 +49,14 @@ PATTERNS = {
                          r'"type"\s*:\s*"error"'],
     },
     'gemini': {
+        # same braille spinner, "Thinking ..." with timer
+        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'Thinking \.\.\.', r'esc to cancel'],
+        'rate_limited': [r'Quota exceeded', r'quota', r'rate.?limit', r'429',
+                         r'Too Many Requests'],
+        'idle':         [r'^\s*[>!*]\s*$', r'Type your message', r'\? for shortcuts'],
+        'error':        [r'✕\s+Error', r'✕\s+API Error', r'Request failed after all retries'],
+    },
+    'antigravity': {
         # same braille spinner, "Thinking ..." with timer
         'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'Thinking \.\.\.', r'esc to cancel'],
         'rate_limited': [r'Quota exceeded', r'quota', r'rate.?limit', r'429',
@@ -88,9 +96,10 @@ USAGE_PATTERNS = {
     'claude':  r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours?',
     'codex':   r'(\d+)%\s+left',
     'gemini':  r'(\d+)%\s+left',
+    'antigravity': r'(\d+)%\s+left',
 }
 
-VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen')
+VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen', 'antigravity')
 VALID_AGENTS_TEXT = ', '.join(VALID_AGENTS)
 
 # Per-agent patterns to extract % of quota remaining from terminal output.
@@ -110,6 +119,9 @@ _USAGE_PATTERNS: dict[str, list[tuple[re.Pattern, str]] | None] = {
         (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
     ],
     'gemini': [
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+    ],
+    'antigravity': [
         (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
     ],
     'copilot': [
@@ -249,7 +261,7 @@ class Monitor:
 
         if self.agent_type == 'vibe' and _is_vibe_idle(line):
             return 'idle'
-        if self.agent_type in {'gemini', 'qwen'} and _has_braille(line):
+        if self.agent_type in {'gemini', 'qwen', 'antigravity'} and _has_braille(line):
             return 'working'
         if self.agent_type == 'vibe' and 'esc to interrupt' in line.lower():
             return 'working'
