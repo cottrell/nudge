@@ -50,6 +50,18 @@ windows:
     assert pane.babysit.short_prompt == "nudge gently"
 
 
+def test_swarm_init_default_3x2_layout():
+    text = swarm_init.config_text("demo", flavour="3x2")
+    assert text.count("agent: codex") == 2
+    assert text.count("agent: claude") == 2
+    assert 'agent: antigravity' in text
+    assert 'agy --dangerously-skip-permissions' in text
+    assert 'agent: grok' in text
+    assert 'grok --always-approve -m grok-build' in text
+    assert 'title: shell' not in text
+    assert 'shell_command: "bash"' not in text
+
+
 def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     swarm_init.init("demo", tmp_path)
     assert (tmp_path / "swarm" / "demo.yaml").exists()
@@ -83,7 +95,9 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
 
         if argv == ["codex", "debug", "models"]:
             return Proc('{"models":[{"slug":"gpt-test","visibility":"list"}]}')
-        if argv[0] in {"claude", "gemini", "qwen", "agy"}:
+        if argv == ["grok", "models"]:
+            return Proc("Available models:\n  - grok-build\n  * grok-composer-2.5-fast (default)\n")
+        if argv[0] in {"claude", "gemini", "qwen", "agy", "grok"}:
             return Proc("Usage\n  -m, --model  Model\n")
 
         if argv[0] == "vibe":
@@ -105,6 +119,8 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     ) in out
     assert "claude --dangerously-skip-permissions --model <model>" in out
     assert "gemini -y -m <model>" in out
+    assert "grok --always-approve -m <model>" in out
+    assert "grok-build" in out
     assert "qwen -y -m <model>" in out
     assert "VIBE_ACTIVE_MODEL=<model> vibe --agent auto-approve" in out
 

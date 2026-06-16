@@ -36,6 +36,15 @@ _IDLE_HOLDOFF_AGENTS = {'gemini', 'copilot', 'codex', 'qwen', 'vibe', 'antigravi
 # State precedence: first match wins, so put more specific states first.
 # Initial state is always 'unknown' until a line matches.
 PATTERNS = {
+    'grok': {
+        'idle':         [r'^\s*>\s*$', r'^❯'],
+        'rate_limited': [r'rate_limit_error', r'overloaded_error', r'Overloaded',
+                         r'exceed.*rate limit', r'429', r'529',
+                         r'Retrying in \d+ seconds', r'out of extra usage'],
+        'working':      [r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]', r'[·✢✳∗✻✽]'],
+        'error':        [r'API Error:', r'authentication_error', r'invalid_request_error',
+                         r'"type"\s*:\s*"error"'],
+    },
     'claude': {
         # idle checked first — these lines are definitive
         'idle':         [r'^\s*>\s*$', r'^❯'],
@@ -94,12 +103,13 @@ PATTERNS = {
 # Patterns to extract usage/quota info (e.g. "100% left", "4.2/5.0h")
 USAGE_PATTERNS = {
     'claude':  r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours?',
+    'grok':    r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours?',
     'codex':   r'(\d+)%\s+left',
     'gemini':  r'(\d+)%\s+left',
     'antigravity': r'(\d+)%\s+left',
 }
 
-VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'vibe', 'qwen', 'antigravity')
+VALID_AGENTS = ('claude', 'codex', 'copilot', 'gemini', 'grok', 'vibe', 'qwen', 'antigravity')
 VALID_AGENTS_TEXT = ', '.join(VALID_AGENTS)
 
 # Per-agent patterns to extract % of quota remaining from terminal output.
@@ -112,6 +122,11 @@ _USAGE_PATTERNS: dict[str, list[tuple[re.Pattern, str]] | None] = {
         # /usage output: "4.2 / 5.0 hours" (used/total)
         (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
         # /usage may also show "87% left" or "13% used"
+        (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
+        (re.compile(r'(\d+)%\s*used', re.IGNORECASE), 'pct_used'),
+    ],
+    'grok': [
+        (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
         (re.compile(r'(\d+)%\s*left', re.IGNORECASE), 'pct_left'),
         (re.compile(r'(\d+)%\s*used', re.IGNORECASE), 'pct_used'),
     ],
@@ -244,12 +259,12 @@ class Monitor:
     def classify(self, line):
         has_sync = '\x1b[?2026' in line
         # Skip title bar updates (contain OSC sequences like ]0;)
-        if '\x1b]' in line and 'Claude Code' in line:
+        if '\x1b]' in line and ('Claude Code' in line or 'Grok Build' in line):
             return None  # Don't classify title bar as working
         line = strip_ansi(line)
         
         # High priority specific overrides
-        if self.agent_type == 'claude':
+        if self.agent_type in {'claude', 'grok'}:
             # Check for rate limit BEFORE idle/working markers
             for p in self.patterns.get('rate_limited', []):
                 if re.search(p, line, re.IGNORECASE):
@@ -269,7 +284,7 @@ class Monitor:
             return 'working'
 
         for state, pats in self.patterns.items():
-            if self.agent_type == 'claude' and state in ('rate_limited', 'idle', 'working'):
+            if self.agent_type in {'claude', 'grok'} and state in ('rate_limited', 'idle', 'working'):
                 continue # handled above
             for p in pats:
                 if re.search(p, line, re.IGNORECASE):

@@ -31,6 +31,17 @@ static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited",
 /* Pattern table — case-insensitive substring match */
 typedef struct { const char *agent; State state; const char *pat; } Pat;
 static const Pat PATS[] = {
+    /* grok */
+    {"grok", ST_RATE_LIMITED, "rate_limit_error"},
+    {"grok", ST_RATE_LIMITED, "overloaded_error"},
+    {"grok", ST_RATE_LIMITED, "overloaded"},
+    {"grok", ST_RATE_LIMITED, "retrying in"},
+    {"grok", ST_RATE_LIMITED, "out of extra usage"},
+    {"grok", ST_WORKING,      "esc to cancel"},
+    {"grok", ST_ERROR,        "api error:"},
+    {"grok", ST_ERROR,        "authentication_error"},
+    {"grok", ST_ERROR,        "invalid_request_error"},
+    {"grok", ST_ERROR,        "\"type\":\"error\""},
     /* claude */
     {"claude", ST_RATE_LIMITED, "rate_limit_error"},
     {"claude", ST_RATE_LIMITED, "overloaded_error"},
@@ -106,7 +117,7 @@ static const Pat PATS[] = {
     {NULL, 0, NULL}
 };
 
-static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, vibe, qwen, antigravity";
+static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, grok, vibe, qwen, antigravity";
 
 static int valid_agent(const char *agent) {
     for (int i = 0; PATS[i].agent; i++) {
@@ -388,11 +399,11 @@ static int is_vibe_idle(const char *line) {
 static State classify(char *line) {
     int has_sync = strstr(line, "\x1b[?2026") != NULL;
     /* Skip title bar updates - they contain spinners but aren't real work */
-    if (strstr(line, "\x1b]") && strstr(line, "Claude Code")) return ST_UNKNOWN;
+    if (strstr(line, "\x1b]") && (strstr(line, "Claude Code") || strstr(line, "Grok Build"))) return ST_UNKNOWN;
     strip_ansi(line);
     trim_ascii_ws(line);
 
-    if (!strcmp(g_agent, "claude")) {
+    if (!strcmp(g_agent, "claude") || !strcmp(g_agent, "grok")) {
         /* High priority rate limit checks */
         if (icontains(line, "rate_limit_error") || 
             icontains(line, "overloaded_error") || 
@@ -420,7 +431,7 @@ static State classify(char *line) {
 }
 
 static void extract_usage(const char *line) {
-    if (!strcmp(g_agent, "claude")) {
+    if (!strcmp(g_agent, "claude") || !strcmp(g_agent, "grok")) {
         /* "4.2 / 5.0 hours" */
         float used, total;
         if (sscanf(line, "%f / %f hours", &used, &total) == 2 && total > 0)
