@@ -4,6 +4,7 @@ title: Use Claude Code session JSON for state detection instead of terminal scra
 status: To Do
 assignee: []
 created_date: '2026-04-30 09:11'
+updated_date: '2026-06-18 09:50'
 labels: []
 dependencies: []
 priority: medium
@@ -12,6 +13,8 @@ priority: medium
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+CANCELLED: using agentstview instead 
+
 Claude Code writes live state to ~/.claude/sessions/{PID}.json. Verified fields: pid, status (idle/busy), cwd, updatedAt (ms), version.
 
 Example observed:
