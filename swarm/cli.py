@@ -280,13 +280,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "quota":
-            from common import get_cached_provider_usage, get_agents_from_config
+            from common import get_cached_provider_usage, get_agents_from_config, QUOTA_AGENT_MAP
             import time
             if args.config:
                 cfg = load_config(args.config)
                 agents = get_agents_from_config(cfg)
             else:
                 agents = ["claude", "codex", "agy"]
+            agents = [QUOTA_AGENT_MAP.get(a, a) for a in agents]
             agents = [a for a in agents if a in {"claude", "codex", "agy"}]
             if not agents:
                 print("No supported quota agents (claude, codex, agy) found.")
