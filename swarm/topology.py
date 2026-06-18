@@ -205,41 +205,6 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
     subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", f"{cfg.session_name}:{pane}", command], check=True, text=True)
 
 
-def probe_usage(cfg: SwarmConfig, dry_run: bool) -> None:
-    targets = []
-    for pane in cfg.panes:
-        if not pane.monitor or not pane.agent:
-            continue
-        cmd = AGENT_STATS_CMD.get(pane.agent)
-        if not cmd:
-            print(f"no stats command known for {pane.agent} ({cfg.session_name}:{pane.pane}), skipping")
-            continue
-        target = f"{cfg.session_name}:{pane.pane}"
-        if dry_run:
-            print(f"would send {cmd!r} to {target} ({pane.title})")
-        else:
-            subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", target, cmd], check=True, text=True)
-        targets.append((pane, target, cmd))
-
-    if not targets:
-        print("no monitored panes with a known stats command")
-        return
-
-    if dry_run:
-        return
-
-    time.sleep(2)  # wait for CLIs to render their response
-    for pane, target, cmd in targets:
-        proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
-        if pane.agent in {"claude", "grok"}:
-            subprocess.run(["tmux", "send-keys", "-t", target, "Escape"], check=False)
-        limits = _parse_usage_from_text(proc.stdout)
-        if limits:
-            _write_usage_cache(cfg, pane.pane, limits)
-            print(f"{target} ({pane.title}): {_format_limits(limits)}")
-        else:
-            print(f"{target} ({pane.title}): {cmd!r} sent (no usage pattern matched)")
-
 
 def capture_and_classify(cfg: SwarmConfig, pane: str) -> None:
     target = f"{cfg.session_name}:{pane}"
