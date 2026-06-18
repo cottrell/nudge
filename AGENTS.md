@@ -18,7 +18,7 @@ Agents in this swarm should be designed to be **stateless**. The babysit loop pe
 
 Because conversation history is regularly wiped:
 - **Do NOT** rely on the agent's memory of past turns for project state.
-- **DO** maintain all critical state (tasks, progress, architectural decisions) in files like `TODO.md`, `GEMINI.md`, or project-specific memory files.
+- **DO** maintain all critical state in backlog tasks, `GEMINI.md`, or project-specific memory files.
 - **DO** read relevant context files (like the `self-awareness.txt` note) whenever you start a new task.
 
 The babysit loop will re-issue the full project briefing (`long_prompt`) immediately after every `/clear` to restore the agent's awareness of its environment and mission.
@@ -56,6 +56,7 @@ When modifying state behavior:
 ## Questions?
 
 If unsure about a change, err on the side of making it — the test suite provides good coverage, and the codebase is small enough that mistakes are easy to spot and fix.
+
 ## Swarm
 
 Swarm workflow: read first:
