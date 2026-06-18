@@ -223,12 +223,17 @@ def build_parser() -> argparse.ArgumentParser:
     avu_p.add_argument("-w", "--watch", action="store_true", help="Refresh the report in place until interrupted")
     avu_p.add_argument("-i", "--interval", type=float, default=30.0, help="Watch refresh interval in seconds (default: 30)")
 
-    quota_p = sub.add_parser("quota", help="Get cached/live provider account quotas (claude, codex, agy)")
-    quota_p.add_argument("agent", choices=["claude", "codex", "agy"], help="Agent to check")
+    quota_p = sub.add_parser("quota", help="Get cached/live provider account quotas")
+    quota_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
     quota_p.add_argument("--ttl", type=int, default=120, help="Cache TTL in seconds")
     quota_p.add_argument("--force", action="store_true", help="Force refresh")
     quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
     quota_p.add_argument("-i", "--interval", type=float, default=2.0, help="Watch refresh interval in seconds")
+
+    quota_debug_p = sub.add_parser("quota-debug", aliases=["quota-debug", "quota_debug"], help="Show raw and parsed usage details for a chosen agent")
+    quota_debug_p.add_argument("agent", choices=["claude", "codex", "agy"], help="Agent to debug")
+    quota_debug_p.add_argument("--ttl", type=int, default=120, help="Cache TTL in seconds")
+    quota_debug_p.add_argument("--force", action="store_true", help="Force refresh")
 
     sub.add_parser(
         "help",
@@ -279,43 +284,73 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "quota":
-            from common import get_cached_provider_usage
+            from common import get_cached_provider_usage, get_agents_from_config
             import time
+            if args.config:
+                cfg = load_config(args.config)
+                agents = get_agents_from_config(cfg)
+            else:
+                agents = ["claude", "codex", "agy"]
+            agents = [a for a in agents if a in {"claude", "codex", "agy"}]
+            if not agents:
+                print("No supported quota agents (claude, codex, agy) found.")
+                return 0
+
+            def render_all_quotas():
+                out_lines = []
+                for agent in agents:
+                    res = get_cached_provider_usage(agent, ttl=args.ttl, force=args.force)
+                    out_lines.append(f"=== {agent.upper()} ===")
+                    if "error" in res:
+                        out_lines.append(f"  Error: {res['error']}")
+                    else:
+                        fetched_at_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(res.get("fetched_at", 0)))
+                        out_lines.append(f"  Fetched at: {fetched_at_str}")
+                        if "warning" in res:
+                            out_lines.append(f"  Warning: {res['warning']}")
+                        parsed = res.get("parsed") or {}
+                        if agent == "claude" and parsed.get("cost") is not None:
+                            out_lines.append(f"  Cost: ${parsed['cost']:.4f}")
+                        if agent == "codex" and parsed.get("model"):
+                            out_lines.append(f"  Model: {parsed['model']}")
+                        limits = res.get("limits", [])
+                        if limits:
+                            for lim in limits:
+                                lbl = f"{lim['label']}: " if lim['label'] else ""
+                                reset_str = f" (resets {lim['reset']})" if lim['reset'] else ""
+                                out_lines.append(f"  - {lbl}{lim['pct']}%{reset_str}")
+                        else:
+                            out_lines.append("  - No active limits found.")
+                    out_lines.append("")
+                return "\n".join(out_lines)
+
             if args.watch:
                 if args.interval <= 0:
                     raise ValueError("--interval must be > 0")
                 try:
                     while True:
-                        res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
+                        output_text = render_all_quotas()
                         sys.stdout.write("\x1b[H\x1b[2J")
-                        sys.stdout.write(f"watch quota agent={args.agent} ttl={args.ttl}s updated={time.strftime('%H:%M:%S')}\n\n")
-                        if "error" in res:
-                            sys.stdout.write(f"Error: {res['error']}\n")
-                        else:
-                            fetched_at_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(res.get("fetched_at", 0)))
-                            sys.stdout.write(f"Fetched at: {fetched_at_str}\n")
-                            if "warning" in res:
-                                sys.stdout.write(f"Warning: {res['warning']}\n")
-                            sys.stdout.write("\nLimits:\n")
-                            limits = res.get("limits", [])
-                            if limits:
-                                for lim in limits:
-                                    lbl = f"{lim['label']}: " if lim['label'] else ""
-                                    reset_str = f" (resets {lim['reset']})" if lim['reset'] else ""
-                                    sys.stdout.write(f"  - {lbl}{lim['pct']}%{reset_str}\n")
-                            else:
-                                sys.stdout.write("  No limits found / parsed.\n")
-                            sys.stdout.write("\nRaw output:\n")
-                            sys.stdout.write(res.get("raw_text", ""))
-                        sys.stdout.write("\n")
+                        sys.stdout.write(f"watch quota ttl={args.ttl}s updated={time.strftime('%H:%M:%S')}\n\n")
+                        sys.stdout.write(output_text)
                         sys.stdout.flush()
                         time.sleep(args.interval)
                 except KeyboardInterrupt:
                     return 0
             else:
-                res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
-                print(json.dumps(res, indent=2))
+                print(render_all_quotas())
                 return 0
+
+        if args.command == "quota-debug":
+            from common import get_cached_provider_usage
+            import json as _json
+            res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
+            print("=== RAW SCRAPER OUTPUT ===")
+            print(res.get("raw_text", ""))
+            print("\n=== PARSED STRUCTURED JSON ===")
+            print(_json.dumps(res.get("parsed", {}), indent=2))
+            return 0
+
 
         if args.command == "usage":
             cfg = load_config(args.config)

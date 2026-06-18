@@ -538,66 +538,85 @@ def get_agentsview_usage_summary(
         return {"error": f"api query failed: {e}", "fallback": True}
 
 
+def _get_usage_for_agent_via_cli(agent: str, since: str, until: str) -> dict:
+    """Call the agentsview binary for a single agent and date range.
+    Returns the totals dict for that agent (or zeros if none).
+    """
+    binp = _agentsview_bin()
+    if not binp or binp == "agentsview" and not _os.path.exists("/home/cottrell/dev/agentsview/bin/agentsview"):
+        # fallback zeros
+        return {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
+
+    argv = [binp, "usage", "daily", "--agent", agent, "--json", "--no-sync",
+            "--since", since, "--until", until]
+    try:
+        proc = _subp.run(argv, check=False, stdout=_subp.PIPE, stderr=_subp.PIPE, text=True, timeout=15)
+        if proc.returncode != 0:
+            return {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
+        data = json.loads(proc.stdout)
+        # When filtered to one agent, the top-level totals are for it.
+        # Also check sessionCounts.byAgent to confirm.
+        totals = data.get("totals", {})
+        return {
+            "cost": float(totals.get("totalCost") or 0),
+            "input_tokens": int(totals.get("inputTokens") or 0),
+            "output_tokens": int(totals.get("outputTokens") or 0),
+            "cache_creation_tokens": int(totals.get("cacheCreationTokens") or 0),
+            "cache_read_tokens": int(totals.get("cacheReadTokens") or 0),
+        }
+    except Exception:
+        return {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
+
+
 def get_swarm_agentsview_report(agents: list[str] | None = None) -> dict:
     """Return convenient report using global agentsview usage data.
 
     If agents list is provided, limits to (normalized) those agents.
     If None/empty, shows *all* known agents from agentsview (full global list),
     with usage overlaid (0 for agents with no spend in the window).
+    Uses the agentsview CLI binary per-agent for accuracy (the HTTP summary
+    sometimes misses data for agents like antigravity-cli).
     """
     today = _dt.date.today().isoformat()
     week_ago = (_dt.date.today() - _dt.timedelta(days=6)).isoformat()
 
     if agents:
         norm_agents = sorted({normalize_agentsview_agent(a) for a in agents})
-        filter_for_api = norm_agents
-        wanted = norm_agents
         display_agents = norm_agents
     else:
-        # global: get the full roster, query unfiltered usage
         display_agents = get_agentsview_all_agents()
-        filter_for_api = None
-        wanted = display_agents
 
-    today_data = get_agentsview_usage_summary(agents=filter_for_api, since=today, until=today)
-    week_data = get_agentsview_usage_summary(agents=filter_for_api, since=week_ago, until=today)
+    # Build per-agent data using CLI (more reliable than current HTTP summary for some agents)
+    today_by = {}
+    week_by = {}
+    for ag in display_agents:
+        today_by[ag] = _get_usage_for_agent_via_cli(ag, today, today)
+        week_by[ag] = _get_usage_for_agent_via_cli(ag, week_ago, today)
 
-    def extract_agent_costs(data: dict, wanted: list[str] | None) -> dict[str, dict]:
-        if "error" in data and "api query" not in str(data.get("error", "")):
-            return {"error": data["error"]}
-        found = {}
-        for row in data.get("agentTotals", []):
-            ag = row.get("agent")
-            if ag:
-                found[ag] = {
-                    "cost": float(row.get("cost") or 0),
-                    "input_tokens": int(row.get("inputTokens") or 0),
-                    "output_tokens": int(row.get("outputTokens") or 0),
-                    "cache_creation_tokens": int(row.get("cacheCreationTokens") or 0),
-                    "cache_read_tokens": int(row.get("cacheReadTokens") or 0),
-                }
-        if not wanted:
-            return found
-        out = {}
-        for ag in wanted:
-            v = found.get(ag, {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0})
-            out[ag] = v
-        return out
+    # Compute group totals (sum of what we have)
+    def sum_by(d):
+        return {
+            "inputTokens": sum(x["input_tokens"] for x in d.values()),
+            "outputTokens": sum(x["output_tokens"] for x in d.values()),
+            "cacheCreationTokens": sum(x["cache_creation_tokens"] for x in d.values()),
+            "cacheReadTokens": sum(x["cache_read_tokens"] for x in d.values()),
+            "totalCost": sum(x["cost"] for x in d.values()),
+        }
 
     return {
         "agents": display_agents,
         "today": {
             "date": today,
-            "by_agent": extract_agent_costs(today_data, wanted),
-            "totals": today_data.get("totals", {}),
+            "by_agent": today_by,
+            "totals": sum_by(today_by),
         },
         "week": {
             "from": week_ago,
             "to": today,
-            "by_agent": extract_agent_costs(week_data, wanted),
-            "totals": week_data.get("totals", {}),
+            "by_agent": week_by,
+            "totals": sum_by(week_by),
         },
-        "recent": get_agentsview_recent_tokens(10, agents=wanted or []),
+        "recent": get_agentsview_recent_tokens(10, agents=display_agents),
     }
 
 
@@ -871,11 +890,11 @@ def parse_codex_usage(text: str) -> dict:
     }
     for line in text.splitlines():
         if "Model:" in line:
-            res["model"] = line.split("Model:", 1)[1].strip()
+            res["model"] = line.split("Model:", 1)[1].strip().rstrip('│').strip()
         elif "Account:" in line:
-            res["account"] = line.split("Account:", 1)[1].strip()
+            res["account"] = line.split("Account:", 1)[1].strip().rstrip('│').strip()
         elif "Session:" in line:
-            res["session_id"] = line.split("Session:", 1)[1].strip()
+            res["session_id"] = line.split("Session:", 1)[1].strip().rstrip('│').strip()
 
     for line in text.splitlines():
         lim_m = re.search(
@@ -902,7 +921,7 @@ def parse_agy_usage(text: str) -> dict:
         "groups": [],
         "limits": []
     }
-    blocks = re.split(r'([A-Z\s]+MODELS)\s*\n', text)
+    blocks = re.split(r'([^\S\r\n]*[A-Z0-9_\- \t]+MODELS)\s*\n', text, flags=re.IGNORECASE)
     if len(blocks) > 1:
         for idx in range(1, len(blocks), 2):
             group_name = blocks[idx].strip()
@@ -918,7 +937,11 @@ def parse_agy_usage(text: str) -> dict:
             if models_m:
                 group_entry["models"] = [m.strip() for m in models_m.group(1).split(",")]
                 
-            limit_blocks = re.split(r'(\w+(?:\s+\w+)?\s+Limit)\s*\n', block_content)
+            limit_blocks = re.split(
+                r'^[^\S\r\n]*([a-zA-Z0-9_\-]+(?:[^\S\r\n]+[a-zA-Z0-9_\-]+){0,2}\s+Limit)\s*\n',
+                block_content,
+                flags=re.MULTILINE | re.IGNORECASE
+            )
             if len(limit_blocks) > 1:
                 for l_idx in range(1, len(limit_blocks), 2):
                     limit_label = limit_blocks[l_idx].strip().lower().replace(" limit", "")
