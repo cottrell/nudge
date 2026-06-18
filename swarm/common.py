@@ -624,6 +624,9 @@ def get_agents_from_config(cfg: SwarmConfig) -> list[str]:
     return sorted({p.agent for p in cfg.panes if p.agent})
 
 
+QUOTA_AGENT_MAP = {"antigravity": "agy"}
+
+
 # --- global agent provider quota caching ---
 
 def strip_ansi(text: str) -> str:
