@@ -632,20 +632,6 @@ def strip_ansi(text: str) -> str:
     return ansi_escape.sub('', text)
 
 
-_LINE_PATTERNS = [
-    # codex: "5h limit: [███] 100% left ..."  or  "Weekly limit: [███] 97% left ..."
-    (re.compile(r'(\w+)\s+limit:.*?(\d+)%\s+left', re.IGNORECASE), 'labeled_left'),
-    # generic "N% left"
-    (re.compile(r'(\d+)%\s+(?:left|remaining)', re.IGNORECASE), 'pct_left'),
-    # claude /usage: "12% used"
-    (re.compile(r'(\d+)%\s+used', re.IGNORECASE), 'pct_used'),
-    # hours: "4.2 / 5.0 hours"
-    (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
-    # gemini /stats: "0%  10:04 PM (24h)" — bare % followed by a clock = % used
-    (re.compile(r'\b(\d+)%\s+\d{1,2}:\d{2}\s+(?:AM|PM)', re.IGNORECASE), 'pct_used'),
-]
-
-
 def _parse_reset_ts(s: str) -> int | None:
     """Parse a reset string to a Unix timestamp. Returns None if unparseable."""
     if not s:
@@ -706,61 +692,6 @@ def _parse_reset_ts(s: str) -> int | None:
         return int((now + timedelta(hours=h, minutes=m_val)).timestamp())
 
     return None
-
-
-def parse_usage_text(text: str) -> list[dict]:
-    """Return list of {label, pct, reset, reset_ts} dicts parsed from text."""
-    _reset = re.compile(r'(?:resets|refreshes in|refreshes)\s+(.+)', re.IGNORECASE)
-    limits: list[dict] = []
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        entry: dict | None = None
-        for pat, kind in _LINE_PATTERNS:
-            m = pat.search(line)
-            if not m:
-                continue
-            try:
-                if kind == 'labeled_left':
-                    entry = {"label": m.group(1).lower(), "pct": int(m.group(2))}
-                elif kind == 'pct_left':
-                    entry = {"label": "", "pct": int(m.group(1))}
-                elif kind == 'pct_used':
-                    entry = {"label": "", "pct": max(0, 100 - int(m.group(1)))}
-                elif kind == 'hours_used':
-                    used, total = float(m.group(1)), float(m.group(2))
-                    if total > 0:
-                        entry = {"label": "", "pct": round((1.0 - used / total) * 100)}
-            except (ValueError, ZeroDivisionError):
-                pass
-            if entry:
-                # check same line then next line for reset date
-                search_lines = [line] + ([lines[i + 1]] if i + 1 < len(lines) else [])
-                reset = ""
-                for sl in search_lines:
-                    rm = _reset.search(sl)
-                    if rm:
-                        reset = rm.group(1).strip().rstrip('│╯╰ ')
-                        # strip trailing ) from box-drawing if parens unbalanced
-                        while reset.endswith(')') and reset.count('(') < reset.count(')'):
-                            reset = reset[:-1].rstrip()
-                        break
-                entry["reset"] = reset
-                entry["reset_ts"] = _parse_reset_ts(reset) or 0
-
-                # Try to find a label from preceding lines if it's empty
-                if not entry["label"] and i > 0:
-                    for offset in (1, 2):
-                        if i - offset >= 0:
-                            cand = lines[i - offset].strip()
-                            if "limit" in cand.lower():
-                                lm = re.search(r'(\w+)\s+limit', cand, re.IGNORECASE)
-                                if lm:
-                                    entry["label"] = lm.group(1).lower()
-                                    break
-                limits.append(entry)
-                break
-    labeled = [l for l in limits if l["label"]]
-    return labeled if labeled else limits
 
 
 def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -> dict:
