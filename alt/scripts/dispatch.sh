@@ -30,7 +30,7 @@ fi
 
 # 3. For pure subscription harnesses (default):
 # The prompt or nudge goes to the specific tmux pane / harness for the node.
-# Quota signals come from monitor sockets (usage_pct) or swarm/cli.py usage probe.
+# Quota signals come from swarm/cli.py quota or av-usage.
 # No gateway in the path.
 
 # 4. Cycle Logging

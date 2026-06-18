@@ -237,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show probed model selection commands for agent CLIs",
     )
 
-    capture_p = sub.add_parser("capture", help="Dump and classify current pane content")
+    capture_p = sub.add_parser("capture", help="Dump current pane content")
     capture_p.add_argument("config", help="Path to YAML config")
     capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
 
@@ -384,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "capture":
             cfg = load_config(args.config)
-            swarm_topology.capture_and_classify(cfg, args.pane)
+            swarm_topology.capture_pane(cfg, args.pane)
             return 0
 
         if args.command == "broadcast":

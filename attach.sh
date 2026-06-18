@@ -37,13 +37,8 @@ tmux list-panes -t "$TARGET" >/dev/null 2>&1 || {
     exit 1
 }
 
-# Set MONITOR_BACKEND=python to use the Python version
-if [ "${MONITOR_BACKEND:-c}" = "python" ]; then
-    CMD="python $DIR/monitor.py"
-else
-    [ -x "$DIR/monitor-bin" ] || { echo "monitor-bin not found — run: make build"; exit 1; }
-    CMD="$DIR/monitor-bin"
-fi
+[ -x "$DIR/monitor-bin" ] || { echo "monitor-bin not found — run: make build"; exit 1; }
+CMD="$DIR/monitor-bin"
 
 DEBUG_FLAG=""
 if [ -n "${MONITOR_DEBUG:-}" ]; then
@@ -69,6 +64,6 @@ fi
 
 IDLE_SECS="${MONITOR_IDLE_SECS:-10}"
 tmux pipe-pane -t "$TARGET" "$CMD --agent $AGENT --socket $SOCK --idle-secs $IDLE_SECS $DEBUG_FLAG $STATE_LOG_FLAG"
-echo "Monitoring $TARGET → $SOCK (backend: ${MONITOR_BACKEND:-c})"
+echo "Monitoring $TARGET → $SOCK"
 echo "Idle after ${IDLE_SECS}s without pane output"
 echo "Query: echo status | nc -U $SOCK"

@@ -24,7 +24,8 @@ python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
 python swarm/cli.py status ./swarm/<project>.yaml --brief
 python swarm/cli.py status ./swarm/<project>.yaml --brief -w
 python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
-python swarm/cli.py usage ./swarm/<project>.yaml
+python swarm/cli.py quota ./swarm/<project>.yaml
+python swarm/cli.py av-usage ./swarm/<project>.yaml
 python swarm/cli.py stop ./swarm/<project>.yaml
 python swarm/cli.py babysit apply ./swarm/<project>.yaml
 python swarm/cli.py babysit status ./swarm/<project>.yaml
@@ -89,7 +90,6 @@ When messaging panes manually, prefer `tmux-send` over raw `tmux send-keys`.
 ```bash
 make build
 make test
-make test-python
 make test-c
 make test-swarm
 ```
@@ -121,12 +121,9 @@ make capture_all DUR=60
 
 Practical cadence: re-capture on breakage or visible upstream CLI changes, not on a fixed schedule.
 
-## Backend status
+## Backend
 
-- **C (`monitor-bin`)**: production backend
-- **Python (`monitor.py`)**: reference/test oracle
-
-`attach.sh` uses C by default. Set `MONITOR_BACKEND=python` to use Python.
+`monitor-bin` is the only monitor implementation.
 
 Debug helpers:
 
