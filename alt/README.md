@@ -1,27 +1,14 @@
-# Alt: Thing-Centric Task Sessions
+# Alternative Approach
 
-Simple graph-based sessions for agent work. Discrete "Things" (task graphs) with sub-Things, persistence, and a thin Pulse for orchestration. Uses existing CLI harnesses (Claude Code, Codex, Grok, etc.) under subscriptions or local models.
+Basically everything here is about fighting the problems of trying to use agents together and under a subscription model.
 
-## Core
-- **Thing**: Execution graph for a task. Has start/end, can spawn children.
-- **Persistence**: `backlog/` (human-visible tasks) + `alt/state/` (fast index, graphs, sessions).
-- **Trigger/Pulse**: Stateless loop that launches or nudges Things based on backlog/events. Checks quotas before work.
-- **Harness**: Run subscription CLIs (or local) directly where possible. Use base_url overrides only when needed for unification.
-
-## Gateway (optional)
-Bifrost or LiteLLM only for:
-- Unifying local (Ollama) + selective real APIs (planners/high-value).
-- Caching and quotas when using paid models.
-- Not required (and often a mismatch) for pure subscription CLI work.
-
-Quotas for subs come from the monitor: each pane's monitor (monitor.c) reports state + usage_pct scraped from terminal (spinners for working, "% left", "X / Y hours" for limits). Pulse queries the unix sockets or /status. `swarm/cli.py usage` can force richer probes.
-
-See bifrost-opinions.md (section 8) for why gateways fit customer API-key systems better than sub-only local tmux swarms. LiteLLM is lighter if you do use real keys.
-
-## Files
-- `backlog/`: Tasks.
-- `alt/state/`: Graphs, manifests.
-- `scripts/`: Dispatch/trigger.
-- `config/`: Examples (adapt for gateway or skip).
-
-Start simple: use backlog + state + Pulse. Query monitors for quota headroom before dispatch. Add gateway only if mixing paid APIs.
+* "-p" mode (prompt payload) as default to avoid having to inject /clear commands to avoid context growth
+* probably sqlite to store various information:
+  * each DAG edge: parent,child
+  * entity ts,id,agenttype,options,session_id,payload ... consider always joining to DAG edge?
+  * each node is a -p payload agent call
+  * if session_id is null you have to somehow obtain the session id AFTER creation and log it
+  * if session_id is not null you automatically inherit the previous context and have that previous call as a parent implicitly
+  * comms log:
+    * ts,from,to,payload
+    * somehow you have to "consume" from it at the right time in the right way. Agents are quite annoying at this.
