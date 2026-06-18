@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import socket as _socket
 import subprocess
 import sys
@@ -31,6 +30,14 @@ from pathlib import Path
 _ROOT_DIR = Path(__file__).resolve().parent
 _TMUX_SEND = _ROOT_DIR / "tmux-send"
 
+try:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent / "swarm"))
+    from common import get_cached_provider_usage
+except Exception:
+    get_cached_provider_usage = None
+
 # ── EMA scheduling ────────────────────────────────────────────────────────────
 _ALPHA = 0.30        # EMA smoothing
 _SAFETY = 0.92       # leave an 8 % quota cushion at reset
@@ -38,115 +45,6 @@ _K_VAR = 0.0         # variance weight; raise to 0.5–1.0 for conservative mode
 _EMA_WARMUP = 3      # nudges before EMA replaces fixed interval
 _MIN_WAIT = 30       # hard floor (seconds)
 _MAX_WAIT = 20 * 60  # hard ceiling (seconds)
-
-_STATS_CMD: dict[str, str] = {
-    "claude": "/usage",
-    "codex": "/status",
-    "gemini": "/stats",
-    "qwen": "/stats",
-}
-
-# ── usage parsing (mirrors topology.py) ──────────────────────────────────────
-_LINE_PATTERNS = [
-    (re.compile(r'(\w+)\s+limit:.*?(\d+)%\s+left', re.IGNORECASE), 'labeled_left'),
-    (re.compile(r'(\d+)%\s+left', re.IGNORECASE), 'pct_left'),
-    (re.compile(r'(\d+)%\s+used', re.IGNORECASE), 'pct_used'),
-    (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
-    (re.compile(r'\b(\d+)%\s+\d{1,2}:\d{2}\s+(?:AM|PM)', re.IGNORECASE), 'pct_used'),
-]
-_RESET_RE = re.compile(r'resets\s+(.+)', re.IGNORECASE)
-
-
-def _parse_reset_ts(s: str) -> int | None:
-    if not s:
-        return None
-    now = datetime.now()
-    s = re.sub(r'\s*\([^)]*\)', '', s).strip()
-
-    m = re.match(r'(\d{1,2}):(\d{2})\s+on\s+(\d{1,2})\s+(\w+)', s)
-    if m:
-        hour, minute, day, mon = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
-        for yr in (now.year, now.year + 1):
-            try:
-                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
-                if dt.timestamp() > now.timestamp():
-                    return int(dt.timestamp())
-            except ValueError:
-                pass
-
-    m = re.match(r'(\w+)\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', s, re.IGNORECASE)
-    if m:
-        mon, day = m.group(1), int(m.group(2))
-        hour, minute = int(m.group(3)), int(m.group(4) or 0)
-        ampm = (m.group(5) or '').lower()
-        if ampm == 'pm' and hour != 12:
-            hour += 12
-        elif ampm == 'am' and hour == 12:
-            hour = 0
-        for yr in (now.year, now.year + 1):
-            try:
-                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
-                if dt.timestamp() > now.timestamp():
-                    return int(dt.timestamp())
-            except ValueError:
-                pass
-    return None
-
-
-def _parse_usage_from_text(text: str) -> list[dict]:
-    limits: list[dict] = []
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        entry: dict | None = None
-        for pat, kind in _LINE_PATTERNS:
-            m = pat.search(line)
-            if not m:
-                continue
-            try:
-                if kind == 'labeled_left':
-                    entry = {"label": m.group(1).lower(), "pct": int(m.group(2))}
-                elif kind == 'pct_left':
-                    entry = {"label": "", "pct": int(m.group(1))}
-                elif kind == 'pct_used':
-                    entry = {"label": "", "pct": max(0, 100 - int(m.group(1)))}
-                elif kind == 'hours_used':
-                    used, total = float(m.group(1)), float(m.group(2))
-                    if total > 0:
-                        entry = {"label": "", "pct": round((1.0 - used / total) * 100)}
-            except (ValueError, ZeroDivisionError):
-                pass
-            if entry:
-                search_lines = [line] + ([lines[i + 1]] if i + 1 < len(lines) else [])
-                reset = ""
-                for sl in search_lines:
-                    rm = _RESET_RE.search(sl)
-                    if rm:
-                        reset = rm.group(1).strip().rstrip('│╯╰ ')
-                        while reset.endswith(')') and reset.count('(') < reset.count(')'):
-                            reset = reset[:-1].rstrip()
-                        break
-                entry["reset"] = reset
-                entry["reset_ts"] = _parse_reset_ts(reset) or 0
-                limits.append(entry)
-                break
-    labeled = [l for l in limits if l["label"]]
-    return labeled if labeled else limits
-
-
-def _probe_usage(target: str, cmd: str, dismiss: bool = False) -> tuple[float | None, float | None]:
-    """Send stats command, wait, capture pane, parse. Returns (min_pct, soonest_reset_ts)."""
-    subprocess.run([str(_TMUX_SEND), target, cmd], check=False)
-    time.sleep(2)
-    r = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], capture_output=True, text=True)
-    if dismiss:
-        subprocess.run(["tmux", "send-keys", "-t", target, "Escape"], check=False)
-    limits = _parse_usage_from_text(r.stdout)
-    if not limits:
-        return None, None
-    pcts = [lim["pct"] for lim in limits if lim.get("pct") is not None]
-    resets = [lim["reset_ts"] for lim in limits if lim.get("reset_ts")]
-    return (min(pcts) if pcts else None), (min(resets) if resets else None)
-
 
 # ── tmux / socket helpers ─────────────────────────────────────────────────────
 
@@ -258,7 +156,6 @@ def main() -> int:
     clear_every = int(os.environ.get("BABYSIT_CLEAR_EVERY", 0))
     stats_every = int(os.environ.get("BABYSIT_STATS_EVERY", 300))
 
-    stats_cmd = _STATS_CMD.get(agent, "")
     sock = f"/tmp/{session}_{window_pane}.sock"
 
     r = subprocess.run(["tmux", "list-panes", "-t", target], capture_output=True)
@@ -315,10 +212,21 @@ def main() -> int:
         next_force_at = force_deadline if state in ("unknown", "working", "error") else 0
 
         if state == "idle":
-            # probe usage on a throttled schedule
-            if stats_cmd and (now_f - stats_last_probe) >= stats_every:
-                print(f"{ts} {session} probing usage ({stats_cmd})")
-                new_pct, new_reset_ts = _probe_usage(target, stats_cmd, dismiss=(agent == "claude"))
+            # probe quota on a throttled schedule using cli-based quota (non-intrusive)
+            if agent in ("claude", "codex", "agy") and (now_f - stats_last_probe) >= stats_every:
+                print(f"{ts} {session} probing quota ({agent})")
+                new_pct = new_reset_ts = None
+                if get_cached_provider_usage:
+                    try:
+                        res = get_cached_provider_usage(agent, ttl=30, force=False)
+                        limits = res.get("limits") or (res.get("parsed") or {}).get("limits") or []
+                        if limits:
+                            pcts = [lim.get("pct") for lim in limits if lim.get("pct") is not None]
+                            resets = [lim.get("reset_ts", 0) for lim in limits if lim.get("reset_ts", 0)]
+                            new_pct = min(pcts) if pcts else None
+                            new_reset_ts = min(resets) if resets else None
+                    except Exception as e:
+                        print(f"  quota error: {e}")
                 if new_pct is not None:
                     current_pct, current_reset_ts = new_pct, new_reset_ts
                 stats_last_probe = now_f

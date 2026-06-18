@@ -18,9 +18,6 @@ from common import (
     WindowSpec,
     write_runtime_map,
     write_self_awareness_text,
-    _LINE_PATTERNS,
-    _parse_reset_ts,
-    parse_usage_text as _parse_usage_from_text,
 )
 
 from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
@@ -114,54 +111,17 @@ def socket_ready(session_name: str, pane: str) -> bool:
     return '"state"' in proc.stdout
 
 
-def _usage_cache_path(cfg: SwarmConfig, pane: str):
-    return cfg.runtime_dir / f"usage-{pane.replace('.', '-')}.json"
-
-
-
-def _format_limits(limits: list[dict]) -> str:
-    parts = []
-    for lim in limits:
-        s = f"{lim['label']}:{lim['pct']}%" if lim['label'] else f"{lim['pct']}%"
-        reset = lim.get('reset', '').strip()
-        if reset:
-            s += f" (resets {reset})"
-        parts.append(s)
-    return "  ".join(parts)
-
-
-def _write_usage_cache(cfg: SwarmConfig, pane: str, limits: list[dict]) -> None:
-    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
-    _usage_cache_path(cfg, pane).write_text(json.dumps({"limits": limits, "ts": int(time.time())}) + "\n")
-
-
-def _read_usage_cache(cfg: SwarmConfig, pane: str) -> list[dict] | None:
-    path = _usage_cache_path(cfg, pane)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-        return data.get("limits") or None
-    except Exception:
-        return None
 
 
 def _query_monitor(cfg: SwarmConfig, pane: str) -> dict:
     sock = socket_path(cfg, pane)
     proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
     if proc.returncode != 0 or '"state"' not in proc.stdout:
-        result: dict = {'state': 'unreachable'}
-    else:
-        try:
-            result = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            result = {'state': 'unparseable'}
-    if 'usage_limits' not in result:
-        cached = _read_usage_cache(cfg, pane)
-        if cached is not None:
-            result['usage_limits'] = cached
-            result['usage_pct'] = min(lim['pct'] for lim in cached)
-    return result
+        return {'state': 'unreachable'}
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {'state': 'unparseable'}
 
 
 def monitor_state(cfg: SwarmConfig, pane: str) -> str:
@@ -308,14 +268,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
             state_str = mon.get('state', 'unreachable')
-            limits = mon.get('usage_limits')
-            if limits:
-                usage_str = " " + _format_limits(limits)
-            elif mon.get('usage_pct') is not None:
-                usage_str = f" {mon['usage_pct']}%"
-            else:
-                usage_str = ""
-            monitor = state_str + usage_str
+            monitor = state_str
         else:
             monitor = "off"
         babysit_note = ""
