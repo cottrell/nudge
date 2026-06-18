@@ -156,4 +156,4 @@ distinguish waiting for input, rate limiting, errors, or silent computation.
 - [teamocil](https://github.com/remiprev/teamocil)
 - [Zellij](https://zellij.dev/)
 
-See `AGENTS.md` for contribution guidance and `TODO.md` for planned work.
+See `AGENTS.md` for contribution guidance and `backlog/tasks/` for planned work.
