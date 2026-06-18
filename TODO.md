@@ -7,37 +7,31 @@
 The C implementation (`monitor.c`) is now the primary backend:
 - ~1MB binary with no runtime dependencies
 - Instant startup
-- Full feature parity with Python reference implementation
+- Activity-based `unknown`/`working`/`idle` state
 - Signal handling for cleanup (SIGINT, SIGTERM)
 - Proper JSON escaping for control characters
-- Complete ANSI escape sequence stripping
 
 ### Python Backend Status
 
 Python (`monitor.py`) is the **reference implementation and test oracle**:
-- Defines expected behavior for state classification
-- Used by `test_fixture_replay_c_matches_python_final_state` to verify C parity
-- Should be kept in sync with C for pattern changes
+- Defines expected activity and quiet-time behavior
+- Used by fixture replay tests to verify C parity
+- Should be kept in sync with C for state changes
 - Not used in production (C is the runtime backend)
 
 ## Open Issues
 
 ### Edge Cases to Watch
 
-1. **Agent output format changes** — When agent CLI output changes, patterns may need updates. Re-capture fixtures with `make capture_<agent>` and verify tests pass.
+1. **Silent work** — Commands that emit no output longer than the idle timeout appear idle.
 
-2. **UTF-8 handling** — The C code validates braille UTF-8 sequences but doesn't fully validate all Unicode. Malformed input could cause issues.
+2. **Continuous redraws** — An idle CLI that keeps emitting terminal updates appears working.
 
 3. **Race conditions** — The `examples/launch-2pane.sh` retry loop helps but doesn't eliminate all timing issues with socket readiness.
 
-4. **Pattern gaps** — Some agents may have unclassified states. Add patterns as new output formats are observed.
-
-5. **ANSI stripping completeness** — The C stripper handles common sequences but may miss obscure terminal control codes.
-
 ## Future Enhancements
 
-- Pattern config file (JSON/TOML) to avoid recompiling for pattern updates
 - Additional agents (cursor, windsurf, etc.)
-- Enhanced state detection (e.g., "waiting for user input" vs "idle")
+- Optional first-party state sources where CLIs expose reliable structured status
 - More layout recipes beyond `tiled` while keeping `rows`/`cols` explicit in config
 - Replace `babysit-manager.sh` with the YAML-driven swarm path once apply/reconcile semantics settle

@@ -1,8 +1,8 @@
 /*
- * monitor.c — read stdin, classify agent state, serve over Unix socket + HTTP.
+ * monitor.c — track pane activity from stdin, serve state over Unix socket + HTTP.
  *
  * Usage:
- *   ./monitor --agent claude --socket /tmp/mysession.sock [--http-port 9000]
+ *   ./monitor --agent claude --socket /tmp/mysession.sock [--idle-secs 10]
  *   echo status | nc -U /tmp/mysession.sock
  *   curl localhost:9000/status
  *
@@ -11,7 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
+#include <errno.h>
+#include <math.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -25,105 +26,27 @@
 #define RESP_MAX  (MAX_LINE * 55)   /* enough for 50 log lines JSON-encoded */
 
 /* States */
-typedef enum { ST_UNKNOWN, ST_WORKING, ST_IDLE, ST_RATE_LIMITED, ST_ERROR } State;
-static const char *STATE_STR[] = { "unknown", "working", "idle", "rate_limited", "error" };
-
-/* Pattern table — case-insensitive substring match */
-typedef struct { const char *agent; State state; const char *pat; } Pat;
-static const Pat PATS[] = {
-    /* grok */
-    {"grok", ST_RATE_LIMITED, "rate_limit_error"},
-    {"grok", ST_RATE_LIMITED, "overloaded_error"},
-    {"grok", ST_RATE_LIMITED, "overloaded"},
-    {"grok", ST_RATE_LIMITED, "retrying in"},
-    {"grok", ST_RATE_LIMITED, "out of extra usage"},
-    {"grok", ST_WORKING,      "esc to cancel"},
-    {"grok", ST_ERROR,        "api error:"},
-    {"grok", ST_ERROR,        "authentication_error"},
-    {"grok", ST_ERROR,        "invalid_request_error"},
-    {"grok", ST_ERROR,        "\"type\":\"error\""},
-    /* claude */
-    {"claude", ST_RATE_LIMITED, "rate_limit_error"},
-    {"claude", ST_RATE_LIMITED, "overloaded_error"},
-    {"claude", ST_RATE_LIMITED, "overloaded"},
-    {"claude", ST_RATE_LIMITED, "retrying in"},
-    {"claude", ST_RATE_LIMITED, "out of extra usage"},
-    {"claude", ST_WORKING,      "esc to cancel"},
-    {"claude", ST_ERROR,        "api error:"},
-    {"claude", ST_ERROR,        "authentication_error"},
-    {"claude", ST_ERROR,        "invalid_request_error"},
-    {"claude", ST_ERROR,        "\"type\":\"error\""},
-    /* gemini */
-    {"gemini", ST_WORKING,      "thinking ..."},
-    {"gemini", ST_WORKING,      "esc to cancel"},
-    {"gemini", ST_RATE_LIMITED, "quota exceeded"},
-    {"gemini", ST_RATE_LIMITED, "rate limit"},
-    {"gemini", ST_RATE_LIMITED, "too many requests"},
-    {"gemini", ST_RATE_LIMITED, "0% left"},
-    {"gemini", ST_IDLE,         "type your message"},
-    {"gemini", ST_IDLE,         "? for shortcuts"},
-    {"gemini", ST_ERROR,        "request failed after all retries"},
-    {"gemini", ST_ERROR,        "error"},
-    /* codex */
-    {"codex",  ST_WORKING,      "working"},
-    {"codex",  ST_WORKING,      "esc to interrupt"},
-    {"codex",  ST_WORKING,      "thinking"},
-    {"codex",  ST_WORKING,      "writing"},
-    {"codex",  ST_WORKING,      "running"},
-    {"codex",  ST_RATE_LIMITED, "rate limited"},
-    {"codex",  ST_RATE_LIMITED, "hit your usage limit"},
-    {"codex",  ST_RATE_LIMITED, "Upgrade to Pro"},
-    {"codex",  ST_RATE_LIMITED, "] 0% left"},
-    {"codex",  ST_IDLE,         "reply with exactly"},
-    {"codex",  ST_IDLE,         "? for shortcuts"},
-    {"codex",  ST_IDLE,         "context left"},
-    {"codex",  ST_ERROR,        "error:"},
-    /* copilot */
-    {"copilot", ST_WORKING,      "thinking"},
-    {"copilot", ST_WORKING,      "writing"},
-    {"copilot", ST_WORKING,      "running"},
-    {"copilot", ST_WORKING,      "loading environment"},
-    {"copilot", ST_WORKING,      "esc to interrupt"},
-    {"copilot", ST_IDLE,         "type @ to mention files"},
-    {"copilot", ST_IDLE,         "type your message"},
-    {"copilot", ST_RATE_LIMITED, "rate limit"},
-    {"copilot", ST_RATE_LIMITED, "too many requests"},
-    {"copilot", ST_RATE_LIMITED, "0% left"},
-    {"copilot", ST_ERROR,        "error:"},
-    /* vibe */
-    {"vibe",   ST_WORKING,      "esc to interrupt"},
-    {"vibe",   ST_RATE_LIMITED, "rate limits exceeded"},
-    {"vibe",   ST_RATE_LIMITED, "0% left"},
-    {"vibe",   ST_ERROR,        "error:"},
-    /* qwen */
-    {"qwen",   ST_IDLE,         "type your message"},
-    {"qwen",   ST_IDLE,         "? for shortcuts"},
-    {"qwen",   ST_RATE_LIMITED, "rate limit"},
-    {"qwen",   ST_RATE_LIMITED, "too many requests"},
-    {"qwen",   ST_RATE_LIMITED, "0% left"},
-    {"qwen",   ST_ERROR,        "error:"},
-    {"qwen",   ST_ERROR,        "error"},
-    /* antigravity */
-    {"antigravity", ST_WORKING,      "thinking ..."},
-    {"antigravity", ST_WORKING,      "esc to cancel"},
-    {"antigravity", ST_RATE_LIMITED, "quota exceeded"},
-    {"antigravity", ST_RATE_LIMITED, "rate limit"},
-    {"antigravity", ST_RATE_LIMITED, "too many requests"},
-    {"antigravity", ST_RATE_LIMITED, "0% left"},
-    {"antigravity", ST_IDLE,         "type your message"},
-    {"antigravity", ST_IDLE,         "? for shortcuts"},
-    {"antigravity", ST_ERROR,        "request failed after all retries"},
-    {"antigravity", ST_ERROR,        "error"},
-    {NULL, 0, NULL}
-};
+typedef enum { ST_UNKNOWN, ST_WORKING, ST_IDLE } State;
+static const char *STATE_STR[] = { "unknown", "working", "idle" };
 
 static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, grok, vibe, qwen, antigravity";
+static const char *VALID_AGENTS[] = {
+    "claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity", NULL
+};
 
 static int valid_agent(const char *agent) {
-    for (int i = 0; PATS[i].agent; i++) {
-        if (!strcmp(PATS[i].agent, agent)) return 1;
-    }
+    for (int i = 0; VALID_AGENTS[i]; i++)
+        if (!strcmp(VALID_AGENTS[i], agent)) return 1;
     return 0;
+}
+
+static int parse_positive_double(const char *value, double *out) {
+    char *end;
+    errno = 0;
+    double parsed = strtod(value, &end);
+    if (errno || end == value || *end || !isfinite(parsed) || parsed <= 0) return 0;
+    *out = parsed;
+    return 1;
 }
 
 /* Global state (protected by lock) */
@@ -135,14 +58,9 @@ static int     g_count = 0;
 static char    g_agent[64] = "unknown";
 static FILE   *g_state_log = NULL;
 static FILE   *g_debug_log = NULL;
-static struct timespec g_last_working_at = {0};
 static struct timespec g_last_ingest_at = {0};
-static struct timespec g_pending_idle_at = {0};
-static char    g_pending_idle_line[MAX_LINE] = "";
 static char    g_sock_path[256] = "";  /* for cleanup */
-
-#define IDLE_HOLDOFF_SECS 1.0
-#define QUIET_IDLE_SECS 2.0
+static double  g_idle_secs = 10.0;
 
 static void cleanup_and_exit(int sig) {
     (void)sig;
@@ -167,32 +85,11 @@ static double monotonic_now(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
 }
 
-static int uses_idle_holdoff(void) {
-    return strcmp(g_agent, "gemini") == 0 ||
-           strcmp(g_agent, "copilot") == 0 ||
-           strcmp(g_agent, "codex") == 0 ||
-           strcmp(g_agent, "qwen") == 0 ||
-           strcmp(g_agent, "vibe") == 0 ||
-           strcmp(g_agent, "antigravity") == 0;
-}
-
 static void refresh_state_locked(void) {
-    if (!uses_idle_holdoff()) return;
     if (g_state != ST_WORKING) return;
-    double now = monotonic_now();
-    double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
-    if (g_pending_idle_at.tv_sec != 0 && g_last_working_at.tv_sec != 0 && now - last >= IDLE_HOLDOFF_SECS) {
-        g_state = ST_IDLE;
-        log_state_event("change", g_state, g_pending_idle_line[0] ? g_pending_idle_line : NULL);
-        g_pending_idle_at.tv_sec = 0;
-        g_pending_idle_at.tv_nsec = 0;
-        g_pending_idle_line[0] = '\0';
-        return;
-    }
-    if (g_last_ingest_at.tv_sec == 0 || g_last_working_at.tv_sec == 0) return;
+    if (g_last_ingest_at.tv_sec == 0) return;
     double last_ingest = (double)g_last_ingest_at.tv_sec + (double)g_last_ingest_at.tv_nsec / 1000000000.0;
-    if (now - last < IDLE_HOLDOFF_SECS) return;
-    if (now - last_ingest < QUIET_IDLE_SECS) return;
+    if (monotonic_now() - last_ingest < g_idle_secs) return;
     g_state = ST_IDLE;
     log_state_event("change", g_state, NULL);
 }
@@ -259,173 +156,6 @@ static void log_debug_line(const char *line) {
     fflush(g_debug_log);
 }
 
-/* Case-insensitive substring search */
-static int icontains(const char *hay, const char *needle) {
-    size_t nlen = strlen(needle), hlen = strlen(hay);
-    if (nlen > hlen) return 0;
-    for (size_t i = 0; i <= hlen - nlen; i++) {
-        size_t j;
-        for (j = 0; j < nlen; j++)
-            if (tolower((unsigned char)hay[i+j]) != tolower((unsigned char)needle[j])) break;
-        if (j == nlen) return 1;
-    }
-    return 0;
-}
-
-/* Strip ANSI escape sequences in-place */
-static void strip_ansi(char *s) {
-    char *r = s, *w = s;
-    while (*r) {
-        if (*r == '\x1b') {
-            r++;
-            if (*r == '[') {
-                /* CSI sequence: ESC [ params final-byte */
-                r++;
-                while (*r && !(*r >= '@' && *r <= '~')) r++;
-                if (*r) r++;
-            } else if (*r == ']') {
-                /* OSC sequence: ESC ] text ST (BEL or ESC \) */
-                r++;
-                while (*r && *r != '\x07' && *r != '\x1b') r++;
-                if (*r == '\x07') r++;
-                else if (*r == '\x1b' && *(r+1) == '\\') r += 2;
-            } else if (*r >= '@' && *r <= '_') {
-                /* Fe sequence: single char after ESC */
-                r++;
-            } else if (*r == '\\') {
-                /* String terminator (after ST) */
-                r++;
-            }
-        } else if (*r == '[') {
-            /* Orphaned CSI (no ESC) - skip if it looks like CSI sequence */
-            char *peek = r + 1;
-            while (*peek && !(*peek >= '@' && *peek <= '~')) peek++;
-            if (*peek >= '@' && *peek <= '~') {
-                r = peek + 1;  /* Skip the whole sequence */
-            } else {
-                *w++ = *r++;
-            }
-        } else {
-            *w++ = *r++;
-        }
-    }
-    *w = '\0';
-}
-
-/* Braille block U+2800-U+28FF encodes as E2 A0 xx in UTF-8 (xx is 0x80-0xBF) */
-static int has_braille(const char *line) {
-    for (int i = 0; line[i] && line[i+1] && line[i+2]; i++) {
-        unsigned char c0 = (unsigned char)line[i];
-        unsigned char c1 = (unsigned char)line[i+1];
-        unsigned char c2 = (unsigned char)line[i+2];
-        if (c0 == 0xE2 && c1 == 0xA0 && c2 >= 0x80 && c2 <= 0xBF)
-            return 1;
-    }
-    return 0;
-}
-
-static void trim_ascii_ws(char *s) {
-    int i = 0, j = 0, len = (int)strlen(s);
-    while (s[i] && isspace((unsigned char)s[i])) i++;
-    if (i > 0) {
-        while (s[i]) s[j++] = s[i++];
-        s[j] = '\0';
-    }
-    len = (int)strlen(s);
-    while (len > 0 && isspace((unsigned char)s[len - 1])) s[--len] = '\0';
-}
-
-static int has_claude_working_marker(const char *line) {
-    return has_braille(line) ||
-           icontains(line, "esc to cancel") ||
-           strstr(line, "·") || strstr(line, "✢") || strstr(line, "✳") ||
-           strstr(line, "∗") || strstr(line, "✻") || strstr(line, "✽");
-}
-
-static int prompt_suffix_only(const char *s) {
-    while (*s) {
-        if (*s == ' ') {
-            s++;
-            continue;
-        }
-        if ((unsigned char)s[0] == 0xC2 && (unsigned char)s[1] == 0xA0) {
-            s += 2;
-            continue;
-        }
-        return 0;
-    }
-    return 1;
-}
-
-static int is_claude_idle(const char *line) {
-    if (line[0] == '>' && line[1] == '\0') return 1;
-    if (strstr(line, "--INSERT--") || strstr(line, "-- INSERT --")) return 1;
-    const char *prompt = NULL;
-    for (const char *p = line; (p = strstr(p, "❯")); p += 3) prompt = p;
-    if (!prompt) return 0;
-    if (prompt == line && prompt_suffix_only(prompt + 3)) return 1;
-    if (prompt_suffix_only(prompt + 3) && !has_claude_working_marker(line)) return 1;
-    return 0;
-}
-
-static int is_claude_insert_redraw(const char *line) {
-    return strncmp(line, "--INSERT--", 10) == 0 || strstr(line, "-- INSERT --") != NULL;
-}
-
-static int is_copilot_idle(const char *line) {
-    if (line[0] == '>' && line[1] == '\0') return 1;
-    if ((unsigned char)line[0] == 0xE2 &&
-        (unsigned char)line[1] == 0x80 &&
-        (unsigned char)line[2] == 0xBA &&
-        line[3] == '\0') return 1; /* › */
-    return 0;
-}
-
-static int is_vibe_logo_line(const char *line) {
-    return icontains(line, "Mistral Vibe") ||
-           (icontains(line, "models") && icontains(line, "MCP server")) ||
-           icontains(line, "skills");
-}
-
-static int is_vibe_idle(const char *line) {
-    if (line[0] == '>' && line[1] == '\0') return 1;
-    return strstr(line, "│ >") != NULL;
-}
-
-static State classify(char *line) {
-    int has_sync = strstr(line, "\x1b[?2026") != NULL;
-    /* Skip title bar updates - they contain spinners but aren't real work */
-    if (strstr(line, "\x1b]") && (strstr(line, "Claude Code") || strstr(line, "Grok Build"))) return ST_UNKNOWN;
-    strip_ansi(line);
-    trim_ascii_ws(line);
-
-    if (!strcmp(g_agent, "claude") || !strcmp(g_agent, "grok")) {
-        /* High priority rate limit checks */
-        if (icontains(line, "rate_limit_error") || 
-            icontains(line, "overloaded_error") || 
-            icontains(line, "overloaded") || 
-            icontains(line, "retrying in") || 
-            icontains(line, "out of extra usage")) {
-            return ST_RATE_LIMITED;
-        }
-        if (is_claude_idle(line)) return ST_IDLE;
-        if (is_claude_insert_redraw(line)) return ST_IDLE;
-        if (has_claude_working_marker(line)) return ST_WORKING;
-        if (has_sync && line[0] != '\0') return ST_WORKING;
-    }
-
-    if (!strcmp(g_agent, "copilot") && is_copilot_idle(line)) return ST_IDLE;
-    if (!strcmp(g_agent, "vibe") && is_vibe_idle(line)) return ST_IDLE;
-    if ((!strcmp(g_agent, "gemini") || !strcmp(g_agent, "qwen") || !strcmp(g_agent, "antigravity")) && has_braille(line)) return ST_WORKING;
-    if (!strcmp(g_agent, "vibe") && icontains(line, "esc to interrupt")) return ST_WORKING;
-    if (!strcmp(g_agent, "vibe") && has_braille(line) && !is_vibe_logo_line(line) && icontains(line, "analyse")) return ST_WORKING;
-
-    for (int i = 0; PATS[i].agent; i++)
-        if (!strcmp(PATS[i].agent, g_agent) && icontains(line, PATS[i].pat))
-            return PATS[i].state;
-    return ST_UNKNOWN;  /* no match — caller keeps existing state */
-}
-
 static void ingest(const char *line) {
     pthread_mutex_lock(&lock);
     log_debug_line(line);
@@ -435,31 +165,9 @@ static void ingest(const char *line) {
     g_head = (g_head + 1) % MAX_LOG;
     if (g_count < MAX_LOG) g_count++;
 
-    char work[MAX_LINE];
-    strncpy(work, line, MAX_LINE - 1);
-    work[MAX_LINE - 1] = '\0';
-
-    /* Classify can see sync/OSC markers before they are stripped */
-    State s = classify(work);
-
-    refresh_state_locked();
-    if (s == ST_WORKING) {
-        clock_gettime(CLOCK_MONOTONIC, &g_last_working_at);
-        g_pending_idle_at.tv_sec = 0;
-        g_pending_idle_at.tv_nsec = 0;
-        g_pending_idle_line[0] = '\0';
-    } else if (uses_idle_holdoff() && s == ST_IDLE && g_last_working_at.tv_sec != 0) {
-        double last = (double)g_last_working_at.tv_sec + (double)g_last_working_at.tv_nsec / 1000000000.0;
-        if (monotonic_now() - last < IDLE_HOLDOFF_SECS) {
-            clock_gettime(CLOCK_MONOTONIC, &g_pending_idle_at);
-            strncpy(g_pending_idle_line, work, MAX_LINE - 1);
-            g_pending_idle_line[MAX_LINE - 1] = '\0';
-            s = ST_UNKNOWN;
-        }
-    }
-    if (s != ST_UNKNOWN && s != g_state) {
-        g_state = s;
-        log_state_event("change", g_state, work);
+    if (g_state != ST_WORKING) {
+        g_state = ST_WORKING;
+        log_state_event("change", g_state, line);
     }
     pthread_mutex_unlock(&lock);
 }
@@ -555,13 +263,13 @@ static void *sock_thread(void *arg) {
 /* Minimal HTTP server */
 static void *http_thread(void *arg) {
     int port = *(int *)arg;
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    int srv = socket(AF_INET6, SOCK_STREAM, 0);
     int opt = 1;
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    struct sockaddr_in addr = {0};
-    addr.sin_family      = AF_INET;
-    addr.sin_port        = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    struct sockaddr_in6 addr = {0};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(port);
+    addr.sin6_addr = in6addr_any;
     bind(srv, (struct sockaddr *)&addr, sizeof(addr));
     listen(srv, 5);
     while (1) {
@@ -598,10 +306,16 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--agent")     && i+1 < argc) strncpy(g_agent,   argv[++i], sizeof(g_agent)   - 1);
         if (!strcmp(argv[i], "--socket")    && i+1 < argc) strncpy(sock_path, argv[++i], sizeof(sock_path) - 1);
         if (!strcmp(argv[i], "--http-port") && i+1 < argc) http_port = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--idle-secs") && i+1 < argc) {
+            if (!parse_positive_double(argv[++i], &g_idle_secs)) {
+                fprintf(stderr, "--idle-secs must be a positive number\n");
+                return 2;
+            }
+        }
         if (!strcmp(argv[i], "--debug")     && i+1 < argc) strncpy(debug_path, argv[++i], sizeof(debug_path) - 1);
         if (!strcmp(argv[i], "--state-log") && i+1 < argc) strncpy(state_log_path, argv[++i], sizeof(state_log_path) - 1);
         if (!strcmp(argv[i], "--help")) {
-            printf("Usage: monitor --agent <name> --socket <path> [--http-port <port>] [--debug <path>] [--state-log <path>]\n");
+            printf("Usage: monitor --agent <name> --socket <path> [--http-port <port>] [--idle-secs <seconds>] [--debug <path>] [--state-log <path>]\n");
             printf("Valid agent types: %s\n", VALID_AGENTS_TEXT);
             return 0;
         }

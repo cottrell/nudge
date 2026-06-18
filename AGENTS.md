@@ -26,15 +26,15 @@ The babysit loop will re-issue the full project briefing (`long_prompt`) immedia
 ## When to Commit
 
 You should commit your work when:
-- Adding support for a new agent (new patterns, updated help text, tests)
+- Adding support for a new agent (validation, help text, tests)
 - Fixing bugs in the monitor or shell scripts
 - Improving tests or capture fixtures
 - Updating documentation (README, TODO, this file)
 
 ## Development Workflow
 
-1. **Understand the codebase** — Read `README.md` and existing patterns in `monitor.c`
-2. **Make changes** — Edit `monitor.c` for pattern/logic changes
+1. **Understand the codebase** — Read `README.md` and the activity logic in `monitor.c`
+2. **Make changes** — Edit `monitor.c` for state logic changes
 3. **Run tests** — `make test` (Python) and `make test-c` (C + fixture replay)
 4. **Commit** — Use clear, descriptive commit messages
 
@@ -48,15 +48,19 @@ You should commit your work when:
 1. **Reference** — Shows intended behavior in a more readable form
 2. **Test validation** — `test_fixture_replay_c_matches_python_final_state` verifies C matches Python
 
-**Keep Python in sync for pattern changes** so the test oracle remains accurate. If Python drifts, the fixture replay tests may fail or become meaningless.
+**Keep Python in sync for state changes** so the test oracle remains accurate.
 
-## Pattern Changes
+## State Changes
 
-When adding or modifying agent patterns:
-- **Implement in C first** (`monitor.c` PATS array)
-- **Also update Python** (`monitor.py` PATTERNS dict) — keeps test oracle accurate
-- Add tests for new patterns in `test_monitor.py`
-- Update help text in `examples/launch-single-pane.sh`, `attach.sh`, `capture_fixture.sh`, `Makefile`
+The monitor is content-agnostic: any pane output is `working`, followed by `idle`
+after a quiet timeout. Do not add agent UI patterns without changing that design
+explicitly.
+
+When modifying state behavior:
+- Implement in C first
+- Update Python to keep the test oracle accurate
+- Add tests in `test_monitor.py`
+- Update relevant help text and docs
 
 ## Questions?
 

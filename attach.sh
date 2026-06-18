@@ -67,6 +67,8 @@ if [ -n "${MONITOR_STATE_LOG:-}" ]; then
     echo "State log: $STATE_LOG_PATH"
 fi
 
-tmux pipe-pane -t "$TARGET" "$CMD --agent $AGENT --socket $SOCK $DEBUG_FLAG $STATE_LOG_FLAG"
+IDLE_SECS="${MONITOR_IDLE_SECS:-10}"
+tmux pipe-pane -t "$TARGET" "$CMD --agent $AGENT --socket $SOCK --idle-secs $IDLE_SECS $DEBUG_FLAG $STATE_LOG_FLAG"
 echo "Monitoring $TARGET → $SOCK (backend: ${MONITOR_BACKEND:-c})"
+echo "Idle after ${IDLE_SECS}s without pane output"
 echo "Query: echo status | nc -U $SOCK"
