@@ -4,7 +4,7 @@ Config-driven tmux agent orchestration and monitoring.
 
 Primary workflow is the YAML swarm CLI under `swarm/cli.py`.
 
-States: `unknown` `working` `idle` `rate_limited` `error`
+States: `unknown` `working` `idle`
 
 ## Swarm-first workflow
 
@@ -33,10 +33,10 @@ python swarm/cli.py babysit stop ./swarm/<project>.yaml
 
 Status/usage reliability note:
 
-- monitor state is inferred from terminal text patterns and can be wrong when CLIs redraw, change UI copy, or emit ambiguous output
-- `usage` parsing is best-effort regex extraction from captured pane text; it frequently misses, lags, or misreads values across agent/version changes
-- treat `status`/`usage` as operator hints, not ground truth; manual pane inspection is still required for real decisions
-- no better robust cross-agent mechanism is implemented yet beyond this text-scraping approach
+- monitor state is activity-based: any pane output means `working`; 10 seconds without output means `idle`
+- output content is not classified, so agent UI text changes do not affect state detection
+- quiet long-running commands can appear idle, while continuous idle-screen redraws can appear working
+- `usage` is handled separately and remains best-effort; treat it as an operator hint
 
 Attach after apply if needed:
 
@@ -104,11 +104,8 @@ uv sync
 
 Fixture replay tests depend on real captured agent output in `fixtures/*_capture.txt`.
 
-Re-capture when:
-
-- an agent CLI changes its UI/output patterns
-- monitor classification logic changes
-- replay tests start failing or become obviously stale
+Fixtures now exercise real terminal byte streams rather than expected UI patterns.
+Re-capture when replay tests expose an input-handling issue or fixtures become stale.
 
 Commands:
 
@@ -136,27 +133,17 @@ Debug helpers:
 ```bash
 MONITOR_DEBUG=1 ./attach.sh mysession claude
 MONITOR_STATE_LOG=1 ./attach.sh mysession claude
+MONITOR_IDLE_SECS=20 ./attach.sh mysession claude
 ```
 
 Defaults:
 
 - `MONITOR_DEBUG=1` writes raw lines to `/tmp/<session>_<window-pane>.raw`
 - `MONITOR_STATE_LOG=1` writes transitions to `/tmp/<session>_<window-pane>.state.log`
+- `MONITOR_IDLE_SECS` controls the quiet period before `idle` (default: 10)
 
-## Agent state file landscape
-
-State detection approach varies by agent. Claude Code is currently the only CLI that
-writes a real-time process state file; all others only write retrospective session logs.
-
-| Agent  | Real-time state file | Fallback |
-|--------|----------------------|----------|
-| Claude | `~/.claude/sessions/{PID}.json` — `status: idle\|busy`, `updatedAt` ms timestamp | C monitor |
-| Codex  | none known — writes `~/.codex/sessions/` JSONL logs | C monitor |
-| Gemini | none known — writes `~/.gemini/` JSONL logs | C monitor |
-| Qwen   | none known — writes `~/.qwen/sessions/` JSONL logs | C monitor |
-
-For Claude, the session JSON is ground truth and a more reliable source than terminal
-scraping. See backlog TASK-1 for the planned implementation.
+The monitor deliberately reports activity, not semantic agent status. It does not
+distinguish waiting for input, rate limiting, errors, or silent computation.
 
 ## Similar projects
 
