@@ -216,6 +216,20 @@ def build_parser() -> argparse.ArgumentParser:
     usage_p.add_argument("config", help="Path to YAML config")
     usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
 
+    avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
+    avu_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
+    avu_p.add_argument("--json", action="store_true", help="Emit JSON")
+    avu_p.add_argument("--recent", type=int, default=0, metavar="MIN", help="Include rolling tokens for last N minutes (in addition)")
+    avu_p.add_argument("-w", "--watch", action="store_true", help="Refresh the report in place until interrupted")
+    avu_p.add_argument("-i", "--interval", type=float, default=30.0, help="Watch refresh interval in seconds (default: 30)")
+
+    quota_p = sub.add_parser("quota", help="Get cached/live provider account quotas (claude, codex, agy)")
+    quota_p.add_argument("agent", choices=["claude", "codex", "agy"], help="Agent to check")
+    quota_p.add_argument("--ttl", type=int, default=120, help="Cache TTL in seconds")
+    quota_p.add_argument("--force", action="store_true", help="Force refresh")
+    quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
+    quota_p.add_argument("-i", "--interval", type=float, default=2.0, help="Watch refresh interval in seconds")
+
     sub.add_parser(
         "help",
         aliases=["models"],
@@ -264,9 +278,77 @@ def main(argv: list[str] | None = None) -> int:
                 swarm_topology.print_status(cfg, args.brief)
             return 0
 
+        if args.command == "quota":
+            from common import get_cached_provider_usage
+            import time
+            if args.watch:
+                if args.interval <= 0:
+                    raise ValueError("--interval must be > 0")
+                try:
+                    while True:
+                        res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
+                        sys.stdout.write("\x1b[H\x1b[2J")
+                        sys.stdout.write(f"watch quota agent={args.agent} ttl={args.ttl}s updated={time.strftime('%H:%M:%S')}\n\n")
+                        if "error" in res:
+                            sys.stdout.write(f"Error: {res['error']}\n")
+                        else:
+                            fetched_at_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(res.get("fetched_at", 0)))
+                            sys.stdout.write(f"Fetched at: {fetched_at_str}\n")
+                            if "warning" in res:
+                                sys.stdout.write(f"Warning: {res['warning']}\n")
+                            sys.stdout.write("\nLimits:\n")
+                            limits = res.get("limits", [])
+                            if limits:
+                                for lim in limits:
+                                    lbl = f"{lim['label']}: " if lim['label'] else ""
+                                    reset_str = f" (resets {lim['reset']})" if lim['reset'] else ""
+                                    sys.stdout.write(f"  - {lbl}{lim['pct']}%{reset_str}\n")
+                            else:
+                                sys.stdout.write("  No limits found / parsed.\n")
+                            sys.stdout.write("\nRaw output:\n")
+                            sys.stdout.write(res.get("raw_text", ""))
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
+                        time.sleep(args.interval)
+                except KeyboardInterrupt:
+                    return 0
+            else:
+                res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
+                print(json.dumps(res, indent=2))
+                return 0
+
         if args.command == "usage":
             cfg = load_config(args.config)
             swarm_topology.probe_usage(cfg, args.dry_run)
+            return 0
+
+        if args.command == "av-usage":
+            from common import get_agents_from_config, get_swarm_agentsview_report
+            import json as _json
+
+            if args.config:
+                cfg = load_config(args.config)
+                agents = get_agents_from_config(cfg)
+            else:
+                agents = None
+
+            report = get_swarm_agentsview_report(agents)
+
+            if args.json:
+                if args.watch:
+                    print("error: --json cannot be used with --watch", file=sys.stderr)
+                    return 1
+                print(_json.dumps(report, indent=2, default=str))
+                return 0
+
+            effective = report.get("agents") or []
+            if args.watch:
+                swarm_topology.watch_av_usage(agents, args.recent, args.interval)
+                return 0
+
+            title = f"agentsview usage limited to swarm agents: {effective}" if args.config else "agentsview global usage (all agents)"
+            lines = swarm_topology.av_usage_lines(report, recent_minutes=args.recent, title=title)
+            print("\n".join(lines))
             return 0
 
         if args.command in ("help", "models"):

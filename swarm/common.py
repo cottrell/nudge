@@ -3,8 +3,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
+import time
+from datetime import datetime, timedelta
 import yaml
 
 
@@ -251,3 +256,566 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
 def write_self_awareness_text(cfg: SwarmConfig) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     cfg.self_awareness_path.write_text(build_self_awareness_text(cfg))
+
+
+# --- agentsview provider usage (task-7) ---
+
+import datetime as _dt
+import os as _os
+import subprocess as _subp
+from shutil import which as _which
+
+
+def _agentsview_bin() -> str:
+    # Prefer the dev tree build that matches the running server on 8088
+    for cand in (
+        "/home/cottrell/dev/agentsview/bin/agentsview",
+        _os.path.expanduser("~/.local/bin/agentsview"),
+    ):
+        if _os.path.isfile(cand) and _os.access(cand, _os.X_OK):
+            return cand
+    w = _which("agentsview")
+    return w or "agentsview"
+
+
+def _model_to_provider(model: str) -> str:
+    m = (model or "").lower()
+    if "claude" in m:
+        return "claude"
+    if "gpt" in m or "o1" in m or "o3" in m:
+        return "codex"
+    if "gemini" in m:
+        return "gemini"
+    if "grok" in m:
+        return "grok"
+    if "mistral" in m or "vibe" in m or "devstral" in m:
+        return "vibe"
+    if "qwen" in m:
+        return "qwen"
+    if "kimi" in m:
+        return "kimi"
+    return "other"
+
+
+def get_agentsview_provider_usage(*, since: str | None = None, until: str | None = None, no_sync: bool = True) -> dict:
+    """Return provider-grouped usage from agentsview.
+
+    Uses agentsview usage daily --json (correct pricing from model_pricing).
+    "Provider" here means backend family (claude/codex/gemini/...) derived from model.
+    """
+    binp = _agentsview_bin()
+    argv = [binp, "usage", "daily", "--json"]
+    if since:
+        argv += ["--since", since]
+    if until:
+        argv += ["--until", until]
+    if no_sync:
+        argv += ["--no-sync"]
+    try:
+        proc = _subp.run(argv, check=False, stdout=_subp.PIPE, stderr=_subp.PIPE, text=True, timeout=30)
+    except FileNotFoundError:
+        return {"error": f"agentsview CLI not found (tried {binp})"}
+    if proc.returncode != 0:
+        return {"error": (proc.stderr or proc.stdout or "agentsview usage failed").strip()[:300]}
+    try:
+        data = json.loads(proc.stdout)
+    except Exception as e:
+        return {"error": f"parse json: {e}"}
+
+    provs: dict[str, dict] = {}
+    for day in data.get("daily", []):
+        for mb in day.get("modelBreakdowns", []):
+            p = _model_to_provider(mb.get("modelName", ""))
+            if p not in provs:
+                provs[p] = {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0, "models": set()}
+            provs[p]["cost"] += mb.get("cost") or 0.0
+            provs[p]["input_tokens"] += mb.get("inputTokens") or 0
+            provs[p]["output_tokens"] += mb.get("outputTokens") or 0
+            provs[p]["cache_creation_tokens"] += mb.get("cacheCreationTokens") or 0
+            provs[p]["cache_read_tokens"] += mb.get("cacheReadTokens") or 0
+            if mb.get("modelName"):
+                provs[p]["models"].add(mb["modelName"])
+    for p in provs:
+        provs[p]["models"] = sorted(provs[p].pop("models"))
+    return {
+        "date_range": {"from": data.get("from") or since, "to": data.get("to") or until},
+        "providers": provs,
+        "totals": data.get("totals", {}),
+        "raw": {"sessionCounts": data.get("sessionCounts"), "agentTotals": data.get("agentTotals")},
+    }
+
+
+def get_agentsview_today_provider_usage() -> dict:
+    today = _dt.date.today().isoformat()
+    return get_agentsview_provider_usage(since=today, until=today)
+
+
+def get_agentsview_recent_tokens(minutes: int = 5, agents: list[str] | None = None) -> dict:
+    """Query usage_events directly (single SQL + join) for recent token burn.
+
+    Groups by the (normalized) agent from sessions. Cheap even for small windows.
+    """
+    db_path = _os.path.expanduser("~/.agentsview/sessions.db")
+    if not _os.path.exists(db_path):
+        return {"error": f"no sessions.db at {db_path}"}
+    try:
+        import sqlite3 as _sqlite3
+        from datetime import datetime as _dtm, timedelta as _td, timezone as _tz
+        cutoff = _dtm.now(_tz.utc) - _td(minutes=minutes)
+        normed = None
+        if agents:
+            normed = {normalize_agentsview_agent(a) for a in agents}
+
+        con = _sqlite3.connect(db_path)
+        cur = con.cursor()
+        # one query: join to get agent, pull recent window then python filter for tz accuracy
+        cur.execute(
+            """
+            SELECT s.agent, u.model, u.input_tokens, u.output_tokens,
+                   u.cache_creation_input_tokens, u.cache_read_input_tokens, u.occurred_at
+            FROM usage_events u
+            JOIN sessions s ON u.session_id = s.id
+            WHERE u.occurred_at >= date('now', '-2 days')
+            """
+        )
+        rows = cur.fetchall()
+        con.close()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+    provs: dict[str, dict] = {}
+    total_tokens = 0
+    kept = 0
+    for ag, model, it, ot, cc, cr, ts in rows:
+        if normed and ag not in normed:
+            continue
+        try:
+            ts = ts.replace("Z", "+00:00")
+            if "+" not in ts and "-" not in ts[10:]:
+                tso = _dtm.fromisoformat(ts)
+            else:
+                tso = _dtm.fromisoformat(ts)
+            if tso.tzinfo is None:
+                tso = tso.replace(tzinfo=_tz.utc)
+            else:
+                tso = tso.astimezone(_tz.utc)
+            if tso < cutoff:
+                continue
+        except Exception:
+            continue
+        kept += 1
+        key = ag or _model_to_provider(model)
+        if key not in provs:
+            provs[key] = {"tokens": 0, "input": 0, "output": 0, "models": set(), "count": 0}
+        t = (it or 0) + (ot or 0) + (cc or 0) + (cr or 0)
+        provs[key]["tokens"] += t
+        provs[key]["input"] += it or 0
+        provs[key]["output"] += ot or 0
+        provs[key]["count"] += 1
+        if model:
+            provs[key]["models"].add(model)
+        total_tokens += t
+    for k in provs:
+        provs[k]["models"] = sorted(provs[k].pop("models"))
+    return {
+        "window_minutes": minutes,
+        "providers": provs,
+        "total_tokens": total_tokens,
+        "events": kept,
+    }
+
+
+# --- config-aware agentsview usage (for av-usage <config>) ---
+
+AGENTSVIEW_AGENT_MAP = {
+    "antigravity": "antigravity-cli",
+    "agy": "antigravity-cli",
+}
+
+
+def normalize_agentsview_agent(name: str) -> str:
+    return AGENTSVIEW_AGENT_MAP.get(name, name)
+
+
+def _read_agentsview_auth() -> str | None:
+    try:
+        text = (Path.home() / ".agentsview" / "config.toml").read_text()
+        for line in text.splitlines():
+            if "auth_token" in line and "=" in line:
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if val:
+                    return val
+    except Exception:
+        pass
+    return None
+
+
+def _find_agentsview_port() -> int | None:
+    try:
+        d = Path.home() / ".agentsview"
+        files = sorted(d.glob("server.*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if files:
+            data = json.loads(files[0].read_text())
+            return int(data.get("port") or 0) or None
+    except Exception:
+        pass
+    return None
+
+
+def get_agentsview_all_agents() -> list[str]:
+    """Return the complete list of known agents/providers from agentsview.
+
+    Prefers the /api/v1/agents endpoint (includes all ever seen).
+    Falls back to distinct agents from the sessions table in the DB.
+    """
+    token = _read_agentsview_auth()
+    port = _find_agentsview_port()
+    if token and port:
+        import urllib.request as _url
+        base = f"http://bleepblop:{port}"
+        try:
+            req = _url.Request(f"{base}/api/v1/agents", headers={"Authorization": f"Bearer {token}"})
+            with _url.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                names = [a["name"] for a in data.get("agents", []) if a.get("name")]
+                return sorted(set(names))
+        except Exception:
+            pass
+
+    # DB fallback
+    try:
+        import sqlite3 as _sqlite3
+        db_path = _os.path.expanduser("~/.agentsview/sessions.db")
+        con = _sqlite3.connect(db_path)
+        cur = con.cursor()
+        cur.execute("SELECT DISTINCT agent FROM sessions WHERE agent IS NOT NULL ORDER BY agent")
+        names = [r[0] for r in cur.fetchall()]
+        con.close()
+        return names
+    except Exception:
+        return []
+
+
+def get_agentsview_usage_summary(
+    *, agents: list[str] | None = None, since: str | None = None, until: str | None = None
+) -> dict:
+    """Efficient query against the running agentsview server (one roundtrip).
+
+    If agents list given, server-side filter (comma joined). Uses the /api/v1/usage/summary
+    which returns agentTotals + daily with agentBreakdowns.
+    Falls back to CLI if server not reachable.
+    """
+    token = _read_agentsview_auth()
+    port = _find_agentsview_port()
+    if not token or not port:
+        # fallback to CLI path (may do multiple if per-agent needed)
+        joined = ",".join(agents) if agents else None
+        return get_agentsview_provider_usage(since=since, until=until)  # best effort, unfiltered for now
+
+    base = f"http://bleepblop:{port}"
+    params = {}
+    if since:
+        params["from"] = since
+    if until:
+        params["to"] = until
+    if agents:
+        # use normalized
+        normed = [normalize_agentsview_agent(a) for a in agents]
+        params["agent"] = ",".join(normed)
+
+    import urllib.request as _url
+    import urllib.parse as _parse
+
+    q = _parse.urlencode(params)
+    url = f"{base}/api/v1/usage/summary?{q}" if q else f"{base}/api/v1/usage/summary"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        req = _url.Request(url, headers=headers)
+        with _url.urlopen(req, timeout=8) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        # fallback
+        return {"error": f"api query failed: {e}", "fallback": True}
+
+
+def get_swarm_agentsview_report(agents: list[str] | None = None) -> dict:
+    """Return convenient report using global agentsview usage data.
+
+    If agents list is provided, limits to (normalized) those agents.
+    If None/empty, shows *all* known agents from agentsview (full global list),
+    with usage overlaid (0 for agents with no spend in the window).
+    """
+    today = _dt.date.today().isoformat()
+    week_ago = (_dt.date.today() - _dt.timedelta(days=6)).isoformat()
+
+    if agents:
+        norm_agents = sorted({normalize_agentsview_agent(a) for a in agents})
+        filter_for_api = norm_agents
+        wanted = norm_agents
+        display_agents = norm_agents
+    else:
+        # global: get the full roster, query unfiltered usage
+        display_agents = get_agentsview_all_agents()
+        filter_for_api = None
+        wanted = display_agents
+
+    today_data = get_agentsview_usage_summary(agents=filter_for_api, since=today, until=today)
+    week_data = get_agentsview_usage_summary(agents=filter_for_api, since=week_ago, until=today)
+
+    def extract_agent_costs(data: dict, wanted: list[str] | None) -> dict[str, dict]:
+        if "error" in data and "api query" not in str(data.get("error", "")):
+            return {"error": data["error"]}
+        found = {}
+        for row in data.get("agentTotals", []):
+            ag = row.get("agent")
+            if ag:
+                found[ag] = {
+                    "cost": float(row.get("cost") or 0),
+                    "input_tokens": int(row.get("inputTokens") or 0),
+                    "output_tokens": int(row.get("outputTokens") or 0),
+                    "cache_creation_tokens": int(row.get("cacheCreationTokens") or 0),
+                    "cache_read_tokens": int(row.get("cacheReadTokens") or 0),
+                }
+        if not wanted:
+            return found
+        out = {}
+        for ag in wanted:
+            v = found.get(ag, {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0})
+            out[ag] = v
+        return out
+
+    return {
+        "agents": display_agents,
+        "today": {
+            "date": today,
+            "by_agent": extract_agent_costs(today_data, wanted),
+            "totals": today_data.get("totals", {}),
+        },
+        "week": {
+            "from": week_ago,
+            "to": today,
+            "by_agent": extract_agent_costs(week_data, wanted),
+            "totals": week_data.get("totals", {}),
+        },
+        "recent": get_agentsview_recent_tokens(10, agents=wanted or []),
+    }
+
+
+def get_agents_from_config(cfg: SwarmConfig) -> list[str]:
+    return sorted({p.agent for p in cfg.panes if p.agent})
+
+
+# --- global agent provider quota caching ---
+
+def strip_ansi(text: str) -> str:
+    """Strip ANSI escape sequences from text."""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+
+_LINE_PATTERNS = [
+    # codex: "5h limit: [███] 100% left ..."  or  "Weekly limit: [███] 97% left ..."
+    (re.compile(r'(\w+)\s+limit:.*?(\d+)%\s+left', re.IGNORECASE), 'labeled_left'),
+    # generic "N% left"
+    (re.compile(r'(\d+)%\s+(?:left|remaining)', re.IGNORECASE), 'pct_left'),
+    # claude /usage: "12% used"
+    (re.compile(r'(\d+)%\s+used', re.IGNORECASE), 'pct_used'),
+    # hours: "4.2 / 5.0 hours"
+    (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
+    # gemini /stats: "0%  10:04 PM (24h)" — bare % followed by a clock = % used
+    (re.compile(r'\b(\d+)%\s+\d{1,2}:\d{2}\s+(?:AM|PM)', re.IGNORECASE), 'pct_used'),
+]
+
+
+def _parse_reset_ts(s: str) -> int | None:
+    """Parse a reset string to a Unix timestamp. Returns None if unparseable."""
+    if not s:
+        return None
+    now = datetime.now()
+    # strip timezone hint "(Europe/London)" etc — we work in local time
+    s = re.sub(r'\s*\([^)]*\)', '', s).strip()
+
+    # "02:49 on 31 Mar" or "07:37 on 3 Apr"
+    m = re.match(r'(\d{1,2}):(\d{2})\s+on\s+(\d{1,2})\s+(\w+)', s)
+    if m:
+        hour, minute, day, mon = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
+        for yr in (now.year, now.year + 1):
+            try:
+                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
+                if dt.timestamp() > now.timestamp():
+                    return int(dt.timestamp())
+            except ValueError:
+                pass
+
+    # "Apr 5, 1pm" or "Apr 5, 1:30pm" or "Apr 5, 13:00"
+    m = re.match(r'(\w+)\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', s, re.IGNORECASE)
+    if m:
+        mon, day = m.group(1), int(m.group(2))
+        hour, minute = int(m.group(3)), int(m.group(4) or 0)
+        ampm = (m.group(5) or '').lower()
+        if ampm == 'pm' and hour != 12:
+            hour += 12
+        elif ampm == 'am' and hour == 12:
+            hour = 0
+        for yr in (now.year, now.year + 1):
+            try:
+                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
+                if dt.timestamp() > now.timestamp():
+                    return int(dt.timestamp())
+            except ValueError:
+                pass
+
+    # Just a time: "3:39pm" or "15:39" or "03:39 am"
+    m = re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', s, re.IGNORECASE)
+    if m:
+        hour, minute = int(m.group(1)), int(m.group(2))
+        ampm = (m.group(3) or '').lower()
+        if ampm == 'pm' and hour != 12:
+            hour += 12
+        elif ampm == 'am' and hour == 12:
+            hour = 0
+        dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if dt.timestamp() <= now.timestamp():
+            dt += timedelta(days=1)
+        return int(dt.timestamp())
+
+    # relative duration: "24h 44m" or "2h 14m" or "in 2h 14m"
+    m = re.search(r'(?:in\s+)?(?:(\d+)h)?\s*(?:(\d+)m)?', s, re.IGNORECASE)
+    if m and (m.group(1) or m.group(2)):
+        h = int(m.group(1) or 0)
+        m_val = int(m.group(2) or 0)
+        return int((now + timedelta(hours=h, minutes=m_val)).timestamp())
+
+    return None
+
+
+def parse_usage_text(text: str) -> list[dict]:
+    """Return list of {label, pct, reset, reset_ts} dicts parsed from text."""
+    _reset = re.compile(r'(?:resets|refreshes in|refreshes)\s+(.+)', re.IGNORECASE)
+    limits: list[dict] = []
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        entry: dict | None = None
+        for pat, kind in _LINE_PATTERNS:
+            m = pat.search(line)
+            if not m:
+                continue
+            try:
+                if kind == 'labeled_left':
+                    entry = {"label": m.group(1).lower(), "pct": int(m.group(2))}
+                elif kind == 'pct_left':
+                    entry = {"label": "", "pct": int(m.group(1))}
+                elif kind == 'pct_used':
+                    entry = {"label": "", "pct": max(0, 100 - int(m.group(1)))}
+                elif kind == 'hours_used':
+                    used, total = float(m.group(1)), float(m.group(2))
+                    if total > 0:
+                        entry = {"label": "", "pct": round((1.0 - used / total) * 100)}
+            except (ValueError, ZeroDivisionError):
+                pass
+            if entry:
+                # check same line then next line for reset date
+                search_lines = [line] + ([lines[i + 1]] if i + 1 < len(lines) else [])
+                reset = ""
+                for sl in search_lines:
+                    rm = _reset.search(sl)
+                    if rm:
+                        reset = rm.group(1).strip().rstrip('│╯╰ ')
+                        # strip trailing ) from box-drawing if parens unbalanced
+                        while reset.endswith(')') and reset.count('(') < reset.count(')'):
+                            reset = reset[:-1].rstrip()
+                        break
+                entry["reset"] = reset
+                entry["reset_ts"] = _parse_reset_ts(reset) or 0
+
+                # Try to find a label from preceding lines if it's empty
+                if not entry["label"] and i > 0:
+                    for offset in (1, 2):
+                        if i - offset >= 0:
+                            cand = lines[i - offset].strip()
+                            if "limit" in cand.lower():
+                                lm = re.search(r'(\w+)\s+limit', cand, re.IGNORECASE)
+                                if lm:
+                                    entry["label"] = lm.group(1).lower()
+                                    break
+                limits.append(entry)
+                break
+    labeled = [l for l in limits if l["label"]]
+    return labeled if labeled else limits
+
+
+def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -> dict:
+    """Get provider usage with TTL caching, calling the underlying shell script if needed.
+    
+    Persisted cache: /tmp/nudge-usage-cache.json
+    """
+    cache_file = Path("/tmp/nudge-usage-cache.json")
+    cache: dict = {}
+    if cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text())
+        except Exception:
+            cache = {}
+            
+    now_ts = int(time.time())
+    entry = cache.get(agent)
+    if entry and not force:
+        fetched_at = entry.get("fetched_at", 0)
+        if now_ts - fetched_at < ttl:
+            return entry
+
+    # Run the shell script
+    script_path = ROOT_DIR / "swarm" / "usage" / f"{agent}.sh"
+    if not script_path.exists():
+        return {"error": f"Script not found at {script_path}", "limits": [], "fetched_at": now_ts}
+
+    try:
+        proc = subprocess.run(
+            [str(script_path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        if entry:
+            entry["warning"] = "Scraper timeout; returned stale cached data"
+            return entry
+        return {"error": "Scraper script timed out", "limits": [], "fetched_at": now_ts}
+    except Exception as e:
+        if entry:
+            entry["warning"] = f"Scraper error: {e}; returned stale cached data"
+            return entry
+        return {"error": f"Scraper failed to run: {e}", "limits": [], "fetched_at": now_ts}
+
+    if proc.returncode != 0:
+        err_msg = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+        if entry:
+            entry["warning"] = f"Scraper exit {proc.returncode}: {err_msg}; returned stale cached data"
+            return entry
+        return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
+
+    raw_output = proc.stdout or ""
+    clean_text = strip_ansi(raw_output)
+    limits = parse_usage_text(clean_text)
+
+    new_entry = {
+        "raw_text": clean_text,
+        "limits": limits,
+        "fetched_at": now_ts
+    }
+    
+    # Update cache atomically
+    cache[agent] = new_entry
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", dir=str(cache_file.parent), delete=False) as tf:
+            json.dump(cache, tf, indent=2)
+            temp_name = tf.name
+        os.replace(temp_name, str(cache_file))
+    except Exception as e:
+        new_entry["warning"] = f"Failed to write cache: {e}"
+
+    return new_entry
+

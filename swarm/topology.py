@@ -9,22 +9,20 @@ import sys
 import time
 import json
 
-from common import AGENT_STATS_CMD, ROOT_DIR, SHELL_NAMES, SWARM_CLI, SwarmConfig, WindowSpec, write_runtime_map, write_self_awareness_text
+from common import (
+    AGENT_STATS_CMD,
+    ROOT_DIR,
+    SHELL_NAMES,
+    SWARM_CLI,
+    SwarmConfig,
+    WindowSpec,
+    write_runtime_map,
+    write_self_awareness_text,
+    _LINE_PATTERNS,
+    _parse_reset_ts,
+    parse_usage_text as _parse_usage_from_text,
+)
 
-# Patterns tried per line in order; first match wins for that line.
-# Returns list of {"label": str, "pct": int} dicts (pct = % remaining).
-_LINE_PATTERNS = [
-    # codex: "5h limit: [███] 100% left ..."  or  "Weekly limit: [███] 97% left ..."
-    (re.compile(r'(\w+)\s+limit:.*?(\d+)%\s+left', re.IGNORECASE), 'labeled_left'),
-    # generic "N% left"
-    (re.compile(r'(\d+)%\s+left', re.IGNORECASE), 'pct_left'),
-    # claude /usage: "12% used"
-    (re.compile(r'(\d+)%\s+used', re.IGNORECASE), 'pct_used'),
-    # hours: "4.2 / 5.0 hours"
-    (re.compile(r'(\d+\.?\d*)\s*/\s*(\d+\.?\d*)\s*hours', re.IGNORECASE), 'hours_used'),
-    # gemini /stats: "0%  10:04 PM (24h)" — bare % followed by a clock = % used
-    (re.compile(r'\b(\d+)%\s+\d{1,2}:\d{2}\s+(?:AM|PM)', re.IGNORECASE), 'pct_used'),
-]
 from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
 
 
@@ -116,94 +114,9 @@ def socket_ready(session_name: str, pane: str) -> bool:
     return '"state"' in proc.stdout
 
 
-def _parse_reset_ts(s: str) -> int | None:
-    """Parse a reset string to a Unix timestamp. Returns None if unparseable."""
-    if not s:
-        return None
-    now = datetime.now()
-    # strip timezone hint "(Europe/London)" etc — we work in local time
-    s = re.sub(r'\s*\([^)]*\)', '', s).strip()
-
-    # "02:49 on 31 Mar" or "07:37 on 3 Apr"
-    m = re.match(r'(\d{1,2}):(\d{2})\s+on\s+(\d{1,2})\s+(\w+)', s)
-    if m:
-        hour, minute, day, mon = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
-        for yr in (now.year, now.year + 1):
-            try:
-                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
-                if dt.timestamp() > now.timestamp():
-                    return int(dt.timestamp())
-            except ValueError:
-                pass
-
-    # "Apr 5, 1pm" or "Apr 5, 1:30pm" or "Apr 5, 13:00"
-    m = re.match(r'(\w+)\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', s, re.IGNORECASE)
-    if m:
-        mon, day = m.group(1), int(m.group(2))
-        hour, minute = int(m.group(3)), int(m.group(4) or 0)
-        ampm = (m.group(5) or '').lower()
-        if ampm == 'pm' and hour != 12:
-            hour += 12
-        elif ampm == 'am' and hour == 12:
-            hour = 0
-        for yr in (now.year, now.year + 1):
-            try:
-                dt = datetime.strptime(f"{day} {mon} {yr} {hour}:{minute}", "%d %b %Y %H:%M")
-                if dt.timestamp() > now.timestamp():
-                    return int(dt.timestamp())
-            except ValueError:
-                pass
-
-    return None
-
-
 def _usage_cache_path(cfg: SwarmConfig, pane: str):
     return cfg.runtime_dir / f"usage-{pane.replace('.', '-')}.json"
 
-
-def _parse_usage_from_text(text: str) -> list[dict]:
-    """Return list of {label, pct, reset} dicts parsed from pane text."""
-    _reset = re.compile(r'resets\s+(.+)', re.IGNORECASE)
-    limits: list[dict] = []
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        entry: dict | None = None
-        for pat, kind in _LINE_PATTERNS:
-            m = pat.search(line)
-            if not m:
-                continue
-            try:
-                if kind == 'labeled_left':
-                    entry = {"label": m.group(1).lower(), "pct": int(m.group(2))}
-                elif kind == 'pct_left':
-                    entry = {"label": "", "pct": int(m.group(1))}
-                elif kind == 'pct_used':
-                    entry = {"label": "", "pct": max(0, 100 - int(m.group(1)))}
-                elif kind == 'hours_used':
-                    used, total = float(m.group(1)), float(m.group(2))
-                    if total > 0:
-                        entry = {"label": "", "pct": round((1.0 - used / total) * 100)}
-            except (ValueError, ZeroDivisionError):
-                pass
-            if entry:
-                # check same line then next line for reset date
-                search_lines = [line] + ([lines[i + 1]] if i + 1 < len(lines) else [])
-                reset = ""
-                for sl in search_lines:
-                    rm = _reset.search(sl)
-                    if rm:
-                        reset = rm.group(1).strip().rstrip('│╯╰ ')
-                        # strip trailing ) from box-drawing if parens unbalanced
-                        while reset.endswith(')') and reset.count('(') < reset.count(')'):
-                            reset = reset[:-1].rstrip()
-                        break
-                entry["reset"] = reset
-                entry["reset_ts"] = _parse_reset_ts(reset) or 0
-                limits.append(entry)
-                break
-    # If any labeled limits exist, drop unlabeled ones (avoids status-bar noise)
-    labeled = [l for l in limits if l["label"]]
-    return labeled if labeled else limits
 
 
 def _format_limits(limits: list[dict]) -> str:
@@ -496,6 +409,109 @@ def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
     try:
         while True:
             lines = status_lines(cfg, brief)
+            lines.insert(0, f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}")
+            sys.stdout.write("\x1b[H\x1b[2J")
+            sys.stdout.write("\n".join(lines))
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return
+
+
+def av_usage_lines(report: dict, recent_minutes: int = 0, title: str | None = None) -> list[str]:
+    """Return a tabular, watch-friendly view of the av-usage report."""
+    lines: list[str] = []
+    if title:
+        lines.append(title)
+
+    for period in ("today", "week"):
+        pinfo = report.get(period, {}) or {}
+        pdate = pinfo.get("date") or f"{pinfo.get('from', '')} - {pinfo.get('to', '')}"
+        lines.append(f"  {period}: {pdate}")
+
+        bya = pinfo.get("by_agent", {}) or {}
+        if isinstance(bya, dict) and "error" in bya:
+            lines.append(f"    error: {bya['error']}")
+            lines.append("")
+            continue
+
+        if not bya:
+            lines.append("    (no data)")
+            lines.append("")
+            continue
+
+        rows = []
+        total_toks = 0
+        total_cost = 0.0
+        for ag in sorted(bya.keys()):
+            v = bya[ag] or {}
+            toks = (
+                v.get("input_tokens", 0)
+                + v.get("output_tokens", 0)
+                + v.get("cache_creation_tokens", 0)
+                + v.get("cache_read_tokens", 0)
+            )
+            cost = float(v.get("cost", 0))
+            rows.append((ag, toks, cost))
+            total_toks += toks
+            total_cost += cost
+
+        if not rows:
+            lines.append("    (no data)")
+            lines.append("")
+            continue
+
+        # column widths
+        agent_w = max(len("Agent"), max(len(r[0]) for r in rows))
+        toks_w = max(len("Tokens"), max(len(f"{r[1]:,}") for r in rows), len(f"{total_toks:,}"))
+        cost_w = max(len("Cost"), max(len(f"${r[2]:.4f}") for r in rows), len(f"${total_cost:.4f}"))
+
+        # header
+        lines.append(f"  {'Agent'.ljust(agent_w)}  {'Tokens'.rjust(toks_w)}  {'Cost'.rjust(cost_w)}")
+        lines.append(f"  {'-' * agent_w}  {'-' * toks_w}  {'-' * cost_w}")
+
+        for ag, toks, cost in rows:
+            lines.append(
+                f"  {ag.ljust(agent_w)}  {f'{toks:,}'.rjust(toks_w)}  {f'${cost:.4f}'.rjust(cost_w)}"
+            )
+
+        lines.append(f"  {'-' * agent_w}  {'-' * toks_w}  {'-' * cost_w}")
+        lines.append(
+            f"  {'TOTAL'.ljust(agent_w)}  {f'{total_toks:,}'.rjust(toks_w)}  {f'${total_cost:.4f}'.rjust(cost_w)}"
+        )
+        lines.append("")
+
+    if recent_minutes > 0:
+        # fresh fetch for accuracy (cheap)
+        from common import get_agentsview_recent_tokens
+        eff = report.get("agents") or []
+        rec = get_agentsview_recent_tokens(recent_minutes, agents=eff)
+        lines.append(
+            f"  recent {recent_minutes}m tokens: {rec.get('total_tokens', 0):,} ({rec.get('events', 0)} events)"
+        )
+
+    return lines
+
+
+def print_av_usage(report: dict, recent_minutes: int = 0, title: str | None = None) -> None:
+    lines = av_usage_lines(report, recent_minutes, title)
+    print("\n".join(lines))
+
+
+def watch_av_usage(agents: list[str] | None, recent_minutes: int = 0, interval: float = 30.0) -> None:
+    """Watch loop for av-usage. Re-fetches each cycle so it works with polling."""
+    from common import get_swarm_agentsview_report
+    try:
+        while True:
+            report = get_swarm_agentsview_report(agents)
+            eff = report.get("agents") or []
+            if agents is not None:
+                title = f"agentsview usage limited to swarm agents: {eff}"
+            else:
+                title = "agentsview global usage (all agents)"
+
+            lines = av_usage_lines(report, recent_minutes, title)
             lines.insert(0, f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}")
             sys.stdout.write("\x1b[H\x1b[2J")
             sys.stdout.write("\n".join(lines))
