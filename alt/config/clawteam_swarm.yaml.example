@@ -11,7 +11,8 @@ trigger:
 session_defaults:
   state_dir: ./alt/state
   task_board: ./backlog
-  gateway_url: "http://localhost:8080"
+  # gateway_url: optional, only when mixing real-API models via LiteLLM etc.
+  # For pure subscription CLIs: omit. Use per-agent monitor status + usage probes for quotas.
 
 # Graph Nodes (Roles within the Session Graph)
 node_profiles:
