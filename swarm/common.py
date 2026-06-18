@@ -815,6 +815,16 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
             return entry
         return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
 
+def _ts_to_iso(ts: int | None) -> str:
+    """Convert a Unix timestamp integer to an ISO 8601 string in local timezone."""
+    if not ts:
+        return ""
+    try:
+        return datetime.fromtimestamp(ts).isoformat()
+    except Exception:
+        return ""
+
+
 def parse_claude_usage(text: str) -> dict:
     """Parse raw Claude Code /usage text into a structured dictionary."""
     res = {
@@ -852,11 +862,13 @@ def parse_claude_usage(text: str) -> dict:
         if pct_m and reset_m:
             pct_used = int(pct_m.group(1))
             reset = reset_m.group(1).strip()
+            reset_ts = _parse_reset_ts(reset) or 0
             res["limits"].append({
                 "label": "session",
                 "pct": max(0, 100 - pct_used),
                 "reset": reset,
-                "reset_ts": _parse_reset_ts(reset) or 0
+                "reset_ts": reset_ts,
+                "reset_iso": _ts_to_iso(reset_ts)
             })
 
     week_block = re.search(
@@ -871,11 +883,13 @@ def parse_claude_usage(text: str) -> dict:
         if pct_m and reset_m:
             pct_used = int(pct_m.group(1))
             reset = reset_m.group(1).strip()
+            reset_ts = _parse_reset_ts(reset) or 0
             res["limits"].append({
                 "label": "weekly",
                 "pct": max(0, 100 - pct_used),
                 "reset": reset,
-                "reset_ts": _parse_reset_ts(reset) or 0
+                "reset_ts": reset_ts,
+                "reset_iso": _ts_to_iso(reset_ts)
             })
     return res
 
@@ -906,11 +920,13 @@ def parse_codex_usage(text: str) -> dict:
             label = lim_m.group(1).lower()
             pct = int(lim_m.group(2))
             reset = lim_m.group(3).strip()
+            reset_ts = _parse_reset_ts(reset) or 0
             res["limits"].append({
                 "label": label,
                 "pct": pct,
                 "reset": reset,
-                "reset_ts": _parse_reset_ts(reset) or 0
+                "reset_ts": reset_ts,
+                "reset_iso": _ts_to_iso(reset_ts)
             })
     return res
 
@@ -961,11 +977,13 @@ def parse_agy_usage(text: str) -> dict:
                         reset = "Quota available"
                         pct = 100
                         
+                    reset_ts = _parse_reset_ts(reset) or 0
                     group_entry["limits"].append({
                         "label": limit_label,
                         "pct": pct,
                         "reset": reset,
-                        "reset_ts": _parse_reset_ts(reset) or 0
+                        "reset_ts": reset_ts,
+                        "reset_iso": _ts_to_iso(reset_ts)
                     })
             res["groups"].append(group_entry)
             
@@ -976,7 +994,8 @@ def parse_agy_usage(text: str) -> dict:
                 "label": f"{prefix}_{lim['label']}",
                 "pct": lim["pct"],
                 "reset": lim["reset"],
-                "reset_ts": lim["reset_ts"]
+                "reset_ts": lim["reset_ts"],
+                "reset_iso": lim["reset_iso"]
             })
     return res
 
@@ -1052,7 +1071,8 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         "raw_text": clean_text,
         "parsed": parsed,
         "limits": parsed.get("limits", []),
-        "fetched_at": now_ts
+        "fetched_at": now_ts,
+        "fetched_at_iso": datetime.fromtimestamp(now_ts).isoformat()
     }
     
     # Update cache atomically
