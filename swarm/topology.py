@@ -166,34 +166,14 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
 
 
 
-def capture_and_classify(cfg: SwarmConfig, pane: str) -> None:
+def capture_pane(cfg: SwarmConfig, pane: str) -> None:
     target = f"{cfg.session_name}:{pane}"
     proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
     if proc.returncode != 0:
         print(f"could not capture {target}")
         return
-    
-    # Try to find agent type from config
-    agent_type = "unknown"
-    for p in cfg.panes:
-        if p.pane == pane:
-            agent_type = p.agent
-            break
-    
-    print(f"--- Capture {target} (agent={agent_type}) ---")
+    print(f"--- Capture {target} ---")
     print(proc.stdout)
-    print("--- Analysis ---")
-    
-    sys.path.append(str(ROOT_DIR))
-    import monitor
-    try:
-        m = monitor.Monitor(agent_type=agent_type)
-        for line in proc.stdout.splitlines():
-            m.ingest(line + "\n")
-        status = m.query("status")
-        print(json.dumps(status, indent=2))
-    except Exception as e:
-        print(f"Error classifying: {e}")
 
 def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool) -> None:
     if not message.strip():

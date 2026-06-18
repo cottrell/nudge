@@ -35,20 +35,12 @@ You should commit your work when:
 
 1. **Understand the codebase** — Read `README.md` and the activity logic in `monitor.c`
 2. **Make changes** — Edit `monitor.c` for state logic changes
-3. **Run tests** — `make test` (Python) and `make test-c` (C + fixture replay)
+3. **Run tests** — `make test`
 4. **Commit** — Use clear, descriptive commit messages
 
 ## Backend Status
 
-- **C (`monitor.c` / `monitor-bin`)** — **Production backend**, fast, no dependencies
-- **Python (`monitor.py`)** — **Test oracle / reference implementation**
-
-**Agents should implement all changes in C.** The Python version serves two purposes:
-
-1. **Reference** — Shows intended behavior in a more readable form
-2. **Test validation** — `test_fixture_replay_c_matches_python_final_state` verifies C matches Python
-
-**Keep Python in sync for state changes** so the test oracle remains accurate.
+`monitor.c` / `monitor-bin` is the only monitor implementation.
 
 ## State Changes
 
@@ -58,7 +50,6 @@ explicitly.
 
 When modifying state behavior:
 - Implement in C first
-- Update Python to keep the test oracle accurate
 - Add tests in `test_monitor.py`
 - Update relevant help text and docs
 

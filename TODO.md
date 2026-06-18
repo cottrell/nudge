@@ -4,20 +4,12 @@
 
 ### Native Rewrite (C)
 
-The C implementation (`monitor.c`) is now the primary backend:
+The C implementation (`monitor.c`) is the only backend:
 - ~1MB binary with no runtime dependencies
 - Instant startup
 - Activity-based `unknown`/`working`/`idle` state
 - Signal handling for cleanup (SIGINT, SIGTERM)
 - Proper JSON escaping for control characters
-
-### Python Backend Status
-
-Python (`monitor.py`) is the **reference implementation and test oracle**:
-- Defines expected activity and quiet-time behavior
-- Used by fixture replay tests to verify C parity
-- Should be kept in sync with C for state changes
-- Not used in production (C is the runtime backend)
 
 ## Open Issues
 
