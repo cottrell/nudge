@@ -1,22 +1,27 @@
 # Alt: Thing-Centric Task Sessions
 
-This directory contains conceptual notes and initial setup for an alternative agent workflow focused on **"The Thing" (Task Sessions)**. It moves away from terminal-scraping and periodic clearing in favor of a modular, graph-based architecture.
+Simple graph-based sessions for agent work. Discrete "Things" (task graphs) with sub-Things, persistence, and a thin Pulse for orchestration. Uses existing CLI harnesses (Claude Code, Codex, Grok, etc.) under subscriptions or local models.
 
-## Key Ideas
-- **"The Thing" (Task Session):** A discrete unit of agent work (an execution graph) with a defined start and end. It can spawn sub-tasks ("Sub-Things") as needed.
-- **Trigger Loop:** A stateless infrastructure layer (human or IO Loop) that initiates "Things" based on events.
-- **Hybrid Persistence:**
-  - **Interface:** **`backlog/`** (Markdown) for transparency and git-native versioning.
-  - **Index:** **`alt/state/`** (SQLite/JSONL) for efficient session resumption and log searching.
-- **Infrastructure Gateway:** Use **Bifrost** or **LiteLLM** to unify **Local Models** (Ollama) and **Frontier APIs** (Claude, Gemini, Codex).
+## Core
+- **Thing**: Execution graph for a task. Has start/end, can spawn children.
+- **Persistence**: `backlog/` (human-visible tasks) + `alt/state/` (fast index, graphs, sessions).
+- **Trigger/Pulse**: Stateless loop that launches or nudges Things based on backlog/events. Checks quotas before work.
+- **Harness**: Run subscription CLIs (or local) directly where possible. Use base_url overrides only when needed for unification.
 
-## Structure
-- `config/`: Example configurations for Bifrost, LiteLLM, and ClawTeam.
-- `scripts/`: Implementation of the Trigger Loop and Prompt Dispatcher.
-- `backlog/` (Root): Shared state managed via `mcp-backlog` tools.
+## Gateway (optional)
+Bifrost or LiteLLM only for:
+- Unifying local (Ollama) + selective real APIs (planners/high-value).
+- Caching and quotas when using paid models.
+- Not required (and often a mismatch) for pure subscription CLI work.
 
-## Getting Started (Conceptual)
-1. Start the **Trigger Loop** (an `inotify` watcher or human-in-the-loop).
-2. The Trigger Loop detects a new task in `backlog/` and launches a **"Thing" (Task Session)**.
-3. If the "Thing" needs help, it spawns a "Sub-Thing" by creating a dependency task in the backlog.
-4. All interactions are routed through the **Bifrost** gateway for rate limiting and semantic caching.
+Quotas for subs come from the monitor: each pane's monitor (monitor.c) reports state + usage_pct scraped from terminal (spinners for working, "% left", "X / Y hours" for limits). Pulse queries the unix sockets or /status. `swarm/cli.py usage` can force richer probes.
+
+See bifrost-opinions.md (section 8) for why gateways fit customer API-key systems better than sub-only local tmux swarms. LiteLLM is lighter if you do use real keys.
+
+## Files
+- `backlog/`: Tasks.
+- `alt/state/`: Graphs, manifests.
+- `scripts/`: Dispatch/trigger.
+- `config/`: Examples (adapt for gateway or skip).
+
+Start simple: use backlog + state + Pulse. Query monitors for quota headroom before dispatch. Add gateway only if mixing paid APIs.

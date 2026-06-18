@@ -23,18 +23,18 @@ else
     echo "[Dispatcher] Resuming session: $SESSION_ID"
 fi
 
-# 2. Context Re-priming (Conceptual)
-# Find the latest log/manifest for this session in $STATE_DIR/$SESSION_ID/
-# and prepare the context for Bifrost/LiteLLM.
+# 2. Context / Mailbox
+# For sub CLIs: write to directed comms logs under alt/state/ or backlog.
+# Poke the target pane with tmux-send (never raw send-keys).
+# See README and grok_notes for mailbox + Pulse pattern.
 
-# 3. Action: Send to Infrastructure Gateway
-echo "[Dispatcher] Sending prompt to Gateway (Bifrost/LiteLLM)..."
-# curl -X POST http://localhost:8080/v1/chat/completions \
-#      -H "X-Session-ID: $SESSION_ID" \
-#      -d "{'messages': [{'role': 'user', 'content': '$PROMPT'}]}"
+# 3. For pure subscription harnesses (default):
+# The prompt or nudge goes to the specific tmux pane / harness for the node.
+# Quota signals come from monitor sockets (usage_pct) or swarm/cli.py usage probe.
+# No gateway in the path.
 
 # 4. Cycle Logging
-# Record the interaction in $STATE_DIR/$SESSION_ID/manifest.json
-# Append results to the corresponding Task in $BACKLOG_DIR
+# Record the interaction in $STATE_DIR/$SESSION_ID/manifest.json (or per-Thing graph).
+# Append results / updates to the corresponding Task in $BACKLOG_DIR.
 
-echo "[Dispatcher] Response received. Session $SESSION_ID updated."
+echo "[Dispatcher] Dispatched / logged for $SESSION_ID. Use Pulse + monitor for quotas."

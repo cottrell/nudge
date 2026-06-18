@@ -174,12 +174,12 @@ The durable log + poke (tmux-send or equivalent) + prompt discipline to check in
 
 If you later add a small MCP or socket bus that all harnesses can talk to, you could make the poke more uniform, but the log files remain the durable source of truth.
 
-### Bifrost Role
-As you said: fairly transparent.
+### Gateway Role (optional)
+Use LiteLLM (lighter for custom/ sub-friendly proxying) or Bifrost only when you have real keys or want extra caching/routing.
 
-- Pulse queries it for quotas / usage per role or mapped client_id (leader vs worker in your example config).
-- Optional: route some or all model calls from harnesses through Bifrost for caching, failover, cost tracking.
-- Little deep integration needed beyond that. The orchestration doesn't need to know the underlying models much.
+- Pulse can query for quotas/headroom.
+- Route selectively (planners to APIs via gateway; workers stay on direct sub CLIs or local).
+- Not required for the core Thing + subscription harness flow.
 
 ### How Grok Build Fits (as one participant)
 - Can be just another harness node (like "grok-build" in the graph.json example above).
