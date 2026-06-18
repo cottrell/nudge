@@ -212,10 +212,6 @@ def build_parser() -> argparse.ArgumentParser:
     stop_p.add_argument("config", help="Path to YAML config")
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
 
-    usage_p = sub.add_parser("usage", aliases=["probe"], help="Send stats command to all monitored panes to refresh usage info")
-    usage_p.add_argument("config", help="Path to YAML config")
-    usage_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
-
     avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
     avu_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
     avu_p.add_argument("--json", action="store_true", help="Emit JSON")
@@ -351,11 +347,6 @@ def main(argv: list[str] | None = None) -> int:
             print(_json.dumps(res.get("parsed", {}), indent=2))
             return 0
 
-
-        if args.command == "usage":
-            cfg = load_config(args.config)
-            swarm_topology.probe_usage(cfg, args.dry_run)
-            return 0
 
         if args.command == "av-usage":
             from common import get_agents_from_config, get_swarm_agentsview_report

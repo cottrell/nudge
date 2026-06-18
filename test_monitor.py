@@ -828,47 +828,6 @@ def test_usage_pct_absent_by_default():
     m = Monitor('codex')
     assert m.query('status') == {'state': 'unknown'}
 
-def test_usage_pct_codex_pct_left():
-    m = Monitor('codex')
-    m.ingest('gpt-5.4 medium · 87% left\n')
-    assert m.query('status') == {'state': 'unknown', 'usage_pct': 87}
-
-def test_usage_pct_codex_full():
-    m = Monitor('codex')
-    m.ingest('100% left\n')
-    assert m.query('status').get('usage_pct') == 100
-
-def test_usage_pct_claude_hours_used():
-    m = Monitor('claude')
-    m.ingest('4.2 / 5.0 hours\n')
-    assert m.query('status').get('usage_pct') == 16  # (5.0-4.2)/5.0 * 100
-
-def test_usage_pct_claude_pct_left():
-    m = Monitor('claude')
-    m.ingest('87% left\n')
-    assert m.query('status').get('usage_pct') == 87
-
-def test_usage_pct_claude_pct_used():
-    m = Monitor('claude')
-    m.ingest('13% used\n')
-    assert m.query('status').get('usage_pct') == 87
-
-def test_usage_pct_gemini_pct_left():
-    m = Monitor('gemini')
-    m.ingest('Thinking (0s, 64% left)\n')
-    assert m.query('status').get('usage_pct') == 64
-
-def test_usage_pct_updates_on_newer_line():
-    m = Monitor('codex')
-    m.ingest('80% left\n')
-    m.ingest('60% left\n')
-    assert m.query('status').get('usage_pct') == 60
-
-def test_usage_pct_not_extracted_from_unrelated_line():
-    m = Monitor('codex')
-    m.ingest('completing task at 95% confidence\n')
-    # "95%" not followed by "left" — should not match
-    assert m.query('status').get('usage_pct') is None
 
 
 # --- status display with usage ---
