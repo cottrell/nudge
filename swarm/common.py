@@ -1026,14 +1026,39 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
             
     now_ts = int(time.time())
     entry = cache.get(agent)
+    
+    # Check if we can reuse the cached raw text
+    use_cache = False
     if entry and not force:
         fetched_at = entry.get("fetched_at", 0)
         if now_ts - fetched_at < ttl:
-            return entry
+            use_cache = True
 
-    # Run the shell script
+    if use_cache:
+        raw_text = entry.get("raw_text", "")
+        parsed = parse_provider_usage(agent, raw_text)
+        return {
+            "raw_text": raw_text,
+            "parsed": parsed,
+            "limits": parsed.get("limits", []),
+            "fetched_at": fetched_at,
+            "fetched_at_iso": entry.get("fetched_at_iso", _ts_to_iso(fetched_at))
+        }
+
+    # Otherwise, run the scraper script
     script_path = ROOT_DIR / "swarm" / "usage" / f"{agent}.sh"
     if not script_path.exists():
+        if entry:
+            raw_text = entry.get("raw_text", "")
+            parsed = parse_provider_usage(agent, raw_text)
+            return {
+                "error": f"Script not found at {script_path}",
+                "raw_text": raw_text,
+                "parsed": parsed,
+                "limits": parsed.get("limits", []),
+                "fetched_at": entry.get("fetched_at", 0),
+                "fetched_at_iso": entry.get("fetched_at_iso", "")
+            }
         return {"error": f"Script not found at {script_path}", "limits": [], "fetched_at": now_ts}
 
     try:
@@ -1047,30 +1072,51 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         )
     except subprocess.TimeoutExpired:
         if entry:
-            entry["warning"] = "Scraper timeout; returned stale cached data"
-            return entry
+            raw_text = entry.get("raw_text", "")
+            parsed = parse_provider_usage(agent, raw_text)
+            return {
+                "warning": "Scraper timeout; returned stale cached data",
+                "raw_text": raw_text,
+                "parsed": parsed,
+                "limits": parsed.get("limits", []),
+                "fetched_at": entry.get("fetched_at", 0),
+                "fetched_at_iso": entry.get("fetched_at_iso", "")
+            }
         return {"error": "Scraper script timed out", "limits": [], "fetched_at": now_ts}
     except Exception as e:
         if entry:
-            entry["warning"] = f"Scraper error: {e}; returned stale cached data"
-            return entry
+            raw_text = entry.get("raw_text", "")
+            parsed = parse_provider_usage(agent, raw_text)
+            return {
+                "warning": f"Scraper error: {e}; returned stale cached data",
+                "raw_text": raw_text,
+                "parsed": parsed,
+                "limits": parsed.get("limits", []),
+                "fetched_at": entry.get("fetched_at", 0),
+                "fetched_at_iso": entry.get("fetched_at_iso", "")
+            }
         return {"error": f"Scraper failed to run: {e}", "limits": [], "fetched_at": now_ts}
 
     if proc.returncode != 0:
         err_msg = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
         if entry:
-            entry["warning"] = f"Scraper exit {proc.returncode}: {err_msg}; returned stale cached data"
-            return entry
+            raw_text = entry.get("raw_text", "")
+            parsed = parse_provider_usage(agent, raw_text)
+            return {
+                "warning": f"Scraper exit {proc.returncode}: {err_msg}; returned stale cached data",
+                "raw_text": raw_text,
+                "parsed": parsed,
+                "limits": parsed.get("limits", []),
+                "fetched_at": entry.get("fetched_at", 0),
+                "fetched_at_iso": entry.get("fetched_at_iso", "")
+            }
         return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
 
     raw_output = proc.stdout or ""
     clean_text = strip_ansi(raw_output)
-    parsed = parse_provider_usage(agent, clean_text)
 
     new_entry = {
         "raw_text": clean_text,
-        "parsed": parsed,
-        "limits": parsed.get("limits", []),
         "fetched_at": now_ts,
         "fetched_at_iso": datetime.fromtimestamp(now_ts).isoformat()
     }
@@ -1086,6 +1132,12 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
     except Exception as e:
         new_entry["warning"] = f"Failed to write cache: {e}"
 
-    return new_entry
+    # Parse on-the-fly for the return value
+    parsed = parse_provider_usage(agent, clean_text)
+    return {
+        **new_entry,
+        "parsed": parsed,
+        "limits": parsed.get("limits", [])
+    }
 
 
