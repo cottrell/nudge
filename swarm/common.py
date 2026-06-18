@@ -796,13 +796,239 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
             return entry
         return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
 
+def parse_claude_usage(text: str) -> dict:
+    """Parse raw Claude Code /usage text into a structured dictionary."""
+    res = {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "limits": []
+    }
+    cost_m = re.search(r'Total cost:\s+\$(\d+\.\d+)', text)
+    if cost_m:
+        res["cost"] = float(cost_m.group(1))
+
+    usage_m = re.search(
+        r'Usage:\s+(\d+)\s+input,\s+(\d+)\s+output,\s+(\d+)\s+cache\s+read,\s+(\d+)\s+cache\s+write',
+        text,
+        re.IGNORECASE
+    )
+    if usage_m:
+        res["input_tokens"] = int(usage_m.group(1))
+        res["output_tokens"] = int(usage_m.group(2))
+        res["cache_read_tokens"] = int(usage_m.group(3))
+        res["cache_write_tokens"] = int(usage_m.group(4))
+
+    session_block = re.search(
+        r'Current session(.*?)(?:Current week|approximate|What\'s contributing|$)',
+        text,
+        re.DOTALL | re.IGNORECASE
+    )
+    if session_block:
+        block_text = session_block.group(1)
+        pct_m = re.search(r'(\d+)%\s+used', block_text, re.IGNORECASE)
+        reset_m = re.search(r'Resets\s+(.+)', block_text, re.IGNORECASE)
+        if pct_m and reset_m:
+            pct_used = int(pct_m.group(1))
+            reset = reset_m.group(1).strip()
+            res["limits"].append({
+                "label": "session",
+                "pct": max(0, 100 - pct_used),
+                "reset": reset,
+                "reset_ts": _parse_reset_ts(reset) or 0
+            })
+
+    week_block = re.search(
+        r'Current week(.*?)(?:approximate|What\'s contributing|Session|$)',
+        text,
+        re.DOTALL | re.IGNORECASE
+    )
+    if week_block:
+        block_text = week_block.group(1)
+        pct_m = re.search(r'(\d+)%\s+used', block_text, re.IGNORECASE)
+        reset_m = re.search(r'Resets\s+(.+)', block_text, re.IGNORECASE)
+        if pct_m and reset_m:
+            pct_used = int(pct_m.group(1))
+            reset = reset_m.group(1).strip()
+            res["limits"].append({
+                "label": "weekly",
+                "pct": max(0, 100 - pct_used),
+                "reset": reset,
+                "reset_ts": _parse_reset_ts(reset) or 0
+            })
+    return res
+
+
+def parse_codex_usage(text: str) -> dict:
+    """Parse raw OpenAI Codex /status text into a structured dictionary."""
+    res = {
+        "model": "",
+        "account": "",
+        "session_id": "",
+        "limits": []
+    }
+    for line in text.splitlines():
+        if "Model:" in line:
+            res["model"] = line.split("Model:", 1)[1].strip()
+        elif "Account:" in line:
+            res["account"] = line.split("Account:", 1)[1].strip()
+        elif "Session:" in line:
+            res["session_id"] = line.split("Session:", 1)[1].strip()
+
+    for line in text.splitlines():
+        lim_m = re.search(
+            r'(\w+)\s+limit:\s*(?:\[[^\]]*\])?\s*(\d+)%\s+left\s*\((?:resets\s+)?([^\)]+)\)',
+            line,
+            re.IGNORECASE
+        )
+        if lim_m:
+            label = lim_m.group(1).lower()
+            pct = int(lim_m.group(2))
+            reset = lim_m.group(3).strip()
+            res["limits"].append({
+                "label": label,
+                "pct": pct,
+                "reset": reset,
+                "reset_ts": _parse_reset_ts(reset) or 0
+            })
+    return res
+
+
+def parse_agy_usage(text: str) -> dict:
+    """Parse raw Antigravity /usage text into a structured dictionary."""
+    res = {
+        "groups": [],
+        "limits": []
+    }
+    blocks = re.split(r'([A-Z\s]+MODELS)\s*\n', text)
+    if len(blocks) > 1:
+        for idx in range(1, len(blocks), 2):
+            group_name = blocks[idx].strip()
+            block_content = blocks[idx+1]
+            
+            group_entry = {
+                "group": group_name,
+                "models": [],
+                "limits": []
+            }
+            
+            models_m = re.search(r'Models within this group:\s*(.+)', block_content, re.IGNORECASE)
+            if models_m:
+                group_entry["models"] = [m.strip() for m in models_m.group(1).split(",")]
+                
+            limit_blocks = re.split(r'(\w+(?:\s+\w+)?\s+Limit)\s*\n', block_content)
+            if len(limit_blocks) > 1:
+                for l_idx in range(1, len(limit_blocks), 2):
+                    limit_label = limit_blocks[l_idx].strip().lower().replace(" limit", "")
+                    limit_content = limit_blocks[l_idx+1]
+                    
+                    pct = 100
+                    reset = ""
+                    
+                    pct_m = re.search(r'(\d+(?:\.\d+)?)%', limit_content)
+                    if pct_m:
+                        pct = int(float(pct_m.group(1)))
+                        
+                    rem_m = re.search(r'(\d+%\s+remaining\s+·\s+)?Refreshes\s+in\s+(.+)', limit_content, re.IGNORECASE)
+                    if rem_m:
+                        reset = "in " + rem_m.group(2).strip()
+                    elif "quota available" in limit_content.lower():
+                        reset = "Quota available"
+                        pct = 100
+                        
+                    group_entry["limits"].append({
+                        "label": limit_label,
+                        "pct": pct,
+                        "reset": reset,
+                        "reset_ts": _parse_reset_ts(reset) or 0
+                    })
+            res["groups"].append(group_entry)
+            
+    for g in res["groups"]:
+        prefix = "gemini" if "gemini" in g["group"].lower() else "claude_gpt"
+        for lim in g["limits"]:
+            res["limits"].append({
+                "label": f"{prefix}_{lim['label']}",
+                "pct": lim["pct"],
+                "reset": lim["reset"],
+                "reset_ts": lim["reset_ts"]
+            })
+    return res
+
+
+def parse_provider_usage(agent: str, text: str) -> dict:
+    """Parse raw usage text into a structured dictionary specific to the agent."""
+    if agent == "claude":
+        return parse_claude_usage(text)
+    elif agent == "codex":
+        return parse_codex_usage(text)
+    elif agent == "agy":
+        return parse_agy_usage(text)
+    return {"limits": []}
+
+
+def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -> dict:
+    """Get provider usage with TTL caching, calling the underlying shell script if needed.
+    
+    Persisted cache: /tmp/nudge-usage-cache.json
+    """
+    cache_file = Path("/tmp/nudge-usage-cache.json")
+    cache: dict = {}
+    if cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text())
+        except Exception:
+            cache = {}
+            
+    now_ts = int(time.time())
+    entry = cache.get(agent)
+    if entry and not force:
+        fetched_at = entry.get("fetched_at", 0)
+        if now_ts - fetched_at < ttl:
+            return entry
+
+    # Run the shell script
+    script_path = ROOT_DIR / "swarm" / "usage" / f"{agent}.sh"
+    if not script_path.exists():
+        return {"error": f"Script not found at {script_path}", "limits": [], "fetched_at": now_ts}
+
+    try:
+        proc = subprocess.run(
+            [str(script_path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        if entry:
+            entry["warning"] = "Scraper timeout; returned stale cached data"
+            return entry
+        return {"error": "Scraper script timed out", "limits": [], "fetched_at": now_ts}
+    except Exception as e:
+        if entry:
+            entry["warning"] = f"Scraper error: {e}; returned stale cached data"
+            return entry
+        return {"error": f"Scraper failed to run: {e}", "limits": [], "fetched_at": now_ts}
+
+    if proc.returncode != 0:
+        err_msg = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+        if entry:
+            entry["warning"] = f"Scraper exit {proc.returncode}: {err_msg}; returned stale cached data"
+            return entry
+        return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
+
     raw_output = proc.stdout or ""
     clean_text = strip_ansi(raw_output)
-    limits = parse_usage_text(clean_text)
+    parsed = parse_provider_usage(agent, clean_text)
 
     new_entry = {
         "raw_text": clean_text,
-        "limits": limits,
+        "parsed": parsed,
+        "limits": parsed.get("limits", []),
         "fetched_at": now_ts
     }
     
@@ -818,4 +1044,5 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         new_entry["warning"] = f"Failed to write cache: {e}"
 
     return new_entry
+
 
