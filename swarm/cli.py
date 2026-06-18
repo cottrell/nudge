@@ -225,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     quota_p = sub.add_parser("quota", help="Get cached/live provider account quotas")
     quota_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
-    quota_p.add_argument("--ttl", type=int, default=120, help="Cache TTL in seconds")
+    quota_p.add_argument("--ttl", type=int, default=600, help="Cache TTL in seconds")
     quota_p.add_argument("--force", action="store_true", help="Force refresh")
     quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
     quota_p.add_argument("-i", "--interval", type=float, default=2.0, help="Watch refresh interval in seconds")
