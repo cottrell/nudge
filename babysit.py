@@ -80,10 +80,12 @@ def _send_message(target: str, msg: str) -> None:
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
-def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babysit") -> None:
+def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babysit", via_log: bool | None = None) -> None:
     """Deliver a message. By default via the comms log (pushed to log, then drained by consumer on idle).
     Falls back to direct if via_log=false or log path fails.
     """
+    if via_log is None:
+        via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
     if via_log:
         try:
             import sys
@@ -229,7 +231,6 @@ def main() -> int:
     agent = os.environ.get("BABYSIT_AGENT", "")
     clear_every = int(os.environ.get("BABYSIT_CLEAR_EVERY", 0))
     stats_every = int(os.environ.get("BABYSIT_STATS_EVERY", 300))
-    via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
 
     if agent in ("claude", "codex", "agy") and get_cached_provider_usage:
         refresh_interval = max(60.0, stats_every - 60.0)
