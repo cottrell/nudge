@@ -886,58 +886,6 @@ def _parse_reset_ts(s: str) -> int | None:
     return None
 
 
-def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -> dict:
-    """Get provider usage with TTL caching, calling the underlying shell script if needed.
-    
-    Persisted cache: /tmp/nudge-usage-cache.json
-    """
-    cache_file = Path("/tmp/nudge-usage-cache.json")
-    cache: dict = {}
-    if cache_file.exists():
-        try:
-            cache = json.loads(cache_file.read_text())
-        except Exception:
-            cache = {}
-            
-    now_ts = int(time.time())
-    entry = cache.get(agent)
-    if entry and not force:
-        fetched_at = entry.get("fetched_at", 0)
-        if now_ts - fetched_at < ttl:
-            return entry
-
-    # Run the shell script
-    script_path = ROOT_DIR / "swarm" / "usage" / f"{agent}.sh"
-    if not script_path.exists():
-        return {"error": f"Script not found at {script_path}", "limits": [], "fetched_at": now_ts}
-
-    try:
-        proc = subprocess.run(
-            [str(script_path)],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30
-        )
-    except subprocess.TimeoutExpired:
-        if entry:
-            entry["warning"] = "Scraper timeout; returned stale cached data"
-            return entry
-        return {"error": "Scraper script timed out", "limits": [], "fetched_at": now_ts}
-    except Exception as e:
-        if entry:
-            entry["warning"] = f"Scraper error: {e}; returned stale cached data"
-            return entry
-        return {"error": f"Scraper failed to run: {e}", "limits": [], "fetched_at": now_ts}
-
-    if proc.returncode != 0:
-        err_msg = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
-        if entry:
-            entry["warning"] = f"Scraper exit {proc.returncode}: {err_msg}; returned stale cached data"
-            return entry
-        return {"error": f"Scraper exit {proc.returncode}: {err_msg}", "limits": [], "fetched_at": now_ts}
-
 def _ts_to_iso(ts: int | None) -> str:
     """Convert a Unix timestamp integer to an ISO 8601 string in local timezone."""
     if not ts:
