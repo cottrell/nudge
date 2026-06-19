@@ -1,3 +1,5 @@
 monitor-bin
 __pycache__/
 *.pyc
+.graphify_*
+graphify-out/
