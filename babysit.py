@@ -79,6 +79,26 @@ def _send_message(target: str, msg: str) -> None:
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
+def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babysit") -> None:
+    """Deliver a message. By default via the comms log (pushed to log, then drained by consumer on idle).
+    Falls back to direct if via_log=false or log path fails.
+    """
+    if via_log:
+        try:
+            import sys
+            from pathlib import Path
+            swarm_dir = str(Path(__file__).parent / "swarm")
+            if swarm_dir not in sys.path:
+                sys.path.insert(0, swarm_dir)
+            from common import log_send
+            log_send(session, pane, msg, sender="babysitter", etype=etype)
+            _drain_comms(session, target, pane)
+            return
+        except Exception:
+            pass  # fall back
+    _send_message(target, msg)
+
+
 def _drain_comms(session: str, target: str, pane: str) -> None:
     """Consume from the comms log (direct to pane + broadcasts) and deliver when the pane is ready.
     Uses per-pane cursors so independent from babysit nudging.
@@ -197,6 +217,7 @@ def main() -> int:
     agent = os.environ.get("BABYSIT_AGENT", "")
     clear_every = int(os.environ.get("BABYSIT_CLEAR_EVERY", 0))
     stats_every = int(os.environ.get("BABYSIT_STATS_EVERY", 300))
+    via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
 
     sock = f"/tmp/{session}_{window_pane}.sock"
 
@@ -229,7 +250,7 @@ def main() -> int:
         now = int(time.time())
         print(f"{time.strftime('%H:%M:%S')} {session} startup babysit prompt")
         _log_nudge(session, target, "startup", long_nudge)
-        _send_message(target, long_nudge)
+        _deliver(session, target, window_pane, long_nudge, etype="babysit_startup")
         pct_at_nudge = current_pct  # None until first probe
         nudge_sent_ts = time.time()
         nudge_count += 1
@@ -296,13 +317,13 @@ def main() -> int:
                 if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
                     print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
                     _log_nudge(session, target, "clear", "/clear")
-                    _send_message(target, "/clear")
+                    _deliver(session, target, window_pane, "/clear", etype="clear")
                     time.sleep(1.0)
                     _log_nudge(session, target, "restore", long_nudge)
-                    _send_message(target, long_nudge)
+                    _deliver(session, target, window_pane, long_nudge, etype="babysit_restore")
                 else:
                     _log_nudge(session, target, "idle", short_nudge)
-                    _send_message(target, short_nudge)
+                    _deliver(session, target, window_pane, short_nudge, etype="babysit")
                 pct_at_nudge = current_pct
                 nudge_sent_ts = now_f
                 nudge_count += 1
@@ -331,7 +352,7 @@ def main() -> int:
             if force_deadline > 0 and now >= force_deadline:
                 print(f"{ts} {session} is unknown for {now - nonidle_since}s — nudging anyway")
                 _log_nudge(session, target, "forced_unknown", short_nudge)
-                _send_message(target, short_nudge)
+                _deliver(session, target, window_pane, short_nudge, etype="babysit_forced")
                 nonidle_since = now
                 nudge_count += 1
                 sleep_dur = float(interval)
@@ -353,7 +374,7 @@ def main() -> int:
             if force_deadline > 0 and now >= force_deadline:
                 print(f"{ts} {session} is {state} for {now - nonidle_since}s — nudging anyway")
                 _log_nudge(session, target, f"forced_{state}", short_nudge)
-                _send_message(target, short_nudge)
+                _deliver(session, target, window_pane, short_nudge, etype="babysit_forced")
                 nonidle_since = now
                 nudge_count += 1
                 sleep_dur = float(interval)

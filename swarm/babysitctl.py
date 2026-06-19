@@ -49,11 +49,12 @@ def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, int, str, str, str, 
             pane.babysit.short_prompt,
             pane.babysit.long_prompt_file.name if pane.babysit.long_prompt_file else "",
             pane.babysit.short_prompt_file.name if pane.babysit.short_prompt_file else "",
+            pane.babysit.via_log,
         )
     return out
 
 
-def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str = "", short_prompt_file: str = "") -> dict:
+def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str = "", short_prompt_file: str = "", via_log: bool = True) -> dict:
     return {
         "session": cfg.session_name,
         "pane": pane,
@@ -64,6 +65,7 @@ def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
         "short_prompt": short_prompt,
         "long_prompt_file": long_prompt_file,
         "short_prompt_file": short_prompt_file,
+        "via_log": via_log,
     }
 
 
@@ -73,7 +75,7 @@ def load_spec(path: Path) -> dict | None:
     return json.loads(path.read_text())
 
 
-def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str, short_prompt_file: str, dry_run: bool) -> None:
+def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str, short_prompt_file: str, via_log: bool, dry_run: bool) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     if dry_run:
         print(f"would start babysit for {cfg.session_name}:{pane} interval={interval} clear_every={clear_every}")
@@ -86,6 +88,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
         BABYSIT_CLEAR_EVERY=str(clear_every),
         BABYSIT_LONG_PROMPT_FILE=long_prompt_file,
         BABYSIT_SHORT_PROMPT_FILE=short_prompt_file,
+        BABYSIT_VIA_LOG="1" if via_log else "0",
     )
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(
@@ -97,7 +100,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
             env=env,
         )
     pid_path(cfg, pane).write_text(str(proc.pid))
-    spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt, long_prompt_file, short_prompt_file), indent=2) + "\n")
+    spec_path(cfg, pane).write_text(json.dumps(desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt, long_prompt_file, short_prompt_file, via_log), indent=2) + "\n")
 
 
 def os_kill(pid: int, sig: signal.Signals) -> None:
@@ -138,26 +141,27 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
                 p.babysit.short_prompt,
                 p.babysit.long_prompt_file.name if p.babysit.long_prompt_file else "",
                 p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
+                p.babysit.via_log,
             )
         elif p.comms:
             # comms consumer only: poll frequently enough for delivery
-            worker_desired[p.pane] = (5, 0, "", "", "", "")
+            worker_desired[p.pane] = (5, 0, "", "", "", "", True)
 
     existing = {p.name.removeprefix("babysit-").removesuffix(".pid").replace("-", "."): p for p in cfg.runtime_dir.glob("babysit-*.pid")}
     for pane in sorted(existing):
         if pane not in worker_desired:
             stop_worker(cfg, pane, dry_run)
 
-    for pane, (interval, clear_every, long_prompt, short_prompt, lp_file, sp_file) in worker_desired.items():
+    for pane, (interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log) in worker_desired.items():
         path = pid_path(cfg, pane)
-        wanted = desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file)
+        wanted = desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log)
         current_spec = load_spec(spec_path(cfg, pane))
         if path.exists():
             pid = int(path.read_text().strip())
             if process_running(pid) and current_spec == wanted:
                 continue
             stop_worker(cfg, pane, dry_run)
-        start_worker(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, dry_run)
+        start_worker(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run)
 
     write_runtime_map(cfg)
     write_self_awareness_text(cfg)
@@ -191,7 +195,7 @@ def status(cfg: SwarmConfig) -> None:
                 p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
             )
         elif p.comms:
-            worker_panes[p.pane] = (5, 0, "", "", "", "")
+            worker_panes[p.pane] = (5, 0, "", "", "", "", p.comms)  # via_log True for comms
     for pane in sorted(worker_panes):
         path = pid_path(cfg, pane)
         if not path.exists():
@@ -202,8 +206,13 @@ def status(cfg: SwarmConfig) -> None:
         drift = ""
         spec = load_spec(spec_path(cfg, pane))
         if spec:
-            di, dc, dlp, dsp, dlp_f, dsp_f = worker_panes[pane]
-            if spec != desired_spec(cfg, pane, di, dc, dlp, dsp, dlp_f, dsp_f):
+            tup = worker_panes[pane]
+            if len(tup) == 7:
+                di, dc, dlp, dsp, dlp_f, dsp_f, dvl = tup
+            else:
+                di, dc, dlp, dsp, dlp_f, dsp_f = tup
+                dvl = True
+            if spec != desired_spec(cfg, pane, di, dc, dlp, dsp, dlp_f, dsp_f, dvl):
                 drift = " drifted"
         extra = ""
         state_file = state_path(cfg, pane)
