@@ -86,8 +86,6 @@ These are low-level helpers used by swarm tooling and power users:
 
 - `attach.sh` (monitor attach to pane)
 - `tmux-send` (safe text+Enter send)
-- `keyboard-2pane.sh` (line relay utility)
-- `babysit.sh` and `babysit-manager.sh` (legacy/manual babysit path)
 
 ## Messaging / durable comms
 
