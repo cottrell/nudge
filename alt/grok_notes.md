@@ -1,4 +1,13 @@
-# Grok Notes on Nudge/Alt Architecture (2026-06-13)
+# Grok Notes on Nudge/Alt Architecture (2026-06-13) — HISTORICAL / INSPIRATION ONLY
+
+> **Superseded in key areas** (as of 2026-06-18): 
+> - Pure file logs → SQLite per-Thing (messages + cursors, DECISION-1).
+> - Launch now blocked on native session_id capture (TASK-12).
+> - Focus: prompt-driven fire-and-forget Things, immutable child nodes (new prompt = new child), unified event log for create+comms.
+>
+> Read `./alt/README.md` for current model. This file is historical only.
+
+---
 
 ## LangGraph Clarification
 LangGraph is **primarily an orchestration / workflow framework**, not a replacement for the individual agent harnesses (Claude Code, Codex CLI, Gemini, Grok Build, Aider, etc.).

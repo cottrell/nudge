@@ -86,6 +86,7 @@ static double monotonic_now(void) {
 }
 
 static void refresh_state_locked(void) {
+    if (!strcmp(g_agent, "grok")) return;
     if (g_state != ST_WORKING) return;
     if (g_last_ingest_at.tv_sec == 0) return;
     double last_ingest = (double)g_last_ingest_at.tv_sec + (double)g_last_ingest_at.tv_nsec / 1000000000.0;
@@ -156,6 +157,26 @@ static void log_debug_line(const char *line) {
     fflush(g_debug_log);
 }
 
+static int parse_terminal_title(const char *line, char *title, int max_len) {
+    const char *p = line;
+    while (*p) {
+        if (p[0] == '\x1b' && p[1] == ']' && (p[2] == '0' || p[2] == '2') && p[3] == ';') {
+            p += 4;
+            int len = 0;
+            while (*p && *p != '\x07' && len < max_len - 1) {
+                if (p[0] == '\x1b' && p[1] == '\\') {
+                    break;
+                }
+                title[len++] = *p++;
+            }
+            title[len] = '\0';
+            return 1;
+        }
+        p++;
+    }
+    return 0;
+}
+
 static void ingest(const char *line) {
     pthread_mutex_lock(&lock);
     log_debug_line(line);
@@ -164,6 +185,33 @@ static void ingest(const char *line) {
     g_log[g_head][MAX_LINE - 1] = '\0';
     g_head = (g_head + 1) % MAX_LOG;
     if (g_count < MAX_LOG) g_count++;
+
+    char title[256];
+    if (parse_terminal_title(line, title, sizeof(title))) {
+        if (!strcmp(g_agent, "grok")) {
+            State new_state = g_state;
+            if (strcmp(title, "grok") == 0) {
+                new_state = ST_IDLE;
+            } else {
+                new_state = ST_WORKING;
+            }
+            if (g_state != new_state) {
+                g_state = new_state;
+                log_state_event("change", g_state, line);
+            }
+            pthread_mutex_unlock(&lock);
+            return;
+        }
+    }
+
+    if (!strcmp(g_agent, "grok")) {
+        if (g_state == ST_UNKNOWN) {
+            g_state = ST_WORKING;
+            log_state_event("change", g_state, line);
+        }
+        pthread_mutex_unlock(&lock);
+        return;
+    }
 
     if (g_state != ST_WORKING) {
         g_state = ST_WORKING;
