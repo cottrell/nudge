@@ -112,6 +112,37 @@ Direct/manual still works with `tmux-send`.
 
 When messaging panes manually, prefer `tmux-send` (or the log commands) over raw `tmux send-keys`.
 
+## Babysit quota pacing
+
+When `babysit.enabled: true` and `agent` is one of `claude`, `codex`, or `agy`, the
+babysitter samples remaining quota every `quota_probe_secs` seconds (default 300) and
+uses an exponential moving average (EMA) to pace nudge intervals so quota is spread
+evenly until the provider reset.
+
+How it works:
+- After each nudge the babysitter measures how much quota was consumed (`C = pct_before - pct_after`)
+- EMA tracks the mean (`μ`) and variance (`σ`) of consumption per nudge
+- Nudge interval: `τ = (time_to_reset × (μ + k_var × σ)) / (quota_remaining × safety)`
+- For the first `ema_warmup` nudges the fixed `interval_secs` is used while the EMA warms up
+- The quota cache is pre-warmed in a background thread so probes never block the main loop
+
+YAML knobs (all optional, defaults shown):
+
+```yaml
+babysit:
+  quota_probe_secs: 300   # how often to sample quota
+  ema_alpha: 0.30         # smoothing factor (higher = reacts faster)
+  ema_safety: 0.92        # target fraction of quota (leaves ~8% buffer)
+  ema_k_var: 0.0          # variance weight; raise to 0.5–1.0 for conservative pacing
+  ema_warmup: 3           # nudges before EMA replaces fixed interval
+  ema_min_wait: 30        # hard floor (seconds)
+  ema_max_wait: 1200      # hard ceiling (seconds)
+```
+
+The EMA is noisy when multiple swarms share the same provider quota — each instance
+independently estimates its own consumption rate. This is intentional: overestimation
+biases toward slower nudging, which is the right direction when quota is shared.
+
 ## Build and test
 
 ```bash
