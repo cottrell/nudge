@@ -1,0 +1,5 @@
+{"ts":"2026-06-19T14:45:03Z","event":"init","agent":"antigravity","state":"unknown"}
+{"ts":"2026-06-19T14:45:03Z","event":"change","agent":"antigravity","state":"working","line":"agy --dangerously-skip-permissions"}
+{"ts":"2026-06-19T14:45:17Z","event":"change","agent":"antigravity","state":"idle"}
+{"ts":"2026-06-19T14:45:18Z","event":"change","agent":"antigravity","state":"working","line":"[56D[?25h[?25lsay hello[?25h[?25l[9D[K[?25h[?25lM[58C[K"}
+{"ts":"2026-06-19T14:45:31Z","event":"change","agent":"antigravity","state":"idle"}
