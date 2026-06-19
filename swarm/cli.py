@@ -232,11 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
     log_p.add_argument("-n", "--limit", type=int, default=50)
     log_p.add_argument("--pending", action="store_true", help="Only show unread events for the given --pane (or summarize)")
 
-    send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)")
+    send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)", description="Send a message to a single target via the event log (instead of direct tmux-send)")
     send_p.add_argument("config", help="Path to YAML config")
     send_p.add_argument("target", help="Recipient pane id e.g. 0.2 or __broadcast__")
     send_p.add_argument("message", nargs="+", help="Message text")
-    send_p.add_argument("-D", "--dry-run", action="store_true")
+    send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
 
     avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
     avu_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
