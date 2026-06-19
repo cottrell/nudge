@@ -39,6 +39,7 @@ class BabysitSpec:
     long_prompt_file: Path | None = None
     short_prompt: str = ""
     short_prompt_file: Path | None = None
+    via_log: bool = True  # if False, send nudges directly instead of via comms log
 
 
 @dataclass
@@ -130,6 +131,7 @@ def _parse_babysit(raw: dict, pane_id: str, cfg_path: Path) -> BabysitSpec:
         long_prompt_file=long_prompt_path,
         short_prompt=short_prompt,
         short_prompt_file=short_prompt_path,
+        via_log=bool(raw.get("via_log", True)),
     )
 
 
@@ -255,6 +257,7 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
         "Comms consumer defaults to on for monitor: true panes (independent of babysit).",
         "Set nudge.comms.enabled: false to disable explicitly.",
+        "Babysit nudges go via the log by default (nudge.comms + worker). Set babysit.via_log: false to send direct.",
         "Consumer delivers via tmux-send when pane ready.",
         "Direct tmux-send still available.",
         "Clear with clear_comms(session, confirm=True) after y/confirm.",
