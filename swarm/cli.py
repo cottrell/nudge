@@ -226,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     clear_p.add_argument("config", help="Path to YAML config")
     clear_p.add_argument("-y", "--yes", action="store_true", help="Skip 'y' confirmation")
 
-    log_p = sub.add_parser("log", help="Inspect the comms event log")
+    log_p = sub.add_parser("log", help="Inspect the comms event log (events + cursors)")
     log_p.add_argument("config", help="Path to YAML config")
     log_p.add_argument("--pane", help="Filter to a specific pane e.g. 0.2")
     log_p.add_argument("-n", "--limit", type=int, default=50)
@@ -433,6 +433,14 @@ def main(argv: list[str] | None = None) -> int:
                 from .common import get_cursors, get_events, get_pending_events
             except ImportError:
                 from common import get_cursors, get_events, get_pending_events
+            curs = get_cursors(cfg.session_name)
+            if curs:
+                print("cursors:")
+                for rec, lid in sorted(curs.items()):
+                    print(f"  {rec}: {lid}")
+            else:
+                print("cursors: (none)")
+            print()
             if args.pending:
                 if args.pane:
                     pend = get_pending_events(cfg.session_name, args.pane)

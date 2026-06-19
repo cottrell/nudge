@@ -252,7 +252,7 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "",
         "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
         "CLI: aiswarm send <cfg> 0.2 \"msg here\"   (via log)",
-        "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]",
+        "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
         "Comms consumer defaults to on for monitor: true panes (independent of babysit).",
         "Set nudge.comms.enabled: false to disable explicitly.",
         "Consumer delivers via tmux-send when pane ready.",
