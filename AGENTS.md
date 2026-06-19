@@ -78,14 +78,11 @@ Use as source of truth for:
 - monitor sockets, live state
 - babysit pid/log/spec/state files
 
-Messaging another tmux pane: ALWAYS use `tmux-send`.
-Do NOT use raw `tmux send-keys ... Enter`.
+Messaging (durable, preferred):
+- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `aiswarm log <cfg> [--pending] [--pane X.Y]`, `aiswarm cursors <cfg>`.
+- Direct/manual still works: `/home/cottrell/dev/nudge/tmux-send <target> "message"`.
 
-Required form:
-- `/home/cottrell/dev/nudge/tmux-send <target> "message"`
-
-Reason:
-- raw `tmux send-keys ... Enter` often fails to submit Enter
-- prompts can sit unexecuted until next nudge or manual Enter
+Do NOT use raw `tmux send-keys ... Enter` (fails to submit reliably).
 
 Swarm scripts: `/home/cottrell/dev/nudge/swarm`.

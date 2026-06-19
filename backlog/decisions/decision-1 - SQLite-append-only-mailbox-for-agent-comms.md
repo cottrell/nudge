@@ -42,3 +42,8 @@ CREATE TABLE subscription_cursors (
 - **Con: Database dependency.** Requires python/C to link/interact with SQLite (though python-sqlite3 is standard).
 - **Pro: Diagnostic Side-channel.** Operators can open `sqlite3 comms.db` at any time to run queries, inspect the conversation history, or debug routing in real-time.
 - **Pro: Replayability.** Because the `messages` table is append-only, conversation history is preserved. We can easily replay agent sessions step-by-step for debugging.
+
+## Implementation note (2026)
+Actual schema (in swarm/): `events` (id, ts, recipient, sender, type, payload, meta) + `cursors` (recipient, last_id).
+CLI: `aiswarm send`, `broadcast --via-log`, `log`, `cursors`, `clear-comms`.
+Consumers run in per-pane workers (started via `apply`/`babysit apply` when `comms` enabled). Broadcasts use `__broadcast__` recipient with per-pane cursors for fan-out.
