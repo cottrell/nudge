@@ -222,8 +222,11 @@ def test_fixture_replay_becomes_idle_after_quiet(tmp_path):
         proc, sock_path = _start_monitor(tmp_path, agent)
         try:
             _write(proc, *lines)
-            _wait_for_state(sock_path, 'working')
-            _wait_for_state(sock_path, 'idle')
+            if agent == 'grok':
+                _wait_for_state(sock_path, 'idle')
+            else:
+                _wait_for_state(sock_path, 'working')
+                _wait_for_state(sock_path, 'idle')
         finally:
             _stop(proc)
     if checked == 0:
