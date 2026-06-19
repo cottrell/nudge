@@ -55,6 +55,8 @@ def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, int, str, str, str, 
 
 
 def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str = "", short_prompt_file: str = "", via_log: bool = True) -> dict:
+    pane_spec = next((p for p in cfg.panes if p.pane == pane), None)
+    bs = pane_spec.babysit if pane_spec else None
     return {
         "session": cfg.session_name,
         "pane": pane,
@@ -66,6 +68,13 @@ def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
         "long_prompt_file": long_prompt_file,
         "short_prompt_file": short_prompt_file,
         "via_log": via_log,
+        "quota_probe_secs": bs.quota_probe_secs if bs else 300,
+        "ema_alpha": bs.ema_alpha if bs else 0.30,
+        "ema_safety": bs.ema_safety if bs else 0.92,
+        "ema_k_var": bs.ema_k_var if bs else 0.0,
+        "ema_warmup": bs.ema_warmup if bs else 3,
+        "ema_min_wait": bs.ema_min_wait if bs else 30,
+        "ema_max_wait": bs.ema_max_wait if bs else 1200,
     }
 
 
@@ -80,15 +89,24 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
     if dry_run:
         print(f"would start babysit for {cfg.session_name}:{pane} interval={interval} clear_every={clear_every}")
         return
-    agent = next((p.agent for p in cfg.panes if p.pane == pane), "")
+    pane_spec = next((p for p in cfg.panes if p.pane == pane), None)
+    agent = pane_spec.agent if pane_spec else ""
+    bs = pane_spec.babysit if pane_spec else None
     env = dict(
         **__import__("os").environ,
         BABYSIT_STATE_FILE=str(state_path(cfg, pane)),
-        BABYSIT_AGENT=agent,
+        BABYSIT_AGENT=agent or "",
         BABYSIT_CLEAR_EVERY=str(clear_every),
         BABYSIT_LONG_PROMPT_FILE=long_prompt_file,
         BABYSIT_SHORT_PROMPT_FILE=short_prompt_file,
         BABYSIT_VIA_LOG="1" if via_log else "0",
+        BABYSIT_STATS_EVERY=str(bs.quota_probe_secs if bs else 300),
+        BABYSIT_EMA_ALPHA=str(bs.ema_alpha if bs else 0.30),
+        BABYSIT_EMA_SAFETY=str(bs.ema_safety if bs else 0.92),
+        BABYSIT_EMA_K_VAR=str(bs.ema_k_var if bs else 0.0),
+        BABYSIT_EMA_WARMUP=str(bs.ema_warmup if bs else 3),
+        BABYSIT_EMA_MIN_WAIT=str(bs.ema_min_wait if bs else 30),
+        BABYSIT_EMA_MAX_WAIT=str(bs.ema_max_wait if bs else 1200),
     )
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(

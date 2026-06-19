@@ -39,13 +39,13 @@ try:
 except Exception:
     get_cached_provider_usage = None
 
-# ── EMA scheduling ────────────────────────────────────────────────────────────
-_ALPHA = 0.30        # EMA smoothing
-_SAFETY = 0.92       # leave an 8 % quota cushion at reset
-_K_VAR = 0.0         # variance weight; raise to 0.5–1.0 for conservative mode
-_EMA_WARMUP = 3      # nudges before EMA replaces fixed interval
-_MIN_WAIT = 30       # hard floor (seconds)
-_MAX_WAIT = 20 * 60  # hard ceiling (seconds)
+# ── EMA scheduling (defaults; overridden by env vars set from YAML babysit config) ──
+_ALPHA = float(os.environ.get("BABYSIT_EMA_ALPHA", 0.30))
+_SAFETY = float(os.environ.get("BABYSIT_EMA_SAFETY", 0.92))
+_K_VAR = float(os.environ.get("BABYSIT_EMA_K_VAR", 0.0))
+_EMA_WARMUP = int(os.environ.get("BABYSIT_EMA_WARMUP", 3))
+_MIN_WAIT = int(os.environ.get("BABYSIT_EMA_MIN_WAIT", 30))
+_MAX_WAIT = int(os.environ.get("BABYSIT_EMA_MAX_WAIT", 1200))
 
 # ── tmux / socket helpers ─────────────────────────────────────────────────────
 

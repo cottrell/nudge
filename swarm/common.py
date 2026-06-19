@@ -40,6 +40,14 @@ class BabysitSpec:
     short_prompt: str = ""
     short_prompt_file: Path | None = None
     via_log: bool = True  # if False, send nudges directly instead of via comms log
+    # EMA quota-pacing settings (see README § Quota pacing)
+    quota_probe_secs: int = 300    # how often to sample quota (seconds)
+    ema_alpha: float = 0.30        # EMA smoothing factor
+    ema_safety: float = 0.92       # fraction of quota to target (leaves ~8% buffer)
+    ema_k_var: float = 0.0         # variance weight; raise to 0.5–1.0 for conservative pacing
+    ema_warmup: int = 3            # nudges before EMA replaces fixed interval
+    ema_min_wait: int = 30         # hard floor (seconds)
+    ema_max_wait: int = 1200       # hard ceiling (seconds)
 
 
 @dataclass
@@ -132,6 +140,13 @@ def _parse_babysit(raw: dict, pane_id: str, cfg_path: Path) -> BabysitSpec:
         short_prompt=short_prompt,
         short_prompt_file=short_prompt_path,
         via_log=bool(raw.get("via_log", True)),
+        quota_probe_secs=int(raw.get("quota_probe_secs", 300)),
+        ema_alpha=float(raw.get("ema_alpha", 0.30)),
+        ema_safety=float(raw.get("ema_safety", 0.92)),
+        ema_k_var=float(raw.get("ema_k_var", 0.0)),
+        ema_warmup=int(raw.get("ema_warmup", 3)),
+        ema_min_wait=int(raw.get("ema_min_wait", 30)),
+        ema_max_wait=int(raw.get("ema_max_wait", 1200)),
     )
 
 
