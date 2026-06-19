@@ -23,6 +23,7 @@ import os
 import socket as _socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -198,6 +199,17 @@ def _write_state(
     tmp.replace(p)
 
 
+def _quota_bg_refresh(agent: str, interval: float) -> None:
+    """Daemon thread: pre-warm quota cache so main-loop probes never stall."""
+    while True:
+        time.sleep(interval)
+        if get_cached_provider_usage:
+            try:
+                get_cached_provider_usage(agent, ttl=0, force=True)
+            except Exception:
+                pass
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -218,6 +230,11 @@ def main() -> int:
     clear_every = int(os.environ.get("BABYSIT_CLEAR_EVERY", 0))
     stats_every = int(os.environ.get("BABYSIT_STATS_EVERY", 300))
     via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
+
+    if agent in ("claude", "codex", "agy") and get_cached_provider_usage:
+        refresh_interval = max(60.0, stats_every - 60.0)
+        t = threading.Thread(target=_quota_bg_refresh, args=(agent, refresh_interval), daemon=True)
+        t.start()
 
     sock = f"/tmp/{session}_{window_pane}.sock"
 
