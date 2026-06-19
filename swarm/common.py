@@ -49,6 +49,7 @@ class PaneSpec:
     title: str
     monitor: bool
     babysit: BabysitSpec
+    comms: bool = False
 
     @property
     def pane_index(self) -> int:
@@ -173,6 +174,10 @@ def load_config(path: str | Path) -> SwarmConfig:
             if bool(babysit_raw.get("enabled", False)) and not monitor:
                 raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
 
+            comms_raw = nudge.get("comms") or {}
+            # default to monitor (gives state awareness) but can be toggled independently
+            comms_enabled = bool(comms_raw.get("enabled", monitor))
+
             panes.append(PaneSpec(
                 pane=pane_id,
                 agent=agent,
@@ -180,6 +185,7 @@ def load_config(path: str | Path) -> SwarmConfig:
                 title=title,
                 monitor=monitor,
                 babysit=_parse_babysit(babysit_raw, pane_id, cfg_path),
+                comms=comms_enabled,
             ))
 
         windows.append(WindowSpec(window_name=window_name, layout=layout, panes=panes))
@@ -226,6 +232,7 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
 
 def write_runtime_map(cfg: SwarmConfig) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    init_comms_db(cfg.session_name)
     cfg.runtime_map_path.write_text(json.dumps(build_runtime_map(cfg), indent=2) + "\n")
 
 
@@ -243,12 +250,16 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "- monitor socket paths",
         "- babysit pid/log/spec paths",
         "",
-        "When messaging another pane, ALWAYS use tmux-send:",
-        f"- {ROOT_DIR / 'tmux-send'} <target> \"message\"",
+        "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
+        "CLI: aiswarm send <cfg> 0.2 \"msg here\"   (via log)",
+        "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]",
+        "Comms consumer defaults to on for monitor: true panes (independent of babysit).",
+        "Set nudge.comms.enabled: false to disable explicitly.",
+        "Consumer delivers via tmux-send when pane ready.",
+        "Direct tmux-send still available.",
+        "Clear with clear_comms(session, confirm=True) after y/confirm.",
         "",
-        "Do NOT use raw tmux send-keys to message agents. Raw send-keys often fails",
-        "to submit Enter reliably, leaving prompts sitting unexecuted until another",
-        "nudge or manual Enter.",
+        "Do NOT use raw tmux send-keys. Raw send-keys often fails to submit Enter reliably.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -256,6 +267,166 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
 def write_self_awareness_text(cfg: SwarmConfig) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     cfg.self_awareness_path.write_text(build_self_awareness_text(cfg))
+
+
+# --- Event log comms (source of truth + buffer) ---
+# Keyed by tmux pane (e.g. "0.2") within a session. This is the stable identity
+# for the tmux swarm (agents can be killed/restarted in the pane).
+# Writers (global clock, humans, scripts) use log_send / log_broadcast.
+# Consumer reads pending for a pane + its monitor state, then tmux-send when ready.
+
+import sqlite3 as _sqlite3
+
+def _comms_db_path(session_name: str) -> Path:
+    return Path("/tmp/nudge-swarm") / session_name / "comms.db"
+
+def init_comms_db(session_name: str) -> Path:
+    """Ensure the per-session comms DB and tables exist."""
+    db = _comms_db_path(session_name)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    with _sqlite3.connect(str(db)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+                recipient TEXT NOT NULL,
+                sender TEXT,
+                type TEXT DEFAULT 'msg',
+                payload TEXT NOT NULL,
+                meta TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cursors (
+                recipient TEXT PRIMARY KEY,
+                last_id INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+    return db
+
+def log_send(session_name: str, recipient: str, payload: str, sender: str = None,
+             etype: str = "msg", meta: dict | None = None) -> int:
+    """Append to the event log for a pane recipient. Returns event id."""
+    db = init_comms_db(session_name)
+    m = json.dumps(meta) if meta else None
+    with _sqlite3.connect(str(db)) as conn:
+        cur = conn.execute(
+            "INSERT INTO events (recipient, sender, type, payload, meta) "
+            "VALUES (?,?,?,?,?)",
+            (recipient, sender, etype, payload, m)
+        )
+        eid = cur.lastrowid
+    return eid
+
+def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = False,
+                  sender: str = None) -> None:
+    """Write a broadcast event. Consumer will fan out to appropriate panes."""
+    # For simplicity we write a special recipient; real fan-out can happen at consume time
+    # or we can enumerate panes here. Start simple.
+    log_send(session_name, "__broadcast__", message, sender, "broadcast")
+
+def get_pending_events(session_name: str, recipient: str):
+    """Return (id, ts, sender, type, payload, meta) for unread events."""
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return []
+    with _sqlite3.connect(str(db)) as conn:
+        cur = conn.execute("SELECT last_id FROM cursors WHERE recipient = ?", (recipient,))
+        row = cur.fetchone()
+        last = row[0] if row else 0
+        cur = conn.execute(
+            "SELECT id, ts, sender, type, payload, meta FROM events "
+            "WHERE recipient = ? AND id > ? ORDER BY id",
+            (recipient, last)
+        )
+        return cur.fetchall()
+
+def advance_cursor(session_name: str, recipient: str, last_id: int):
+    """Mark events up to last_id as read for this recipient."""
+    db = init_comms_db(session_name)
+    with _sqlite3.connect(str(db)) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO cursors (recipient, last_id) VALUES (?,?)",
+            (recipient, last_id)
+        )
+
+
+def get_cursors(session_name: str) -> dict[str, int]:
+    """Return {recipient: last_read_id}."""
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return {}
+    with _sqlite3.connect(str(db)) as conn:
+        cur = conn.execute("SELECT recipient, last_id FROM cursors ORDER BY recipient")
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def get_events(session_name: str, recipient: str | None = None, limit: int = 100) -> list:
+    """Return events in chrono order (oldest first). Optional recipient filter."""
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return []
+    with _sqlite3.connect(str(db)) as conn:
+        if recipient is not None:
+            sql = "SELECT id, ts, recipient, sender, type, payload, meta FROM events WHERE recipient=? ORDER BY id DESC LIMIT ?"
+            params = (recipient, limit)
+        else:
+            sql = "SELECT id, ts, recipient, sender, type, payload, meta FROM events ORDER BY id DESC LIMIT ?"
+            params = (limit,)
+        rows = list(conn.execute(sql, params))
+        return list(reversed(rows))
+
+
+def get_pending_count(session_name: str, recipient: str) -> int:
+    return len(get_pending_events(session_name, recipient))
+
+
+def get_pending_broadcasts(session_name: str, pane: str):
+    """Pending broadcast events, using a per-pane cursor for __broadcast__ so
+    multiple panes don't interfere with each other's broadcast cursors."""
+    bcast_key = f"{pane}:bcast"
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return []
+    with _sqlite3.connect(str(db)) as conn:
+        cur = conn.execute("SELECT last_id FROM cursors WHERE recipient = ?", (bcast_key,))
+        row = cur.fetchone()
+        last = row[0] if row else 0
+        cur = conn.execute(
+            "SELECT id, ts, sender, type, payload, meta FROM events "
+            "WHERE recipient = '__broadcast__' AND id > ? ORDER BY id",
+            (last,)
+        )
+        return cur.fetchall()
+
+
+def advance_broadcast_cursor(session_name: str, pane: str, last_id: int):
+    bcast_key = f"{pane}:bcast"
+    db = init_comms_db(session_name)
+    with _sqlite3.connect(str(db)) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO cursors (recipient, last_id) VALUES (?,?)",
+            (bcast_key, last_id)
+        )
+
+
+def clear_comms(session_name: str, confirm: bool = False):
+    """Clear all events and cursors for the session.
+    Requires explicit confirm=True (callers must do the 'y' prompt).
+    """
+    if not confirm:
+        print("clear_comms: pass confirm=True after user confirmation")
+        return
+    db = _comms_db_path(session_name)
+    if db.exists():
+        with _sqlite3.connect(str(db)) as conn:
+            conn.execute("DELETE FROM events")
+            conn.execute("DELETE FROM cursors")
+        # VACUUM cannot run inside a transaction
+        with _sqlite3.connect(str(db)) as conn:
+            conn.execute("VACUUM")
+        print(f"cleared comms log for {session_name}")
 
 
 # --- agentsview provider usage (task-7) ---

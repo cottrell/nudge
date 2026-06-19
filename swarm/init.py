@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common import ROOT_DIR
+try:
+    from .common import ROOT_DIR
+except ImportError:
+    from common import ROOT_DIR
 
 
 def agent_block(name: str) -> str:

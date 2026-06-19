@@ -9,18 +9,33 @@ import sys
 import time
 import json
 
-from common import (
-    AGENT_STATS_CMD,
-    ROOT_DIR,
-    SHELL_NAMES,
-    SWARM_CLI,
-    SwarmConfig,
-    WindowSpec,
-    write_runtime_map,
-    write_self_awareness_text,
-)
+try:
+    from .common import (
+        AGENT_STATS_CMD,
+        ROOT_DIR,
+        SHELL_NAMES,
+        SWARM_CLI,
+        SwarmConfig,
+        WindowSpec,
+        write_runtime_map,
+        write_self_awareness_text,
+    )
 
-from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
+    from .babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
+except ImportError:
+    # direct script fallback
+    from common import (
+        AGENT_STATS_CMD,
+        ROOT_DIR,
+        SHELL_NAMES,
+        SWARM_CLI,
+        SwarmConfig,
+        WindowSpec,
+        write_runtime_map,
+        write_self_awareness_text,
+    )
+
+    from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -107,21 +122,27 @@ def setup_grid(cfg: SwarmConfig, dry_run: bool) -> None:
 
 def socket_ready(session_name: str, pane: str) -> bool:
     sock = f"/tmp/{session_name}_{pane}.sock"
-    proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
-    return '"state"' in proc.stdout
+    try:
+        proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True, timeout=3)
+        return '"state"' in proc.stdout
+    except subprocess.TimeoutExpired:
+        return False
 
 
 
 
 def _query_monitor(cfg: SwarmConfig, pane: str) -> dict:
     sock = socket_path(cfg, pane)
-    proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True)
-    if proc.returncode != 0 or '"state"' not in proc.stdout:
-        return {'state': 'unreachable'}
     try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return {'state': 'unparseable'}
+        proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True, timeout=3)
+        if proc.returncode != 0 or '"state"' not in proc.stdout:
+            return {'state': 'unreachable'}
+        try:
+            return json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return {'state': 'unparseable'}
+    except subprocess.TimeoutExpired:
+        return {'state': 'unreachable'}
 
 
 def monitor_state(cfg: SwarmConfig, pane: str) -> str:
@@ -175,24 +196,44 @@ def capture_pane(cfg: SwarmConfig, pane: str) -> None:
     print(f"--- Capture {target} ---")
     print(proc.stdout)
 
-def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool) -> None:
+def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool, via_log: bool = False) -> None:
     if not message.strip():
         raise ValueError("broadcast message must not be empty")
-    payload = f"broadcast: {message.strip()}"
     sent = 0
+    matching_panes = []
     for pane in cfg.panes:
         if not pane.agent:
             continue
         if not include_nonmonitored and not pane.monitor:
             continue
-        target = f"{cfg.session_name}:{pane.pane}"
+        matching_panes.append(pane)
+    if via_log:
         if dry_run:
-            print(f"would broadcast to {target} ({pane.title})")
+            for pane in matching_panes:
+                target = f"{cfg.session_name}:{pane.pane}"
+                print(f"would log-broadcast to {target} ({pane.title})")
+                sent += 1
+        else:
+            try:
+                from .common import log_broadcast
+            except ImportError:
+                from common import log_broadcast
+            log_broadcast(cfg.session_name, message, sender="cli broadcast")
+            for pane in matching_panes:
+                target = f"{cfg.session_name}:{pane.pane}"
+                print(f"log-broadcast to {target} ({pane.title})")
+                sent += 1
+    else:
+        payload = f"broadcast: {message.strip()}"
+        for pane in matching_panes:
+            target = f"{cfg.session_name}:{pane.pane}"
+            if dry_run:
+                print(f"would tmux-broadcast to {target} ({pane.title})")
+                sent += 1
+                continue
+            subprocess.run([str(ROOT_DIR / "tmux-send"), target, payload], check=True, text=True)
+            print(f"tmux-broadcast to {target} ({pane.title})")
             sent += 1
-            continue
-        subprocess.run([str(ROOT_DIR / "tmux-send"), target, payload], check=True, text=True)
-        print(f"broadcast to {target} ({pane.title})")
-        sent += 1
     if sent == 0:
         scope = "all panes" if include_nonmonitored else "monitored panes"
         raise ValueError(f"no {scope} matched for broadcast")
@@ -213,9 +254,22 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def apply(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
+    if not dry_run:
+        try:
+            from .common import init_comms_db
+        except ImportError:
+            from common import init_comms_db
+        init_comms_db(cfg.session_name)
     if not skip_grid:
         setup_grid(cfg, dry_run)
     setup_monitors(cfg, dry_run)
+    # Ensure comms (and babysit) workers are running. This is also available via
+    # 'aiswarm babysit apply' for standalone worker management.
+    try:
+        from . import babysitctl
+    except ImportError:
+        import babysitctl
+    babysitctl.apply(cfg, dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
@@ -251,15 +305,20 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = state_str
         else:
             monitor = "off"
-        babysit_note = ""
-        if pane.babysit.enabled:
-            babysit_note = _format_babysit_note(cfg, pane.pane)
+        worker_note = ""
+        if pane.babysit.enabled or pane.comms:
+            worker_note = _format_babysit_note(cfg, pane.pane)  # reuses the pid/state check
         if brief:
-            brief_rows.append((target, pane.title, monitor, babysit_note or "off"))
+            brief_rows.append((target, pane.title, monitor, worker_note or "off"))
         else:
             command = pane_current_command(cfg, pane.pane)
-            babysit_val = ("on " + babysit_note) if pane.babysit.enabled and babysit_note else ("on" if pane.babysit.enabled else "off")
-            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} babysit={babysit_val}")
+            if pane.babysit.enabled:
+                worker_val = ("on " + worker_note) if worker_note else "on"
+            elif pane.comms:
+                worker_val = ("comms " + worker_note) if worker_note else "comms"
+            else:
+                worker_val = "off"
+            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} worker={worker_val}")
     if brief_rows:
         widths = [max(len(row[i]) for row in brief_rows) for i in range(4)]
         for row in brief_rows:
@@ -382,7 +441,10 @@ def av_usage_lines(report: dict, recent_minutes: int = 0, title: str | None = No
 
     if recent_minutes > 0:
         # fresh fetch for accuracy (cheap)
-        from common import get_agentsview_recent_tokens
+        try:
+            from .common import get_agentsview_recent_tokens
+        except ImportError:
+            from common import get_agentsview_recent_tokens
         eff = report.get("agents") or []
         rec = get_agentsview_recent_tokens(recent_minutes, agents=eff)
         lines.append(
@@ -399,7 +461,10 @@ def print_av_usage(report: dict, recent_minutes: int = 0, title: str | None = No
 
 def watch_av_usage(agents: list[str] | None, recent_minutes: int = 0, interval: float = 30.0) -> None:
     """Watch loop for av-usage. Re-fetches each cycle so it works with polling."""
-    from common import get_swarm_agentsview_report
+    try:
+        from .common import get_swarm_agentsview_report
+    except ImportError:
+        from common import get_swarm_agentsview_report
     try:
         while True:
             report = get_swarm_agentsview_report(agents)

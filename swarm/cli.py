@@ -7,10 +7,19 @@ import shutil
 import subprocess
 import sys
 
-import topology as swarm_topology
-import babysitctl as swarm_babysit
-import init as swarm_init
-from common import load_config
+# Relative imports (for `python -m swarm.cli`) with bare fallback for direct
+# `python swarm/cli.py` / aiswarm (avoids "relative import with no known parent").
+try:
+    from . import topology as swarm_topology
+    from . import babysitctl as swarm_babysit
+    from . import init as swarm_init
+    from .common import load_config
+except ImportError:
+    # direct script fallback (python swarm/cli.py or aiswarm alias)
+    import topology as swarm_topology
+    import babysitctl as swarm_babysit
+    import init as swarm_init
+    from common import load_config
 
 
 MODEL_HELPERS = {
@@ -202,15 +211,32 @@ def build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("-w", "--watch", action="store_true", help="Refresh the status in place until interrupted")
     status_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
 
-    broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm agent panes")
+    broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm agent panes (flavours: tmux or log)")
     broadcast_p.add_argument("config", help="Path to YAML config")
     broadcast_p.add_argument("message", nargs="+", help="Broadcast message text")
     broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to agent panes with monitor=false")
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
+    broadcast_p.add_argument("--via-log", action="store_true", help="Write to event log instead of direct tmux-send (consumer will deliver)")
 
     stop_p = sub.add_parser("stop", help="Stop babysit workers and the tmux session")
     stop_p.add_argument("config", help="Path to YAML config")
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
+
+    clear_p = sub.add_parser("clear-comms", help="Clear the event log for a session (destructive)")
+    clear_p.add_argument("config", help="Path to YAML config")
+    clear_p.add_argument("-y", "--yes", action="store_true", help="Skip 'y' confirmation")
+
+    log_p = sub.add_parser("log", help="Inspect the comms event log")
+    log_p.add_argument("config", help="Path to YAML config")
+    log_p.add_argument("--pane", help="Filter to a specific pane e.g. 0.2")
+    log_p.add_argument("-n", "--limit", type=int, default=50)
+    log_p.add_argument("--pending", action="store_true", help="Only show unread events for the given --pane (or summarize)")
+
+    send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)")
+    send_p.add_argument("config", help="Path to YAML config")
+    send_p.add_argument("target", help="Recipient pane id e.g. 0.2 or __broadcast__")
+    send_p.add_argument("message", nargs="+", help="Message text")
+    send_p.add_argument("-D", "--dry-run", action="store_true")
 
     avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
     avu_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
@@ -280,7 +306,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "quota":
-            from common import get_cached_provider_usage, get_agents_from_config, QUOTA_AGENT_MAP
+            try:
+                from .common import get_cached_provider_usage, get_agents_from_config, QUOTA_AGENT_MAP
+            except ImportError:
+                from common import get_cached_provider_usage, get_agents_from_config, QUOTA_AGENT_MAP
             import time
             if args.config:
                 cfg = load_config(args.config)
@@ -339,7 +368,10 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
         if args.command == "quota-debug":
-            from common import get_cached_provider_usage
+            try:
+                from .common import get_cached_provider_usage
+            except ImportError:
+                from common import get_cached_provider_usage
             import json as _json
             res = get_cached_provider_usage(args.agent, ttl=args.ttl, force=args.force)
             print("=== RAW SCRAPER OUTPUT ===")
@@ -350,7 +382,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
         if args.command == "av-usage":
-            from common import get_agents_from_config, get_swarm_agentsview_report
+            try:
+                from .common import get_agents_from_config, get_swarm_agentsview_report
+            except ImportError:
+                from common import get_agents_from_config, get_swarm_agentsview_report
             import json as _json
 
             if args.config:
@@ -389,13 +424,94 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "broadcast":
             cfg = load_config(args.config)
-            swarm_topology.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run)
+            swarm_topology.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run, via_log=args.via_log)
+            return 0
+
+        if args.command == "log":
+            cfg = load_config(args.config)
+            try:
+                from .common import get_cursors, get_events, get_pending_events
+            except ImportError:
+                from common import get_cursors, get_events, get_pending_events
+            if args.pending:
+                if args.pane:
+                    pend = get_pending_events(cfg.session_name, args.pane)
+                    for eid, ts, snd, typ, pay, meta in pend:
+                        from_ = snd or "-"
+                        to = args.pane
+                        print(f"from: {from_}")
+                        print(f"to: {to}")
+                        print(f"ts: {ts} id:{eid} type:{typ}")
+                        print(f"payload: {pay}")
+                        print()
+                    # also show pending broadcasts for this pane
+                    try:
+                        from .common import get_pending_broadcasts
+                    except ImportError:
+                        from common import get_pending_broadcasts
+                    bpend = get_pending_broadcasts(cfg.session_name, args.pane)
+                    for eid, ts, snd, typ, pay, meta in bpend:
+                        from_ = snd or "-"
+                        print(f"from: {from_}")
+                        print(f"to: {args.pane} (via broadcast)")
+                        print(f"ts: {ts} id:{eid} type:{typ}")
+                        print(f"payload: {pay}")
+                        print()
+
+                else:
+                    print("pending summary (use --pane for details):")
+                    try:
+                        bcasts = get_pending_events(cfg.session_name, "__broadcast__")
+                        print(f"  __broadcast__ pending: {len(bcasts)}")
+                    except Exception:
+                        pass
+                    print("  Run with --pane X.Y for per-pane pending")
+            else:
+                evs = get_events(cfg.session_name, args.pane, args.limit)
+                if not evs:
+                    print("(no events)")
+                for eid, ts, rec, snd, typ, pay, meta in evs:
+                    from_ = snd or "-"
+                    to = rec
+                    print(f"from: {from_}")
+                    print(f"to: {to}")
+                    print(f"ts: {ts} id:{eid} type:{typ}")
+                    print(f"payload: {pay}")
+                    print()
+            return 0
+
+        if args.command == "send":
+            cfg = load_config(args.config)
+            msg = " ".join(args.message)
+            try:
+                from .common import log_send
+            except ImportError:
+                from common import log_send
+            if args.dry_run:
+                print(f"would log-send session={cfg.session_name} target={args.target} msg={msg}")
+            else:
+                eid = log_send(cfg.session_name, args.target, msg, sender="cli send")
+                print(f"log-sent id={eid} session={cfg.session_name} target={args.target}")
             return 0
 
         if args.command == "stop":
             cfg = load_config(args.config)
             swarm_babysit.stop(cfg, args.dry_run)
             _stop_tmux_session(cfg.session_name, args.dry_run)
+            return 0
+
+        if args.command == "clear-comms":
+            cfg = load_config(args.config)
+            if not args.yes:
+                resp = input(f"Clear comms log for {cfg.session_name}? [y/N] ")
+                if resp.lower() != "y":
+                    print("aborted")
+                    return 0
+            try:
+                from .common import clear_comms
+            except ImportError:
+                from common import clear_comms
+            clear_comms(cfg.session_name, confirm=True)
             return 0
 
         cfg = load_config(args.config)
