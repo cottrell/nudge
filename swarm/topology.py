@@ -292,12 +292,22 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         lines.append(f"session={cfg.session_name} exists={'yes' if session_ok else 'no'} panes={actual_count}/{cfg.pane_count}")
     if not session_ok:
         return lines
-    brief_rows: list[tuple[str, str, str, str]] = []
+
+    if brief:
+        headers = ["Target", "Title", "Monitor", "Worker"]
+        rows = []
+    else:
+        headers = ["Target", "Title", "Command", "Monitor", "Worker"]
+        rows = []
+
     for pane in cfg.panes:
         target = f"{cfg.session_name}:{pane.pane}"
         proc = run("tmux", "list-panes", "-t", target, check=False)
         if proc.returncode != 0:
-            lines.append(f"{target} missing")
+            if brief:
+                rows.append((target, pane.title, "missing", "off"))
+            else:
+                rows.append((target, pane.title, "-", "missing", "off"))
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -307,9 +317,9 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = "off"
         worker_note = ""
         if pane.babysit.enabled or pane.comms:
-            worker_note = _format_babysit_note(cfg, pane.pane)  # reuses the pid/state check
+            worker_note = _format_babysit_note(cfg, pane.pane)
         if brief:
-            brief_rows.append((target, pane.title, monitor, worker_note or "off"))
+            rows.append((target, pane.title, monitor, worker_note or "off"))
         else:
             command = pane_current_command(cfg, pane.pane)
             if pane.babysit.enabled:
@@ -318,11 +328,17 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 worker_val = ("comms " + worker_note) if worker_note else "comms"
             else:
                 worker_val = "off"
-            lines.append(f"{target} title={pane.title} cmd={command or '-'} monitor={monitor} worker={worker_val}")
-    if brief_rows:
-        widths = [max(len(row[i]) for row in brief_rows) for i in range(4)]
-        for row in brief_rows:
-            lines.append("  ".join(value.ljust(widths[i]) for i, value in enumerate(row)).rstrip())
+            rows.append((target, pane.title, command or "-", monitor, worker_val))
+
+    if rows:
+        all_rows = [headers] + rows
+        widths = [max(len(row[i]) for row in all_rows) for i in range(len(headers))]
+        lines.append("")
+        lines.append("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))).rstrip())
+        lines.append("  ".join(("-" * widths[i]).ljust(widths[i]) for i in range(len(headers))).rstrip())
+        for row in rows:
+            lines.append("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))).rstrip())
+
     return lines
 
 
