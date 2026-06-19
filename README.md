@@ -24,6 +24,11 @@ python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
 python swarm/cli.py status ./swarm/<project>.yaml --brief
 python swarm/cli.py status ./swarm/<project>.yaml --brief -w
 python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
+python swarm/cli.py broadcast --via-log ./swarm/<project>.yaml "use durable log"
+python swarm/cli.py send ./swarm/<project>.yaml 0.0 "hello via log"
+python swarm/cli.py log ./swarm/<project>.yaml --pending
+python swarm/cli.py cursors ./swarm/<project>.yaml
+python swarm/cli.py clear-comms ./swarm/<project>.yaml -y
 python swarm/cli.py quota ./swarm/<project>.yaml
 python swarm/cli.py av-usage ./swarm/<project>.yaml
 python swarm/cli.py stop ./swarm/<project>.yaml
@@ -63,7 +68,8 @@ Built-in examples:
 - one or more tmux windows
 - each window has `window_name`, `layout`, and `panes`
 - pane command is `shell_command`
-- nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`)
+- nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`, `comms`)
+- `comms.enabled` (defaults to `monitor`) starts a per-pane worker that consumes the durable log and delivers on idle
 
 Notes:
 
@@ -83,7 +89,28 @@ These are low-level helpers used by swarm tooling and power users:
 - `keyboard-2pane.sh` (line relay utility)
 - `babysit.sh` and `babysit-manager.sh` (legacy/manual babysit path)
 
-When messaging panes manually, prefer `tmux-send` over raw `tmux send-keys`.
+## Messaging / durable comms
+
+Use the built-in log for reliable agent-to-agent messages (durable, replayable, with cursors):
+
+```bash
+# direct to pane via log (buffered until consumer delivers on idle)
+aiswarm send ./swarm/<project>.yaml 0.2 "review this"
+
+# broadcast via log
+aiswarm broadcast --via-log ./swarm/<project>.yaml "new plan"
+
+# inspect
+aiswarm log ./swarm/<project>.yaml --pending
+aiswarm cursors ./swarm/<project>.yaml
+aiswarm clear-comms ./swarm/<project>.yaml -y
+```
+
+`comms` workers (started automatically by `apply` / `babysit apply` for `monitor: true` panes) consume the log and deliver via `tmux-send` when the pane is idle.
+
+Direct/manual still works with `tmux-send`.
+
+When messaging panes manually, prefer `tmux-send` (or the log commands) over raw `tmux send-keys`.
 
 ## Build and test
 
@@ -116,6 +143,7 @@ make capture_copilot DUR=60
 make capture_gemini DUR=60
 make capture_vibe DUR=60
 make capture_qwen DUR=60
+make capture_grok DUR=60
 make capture_all DUR=60
 ```
 
