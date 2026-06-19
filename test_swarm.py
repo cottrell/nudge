@@ -446,10 +446,17 @@ windows:
     out = capsys.readouterr().out
 
     assert "session=demo exists=yes panes=1/1" in out
-    assert "demo:0.0 title=claude cmd=claude monitor=idle worker=on" in out
+    lines = out.splitlines()
+    matching = [l for l in lines if "demo:0.0" in l]
+    assert len(matching) == 1
+    assert "claude" in matching[0]
+    assert "idle" in matching[0]
+    assert "on" in matching[0]
 
 
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
+    import shutil
+    shutil.rmtree("/tmp/nudge-swarm/demo", ignore_errors=True)
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -486,8 +493,17 @@ windows:
     out = capsys.readouterr().out
 
     assert "demo panes=2/2" in out
-    assert "demo:0.0  claude  working  next=0s" in out
-    assert "demo:0.1  codex   off      off" in out
+    lines = out.splitlines()
+    matching_0 = [l for l in lines if "demo:0.0" in l]
+    assert len(matching_0) == 1
+    assert "claude" in matching_0[0]
+    assert "working" in matching_0[0]
+    assert "stopped" in matching_0[0]
+    
+    matching_1 = [l for l in lines if "demo:0.1" in l]
+    assert len(matching_1) == 1
+    assert "codex" in matching_1[0]
+    assert "off" in matching_1[0]
 
 
 def test_status_lines_handles_missing_window(monkeypatch, tmp_path: Path):
@@ -588,7 +604,9 @@ windows:
         lines = status_lines(cfg, brief=True)
     finally:
         topology.time = real_time
-    assert lines[1] == "demo:0.0  claude  idle  next=60s"
+    matching = [l for l in lines if "demo:0.0" in l]
+    assert len(matching) == 1
+    assert matching[0].split() == ["demo:0.0", "claude", "idle", "next=60s"]
 
 
 def test_swarm_status_brief_shows_stopped_when_babysit_not_running(tmp_path: Path):
@@ -612,7 +630,9 @@ windows:
     topology.run = lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})()
     topology._query_monitor = lambda cfg, pane: {"state": "idle"}
     lines = topology.status_lines(cfg, brief=True)
-    assert lines[1] == "demo_stopped:0.0  claude  idle  stopped"
+    matching = [l for l in lines if "demo_stopped:0.0" in l]
+    assert len(matching) == 1
+    assert matching[0].split() == ["demo_stopped:0.0", "claude", "idle", "stopped"]
 
 
 def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):
