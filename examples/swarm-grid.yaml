@@ -20,7 +20,7 @@ windows:
           babysit:
             enabled: true
             interval_secs: 600
-            long_prompt_file: "../prompts/claude_main.md"
+            long_prompt: "You are the lead architect. Focus on overall system design, edge cases, and code review."
             short_prompt: "Please continue. Stay in role and keep moving."
 
       - shell_command: "agy --dangerously-skip-permissions"
