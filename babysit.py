@@ -40,12 +40,12 @@ except Exception:
     get_cached_provider_usage = None
 
 # ── EMA scheduling (defaults; overridden by env vars set from YAML babysit config) ──
-_ALPHA = float(os.environ.get("BABYSIT_EMA_ALPHA", 0.30))
-_SAFETY = float(os.environ.get("BABYSIT_EMA_SAFETY", 0.92))
-_K_VAR = float(os.environ.get("BABYSIT_EMA_K_VAR", 0.0))
-_EMA_WARMUP = int(os.environ.get("BABYSIT_EMA_WARMUP", 3))
-_MIN_WAIT = int(os.environ.get("BABYSIT_EMA_MIN_WAIT", 30))
-_MAX_WAIT = int(os.environ.get("BABYSIT_EMA_MAX_WAIT", 1200))
+_ALPHA = float(os.environ.get("BABYSIT_EMA_ALPHA", "0.30"))
+_SAFETY = float(os.environ.get("BABYSIT_EMA_SAFETY", "0.92"))
+_K_VAR = float(os.environ.get("BABYSIT_EMA_K_VAR", "0.0"))
+_EMA_WARMUP = int(os.environ.get("BABYSIT_EMA_WARMUP", "3"))
+_MIN_WAIT = int(os.environ.get("BABYSIT_EMA_MIN_WAIT", "30"))
+_MAX_WAIT = int(os.environ.get("BABYSIT_EMA_MAX_WAIT", "1200"))
 
 # ── tmux / socket helpers ─────────────────────────────────────────────────────
 
@@ -235,6 +235,12 @@ def main() -> int:
         refresh_interval = max(60.0, stats_every - 60.0)
         t = threading.Thread(target=_quota_bg_refresh, args=(agent, refresh_interval), daemon=True)
         t.start()
+        print(f"  quota bg refresh every ~{refresh_interval:.0f}s for {agent} (non-blocking)")
+
+    # Effective EMA params (from env or defaults)
+    if long_nudge or short_nudge:
+        print(f"  EMA pacing: alpha={_ALPHA} safety={_SAFETY} k_var={_K_VAR} warmup={_EMA_WARMUP} "
+              f"min={_MIN_WAIT}s max={_MAX_WAIT}s")
 
     sock = f"/tmp/{session}_{window_pane}.sock"
 
