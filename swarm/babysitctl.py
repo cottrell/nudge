@@ -7,7 +7,10 @@ from pathlib import Path
 import signal
 import subprocess
 
-from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
+try:
+    from .common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
+except ImportError:
+    from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
@@ -121,15 +124,31 @@ def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
 
 
 def apply(cfg: SwarmConfig, dry_run: bool) -> None:
-    desired = desired_panes(cfg)
+    # Start worker for babysit or comms (one process handling both when both enabled)
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    # Expand for comms-only panes (use default poll interval)
+    worker_desired = {}
+    for p in cfg.panes:
+        if p.babysit.enabled:
+            worker_desired[p.pane] = (
+                p.babysit.interval_secs,
+                p.babysit.clear_every,
+                p.babysit.long_prompt,
+                p.babysit.short_prompt,
+                p.babysit.long_prompt_file.name if p.babysit.long_prompt_file else "",
+                p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
+            )
+        elif p.comms:
+            # comms consumer only: poll frequently enough for delivery
+            worker_desired[p.pane] = (5, 0, "", "", "", "")
 
     existing = {p.name.removeprefix("babysit-").removesuffix(".pid").replace("-", "."): p for p in cfg.runtime_dir.glob("babysit-*.pid")}
     for pane in sorted(existing):
-        if pane not in desired:
+        if pane not in worker_desired:
             stop_worker(cfg, pane, dry_run)
 
-    for pane, (interval, clear_every, long_prompt, short_prompt, lp_file, sp_file) in desired.items():
+    for pane, (interval, clear_every, long_prompt, short_prompt, lp_file, sp_file) in worker_desired.items():
         path = pid_path(cfg, pane)
         wanted = desired_spec(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file)
         current_spec = load_spec(spec_path(cfg, pane))
@@ -145,7 +164,7 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
-    print(f"{'Planned' if dry_run else 'Applied'} babysit workers for {cfg.session_name}")
+    print(f"{'Planned' if dry_run else 'Applied'} workers (babysit+comms) for {cfg.session_name}")
 
 
 def stop(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -159,8 +178,21 @@ def stop(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def status(cfg: SwarmConfig) -> None:
-    desired = desired_panes(cfg)
-    for pane in sorted(desired):
+    # Report workers for both babysit and comms panes
+    worker_panes = {}
+    for p in cfg.panes:
+        if p.babysit.enabled:
+            worker_panes[p.pane] = (
+                p.babysit.interval_secs,
+                p.babysit.clear_every,
+                p.babysit.long_prompt,
+                p.babysit.short_prompt,
+                p.babysit.long_prompt_file.name if p.babysit.long_prompt_file else "",
+                p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
+            )
+        elif p.comms:
+            worker_panes[p.pane] = (5, 0, "", "", "", "")
+    for pane in sorted(worker_panes):
         path = pid_path(cfg, pane)
         if not path.exists():
             print(f"{cfg.session_name}:{pane} stopped")
@@ -170,7 +202,7 @@ def status(cfg: SwarmConfig) -> None:
         drift = ""
         spec = load_spec(spec_path(cfg, pane))
         if spec:
-            di, dc, dlp, dsp, dlp_f, dsp_f = desired[pane]
+            di, dc, dlp, dsp, dlp_f, dsp_f = worker_panes[pane]
             if spec != desired_spec(cfg, pane, di, dc, dlp, dsp, dlp_f, dsp_f):
                 drift = " drifted"
         extra = ""

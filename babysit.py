@@ -79,6 +79,48 @@ def _send_message(target: str, msg: str) -> None:
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
+def _drain_comms(session: str, target: str, pane: str) -> None:
+    """Consume from the comms log (direct to pane + broadcasts) and deliver when the pane is ready.
+    Uses per-pane cursors so independent from babysit nudging.
+    """
+    try:
+        import sys
+        from pathlib import Path
+        swarm_dir = str(Path(__file__).parent / "swarm")
+        if swarm_dir not in sys.path:
+            sys.path.insert(0, swarm_dir)
+        from common import get_pending_events, advance_cursor, get_pending_broadcasts, advance_broadcast_cursor
+    except Exception as e:
+        print(f"  comms import failed: {e}")
+        return
+
+    # direct messages for this exact pane
+    try:
+        pending = get_pending_events(session, pane)
+        last_id = 0
+        for eid, ts, snd, typ, payload, meta in pending:
+            print(f"  comms: deliver direct eid={eid} to {target}")
+            _send_message(target, payload)
+            last_id = eid
+        if pending and last_id > 0:
+            advance_cursor(session, pane, last_id)
+    except Exception as e:
+        print(f"  comms direct error: {e}")
+
+    # broadcasts written to __broadcast__ (per-pane cursor to avoid cross-pane interference)
+    try:
+        bcasts = get_pending_broadcasts(session, pane)
+        last_id = 0
+        for eid, ts, snd, typ, payload, meta in bcasts:
+            print(f"  comms: deliver broadcast eid={eid} to {target}")
+            _send_message(target, payload)
+            last_id = eid
+        if bcasts and last_id > 0:
+            advance_broadcast_cursor(session, pane, last_id)
+    except Exception as e:
+        print(f"  comms broadcast error: {e}")
+
+
 def _log_nudge(session: str, target: str, reason: str, msg: str) -> None:
     log_file = os.environ.get("BABYSIT_LOG_FILE") or "nudge.log"
     long_f = os.environ.get("BABYSIT_LONG_PROMPT_FILE", "")
@@ -193,6 +235,9 @@ def main() -> int:
         nudge_count += 1
         _write_state(state_file, target, interval, "", "startup_nudge", now, 0, now + interval, 0)
 
+    # initial comms drain (deliver anything that arrived before we started)
+    _drain_comms(session, target, window_pane)
+
     while True:
         time.sleep(sleep_dur)
         now_f = time.time()
@@ -212,70 +257,75 @@ def main() -> int:
         next_force_at = force_deadline if state in ("unknown", "working", "error") else 0
 
         if state == "idle":
-            # probe quota on a throttled schedule using cli-based quota (non-intrusive)
-            if agent in ("claude", "codex", "agy") and (now_f - stats_last_probe) >= stats_every:
-                print(f"{ts} {session} probing quota ({agent})")
-                new_pct = new_reset_ts = None
-                if get_cached_provider_usage:
-                    try:
-                        res = get_cached_provider_usage(agent, ttl=30, force=False)
-                        limits = res.get("limits") or (res.get("parsed") or {}).get("limits") or []
-                        if limits:
-                            pcts = [lim.get("pct") for lim in limits if lim.get("pct") is not None]
-                            resets = [lim.get("reset_ts", 0) for lim in limits if lim.get("reset_ts", 0)]
-                            new_pct = min(pcts) if pcts else None
-                            new_reset_ts = min(resets) if resets else None
-                    except Exception as e:
-                        print(f"  quota error: {e}")
-                if new_pct is not None:
-                    current_pct, current_reset_ts = new_pct, new_reset_ts
-                stats_last_probe = now_f
-                now_f = time.time()
-                now = int(now_f)
-                ts = time.strftime("%H:%M:%S")
+            # Comms consumption (independent of babysit nudges)
+            _drain_comms(session, target, window_pane)
 
-            # measure C (% consumed this cycle) and D (AI processing time)
-            D = now_f - nudge_sent_ts if nudge_sent_ts > 0 else 0.0
-            if pct_at_nudge is not None and current_pct is not None and nudge_sent_ts > 0:
-                C = pct_at_nudge - current_pct
-                if C > 0:
-                    mu = _ALPHA * C + (1 - _ALPHA) * mu
-                    sigma = _ALPHA * abs(C - mu) + (1 - _ALPHA) * sigma
+            # babysit logic only if we have prompts (i.e. babysit was enabled for this pane)
+            if long_nudge or short_nudge:
+                # probe quota on a throttled schedule using cli-based quota (non-intrusive)
+                if agent in ("claude", "codex", "agy") and (now_f - stats_last_probe) >= stats_every:
+                    print(f"{ts} {session} probing quota ({agent})")
+                    new_pct = new_reset_ts = None
+                    if get_cached_provider_usage:
+                        try:
+                            res = get_cached_provider_usage(agent, ttl=30, force=False)
+                            limits = res.get("limits") or (res.get("parsed") or {}).get("limits") or []
+                            if limits:
+                                pcts = [lim.get("pct") for lim in limits if lim.get("pct") is not None]
+                                resets = [lim.get("reset_ts", 0) for lim in limits if lim.get("reset_ts", 0)]
+                                new_pct = min(pcts) if pcts else None
+                                new_reset_ts = min(resets) if resets else None
+                        except Exception as e:
+                            print(f"  quota error: {e}")
+                    if new_pct is not None:
+                        current_pct, current_reset_ts = new_pct, new_reset_ts
+                    stats_last_probe = now_f
+                    now_f = time.time()
+                    now = int(now_f)
+                    ts = time.strftime("%H:%M:%S")
 
-            print(f"{ts} {session} is idle — nudging")
-            if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
-                print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
-                _log_nudge(session, target, "clear", "/clear")
-                _send_message(target, "/clear")
-                time.sleep(1.0)
-                _log_nudge(session, target, "restore", long_nudge)
-                _send_message(target, long_nudge)
-            else:
-                _log_nudge(session, target, "idle", short_nudge)
-                _send_message(target, short_nudge)
-            pct_at_nudge = current_pct
-            nudge_sent_ts = now_f
-            nudge_count += 1
+                # measure C (% consumed this cycle) and D (AI processing time)
+                D = now_f - nudge_sent_ts if nudge_sent_ts > 0 else 0.0
+                if pct_at_nudge is not None and current_pct is not None and nudge_sent_ts > 0:
+                    C = pct_at_nudge - current_pct
+                    if C > 0:
+                        mu = _ALPHA * C + (1 - _ALPHA) * mu
+                        sigma = _ALPHA * abs(C - mu) + (1 - _ALPHA) * sigma
 
-            ema_ready = (
-                nudge_count >= _EMA_WARMUP
-                and current_pct is not None
-                and current_reset_ts is not None
-                and current_reset_ts > now_f
-            )
-            if ema_ready:
-                T = max(current_reset_ts - now_f, 3600.0)  # type: ignore[operator]
-                S = max(current_pct, 1.0)                   # type: ignore[arg-type]
-                tau = (T * (mu + _K_VAR * sigma)) / (S * _SAFETY)
-                sleep_dur = max(_MIN_WAIT, min(_MAX_WAIT, tau - D))
-                print(f"{ts} {session} EMA τ={tau:.0f}s D={D:.0f}s → sleep {sleep_dur:.0f}s"
-                      f" (μ={mu:.2f}% σ={sigma:.2f}%)")
-            else:
-                sleep_dur = float(interval)
+                print(f"{ts} {session} is idle — nudging")
+                if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
+                    print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
+                    _log_nudge(session, target, "clear", "/clear")
+                    _send_message(target, "/clear")
+                    time.sleep(1.0)
+                    _log_nudge(session, target, "restore", long_nudge)
+                    _send_message(target, long_nudge)
+                else:
+                    _log_nudge(session, target, "idle", short_nudge)
+                    _send_message(target, short_nudge)
+                pct_at_nudge = current_pct
+                nudge_sent_ts = now_f
+                nudge_count += 1
 
-            ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
-            _write_state(state_file, target, interval, state, "idle_nudge",
-                         now, 0, now + int(sleep_dur), 0, ema_state)
+                ema_ready = (
+                    nudge_count >= _EMA_WARMUP
+                    and current_pct is not None
+                    and current_reset_ts is not None
+                    and current_reset_ts > now_f
+                )
+                if ema_ready:
+                    T = max(current_reset_ts - now_f, 3600.0)  # type: ignore[operator]
+                    S = max(current_pct, 1.0)                   # type: ignore[arg-type]
+                    tau = (T * (mu + _K_VAR * sigma)) / (S * _SAFETY)
+                    sleep_dur = max(_MIN_WAIT, min(_MAX_WAIT, tau - D))
+                    print(f"{ts} {session} EMA τ={tau:.0f}s D={D:.0f}s → sleep {sleep_dur:.0f}s"
+                          f" (μ={mu:.2f}% σ={sigma:.2f}%)")
+                else:
+                    sleep_dur = float(interval)
+
+                ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
+                _write_state(state_file, target, interval, state, "idle_nudge",
+                             now, 0, now + int(sleep_dur), 0, ema_state)
 
         elif state == "unknown":
             if force_deadline > 0 and now >= force_deadline:

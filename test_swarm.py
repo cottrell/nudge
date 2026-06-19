@@ -1,5 +1,10 @@
 from pathlib import Path
+import os
+import random
+import shutil
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -441,7 +446,7 @@ windows:
     out = capsys.readouterr().out
 
     assert "session=demo exists=yes panes=1/1" in out
-    assert "demo:0.0 title=claude cmd=claude monitor=idle babysit=on" in out
+    assert "demo:0.0 title=claude cmd=claude monitor=idle worker=on" in out
 
 
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
@@ -481,7 +486,7 @@ windows:
     out = capsys.readouterr().out
 
     assert "demo panes=2/2" in out
-    assert "demo:0.0  claude  working  off" in out
+    assert "demo:0.0  claude  working  next=0s" in out
     assert "demo:0.1  codex   off      off" in out
 
 
@@ -626,8 +631,206 @@ windows:
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
     assert f"Status: python {SWARM_CLI} status {cfg.path} --brief" in text
     assert f"Watch: python {SWARM_CLI} status {cfg.path} --brief -w" in text
-    assert "ALWAYS use tmux-send" in text
+    assert "log_send" in text or "tmux-send" in text
     assert "Do NOT use raw tmux send-keys" in text
+
+
+def test_comms_defaults_to_monitor(tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          babysit:
+            enabled: false
+"""))
+    assert cfg.panes[0].comms is True
+    assert cfg.panes[0].babysit.enabled is False
+
+    cfg2 = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          comms:
+            enabled: false
+"""))
+    assert cfg2.panes[0].comms is False
+
+
+def test_comms_helpers(tmp_path: Path):
+    import os
+    from common import init_comms_db, log_send, log_broadcast, get_events, get_pending_events, get_pending_broadcasts, advance_cursor, advance_broadcast_cursor, get_cursors
+    # force a temp session db by chdir and monkey the path? but functions hardcode /tmp
+    # instead test via direct sqlite for now is complex; test the logic with a session that uses /tmp
+    sess = "test_comms_" + str(os.getpid())
+    try:
+        init_comms_db(sess)
+        log_send(sess, "0.0", "direct to 0.0")
+        log_broadcast(sess, "broadcast msg")
+        evs = get_events(sess)
+        assert len(evs) >= 2
+        pend = get_pending_events(sess, "0.0")
+        assert len(pend) >= 1
+        bcasts = get_pending_broadcasts(sess, "0.0")
+        assert len(bcasts) >= 1
+        # advance
+        advance_cursor(sess, "0.0", pend[-1][0])
+        advance_broadcast_cursor(sess, "0.0", bcasts[-1][0])
+        assert len(get_pending_events(sess, "0.0")) == 0
+        curs = get_cursors(sess)
+        assert "0.0" in curs
+    finally:
+        # cleanup
+        from common import _comms_db_path
+        db = _comms_db_path(sess)
+        if db.exists():
+            db.unlink()
+        # also remove parent if empty? skip
+
+
+def test_comms_end_to_end_plain_pane_no_agent(tmp_path: Path):
+    """Test the full log → consumer → delivery path with a plain tmux pane (no LLM agent required).
+
+    - Spins up a tmux session + pane.
+    - Attaches monitor-bin.
+    - Starts a comms-only worker (no babysit prompts).
+    - Writes a message to the log for the pane.
+    - Waits for the worker to detect idle and deliver it via tmux-send.
+    - Verifies the message appears in the pane capture.
+
+    This exercises the consumer independently of any agent.
+    """
+    if shutil.which("tmux") is None:
+        pytest.skip("tmux not available for end-to-end comms test")
+    monitor_bin = Path.cwd() / "monitor-bin"
+    attach_sh = Path.cwd() / "attach.sh"
+    if not monitor_bin.exists():
+        pytest.skip("monitor-bin not built (run 'make build')")
+    if not attach_sh.exists():
+        pytest.skip("attach.sh not found")
+
+    import random
+    pid = os.getpid()
+    uniq = f"{pid}-{random.randint(1000,9999)}"
+    session = f"comms-e2e-{uniq}"
+    pane = "0.0"
+    target = f"{session}:{pane}"
+    sock = f"/tmp/{session}_{pane}.sock"
+    runtime = Path("/tmp/nudge-swarm") / session
+    runtime.mkdir(parents=True, exist_ok=True)
+    worker_log = runtime / "worker.log"
+    worker = None
+    tmux_started = False
+
+    try:
+        # 1. Create plain tmux session (bash pane, no agent)
+        subprocess.check_call(["tmux", "new-session", "-d", "-s", session, "-n", "main", "bash"], timeout=5)
+        tmux_started = True
+
+        # 2. Attach monitor. Use "grok" (or any) to exercise grok-specific output parsing / idle detection.
+        # This lets us test the comms consumer against grok's monitor logic even with a plain pane (no real grok agent needed).
+        monitor_agent = "grok"
+        subprocess.check_call(
+            [str(attach_sh), target, monitor_agent],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
+        )
+
+        # Wait for socket
+        for _ in range(30):
+            if Path(sock).exists():
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail(f"monitor socket {sock} never appeared")
+
+        # Give it a moment to stabilize to idle
+        time.sleep(0.8)
+
+        # 3. Start comms-only worker (interval=2s for faster test, no prompts)
+        # This is the consumer that watches the log + monitor and delivers.
+        env = dict(
+            os.environ,
+            BABYSIT_STATE_FILE=str(runtime / "state.json"),
+        )
+        worker = subprocess.Popen(
+            [sys.executable, str(Path.cwd() / "babysit.py"), target, "2", "", ""],
+            stdout=worker_log.open("ab"),
+            stderr=worker_log.open("ab"),
+            env=env,
+            start_new_session=True,
+        )
+
+        # 4. Write a unique message to the log (simulates aiswarm send / broadcast --via-log)
+        msg = f"COMMS-E2E-TEST-{uniq}"
+        from common import log_send, init_comms_db
+        init_comms_db(session)
+        log_send(session, pane, msg)
+
+        # 5. Poll for delivery (capture the pane; worker should deliver when it sees idle)
+        delivered = False
+        capture = ""
+        for _ in range(40):  # up to ~8s
+            try:
+                capture = subprocess.check_output(
+                    ["tmux", "capture-pane", "-t", target, "-p"],
+                    text=True, timeout=2
+                )
+            except Exception:
+                capture = ""
+            if msg in capture:
+                delivered = True
+                break
+            time.sleep(0.2)
+
+        # Also peek at worker log for diagnostic
+        worker_out = ""
+        if worker_log.exists():
+            worker_out = worker_log.read_text()[-2000:]
+
+        assert delivered, (
+            f"Message never delivered to pane.\n"
+            f"Last capture tail: {capture[-300:]!r}\n"
+            f"Worker log tail:\n{worker_out}"
+        )
+
+    finally:
+        # Cleanup
+        if worker:
+            try:
+                worker.terminate()
+                worker.wait(timeout=2)
+            except Exception:
+                try:
+                    worker.kill()
+                except Exception:
+                    pass
+        if tmux_started:
+            try:
+                subprocess.check_call(["tmux", "kill-session", "-t", session], stderr=subprocess.DEVNULL, timeout=3)
+            except Exception:
+                pass
+        # Remove sockets / runtime
+        for p in [sock, str(runtime)]:
+            try:
+                pp = Path(p)
+                if pp.is_file():
+                    pp.unlink(missing_ok=True)
+                elif pp.is_dir():
+                    shutil.rmtree(pp, ignore_errors=True)
+            except Exception:
+                pass
+
 
 
 def test_broadcast_targets_monitored_panes_by_default(monkeypatch, tmp_path: Path, capsys):
@@ -732,7 +935,7 @@ def test_cli_short_options_dispatch(monkeypatch):
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
     monkeypatch.setattr(swarm_apply, "print_status", lambda cfg, brief: calls.append(("status", cfg, str(brief))))
-    monkeypatch.setattr(swarm_topology := __import__("topology"), "broadcast", lambda cfg, msg, include_nonmonitored, dry_run: calls.append(("broadcast", cfg, msg, str(include_nonmonitored), str(dry_run))))
+    monkeypatch.setattr(swarm_topology := __import__("topology"), "broadcast", lambda cfg, msg, include_nonmonitored, dry_run, via_log=False: calls.append(("broadcast", cfg, msg, str(include_nonmonitored), str(dry_run))))
     rc1 = swarm_cli.main(["status", "examples/swarm-grid.yaml", "-b"])
     rc2 = swarm_cli.main(["broadcast", "examples/swarm-grid.yaml", "hi", "-A", "-D"])
     assert rc1 == 0 and rc2 == 0
