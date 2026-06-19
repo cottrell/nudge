@@ -499,3 +499,72 @@ def watch_av_usage(agents: list[str] | None, recent_minutes: int = 0, interval: 
             time.sleep(interval)
     except KeyboardInterrupt:
         return
+
+
+def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False) -> None:
+    try:
+        from .common import get_cursors, get_events, get_pending_events, get_pending_broadcasts
+    except ImportError:
+        from common import get_cursors, get_events, get_pending_events, get_pending_broadcasts
+    curs = get_cursors(cfg.session_name)
+    if curs:
+        print("cursors:")
+        for rec, lid in sorted(curs.items()):
+            print(f"  {rec}: {lid}")
+    else:
+        print("cursors: (none)")
+    print()
+    if pending:
+        if pane:
+            pend = get_pending_events(cfg.session_name, pane)
+            for eid, ts, snd, typ, pay, meta in pend:
+                from_ = snd or "-"
+                to = pane
+                print(f"from: {from_}")
+                print(f"to: {to}")
+                print(f"ts: {ts} id:{eid} type:{typ}")
+                print(f"payload: {pay}")
+                print()
+            try:
+                bpend = get_pending_broadcasts(cfg.session_name, pane)
+                for eid, ts, snd, typ, pay, meta in bpend:
+                    from_ = snd or "-"
+                    print(f"from: {from_}")
+                    print(f"to: {pane} (via broadcast)")
+                    print(f"ts: {ts} id:{eid} type:{typ}")
+                    print(f"payload: {pay}")
+                    print()
+            except Exception:
+                pass
+        else:
+            print("pending summary (use --pane for details):")
+            try:
+                bcasts = get_pending_events(cfg.session_name, "__broadcast__")
+                print(f"  __broadcast__ pending: {len(bcasts)}")
+            except Exception:
+                pass
+            print("  Run with --pane X.Y for per-pane pending")
+    else:
+        evs = get_events(cfg.session_name, pane, limit)
+        if not evs:
+            print("(no events)")
+        for eid, ts, rec, snd, typ, pay, meta in evs:
+            from_ = snd or "-"
+            to = rec
+            print(f"from: {from_}")
+            print(f"to: {to}")
+            print(f"ts: {ts} id:{eid} type:{typ}")
+            print(f"payload: {pay}")
+            print()
+
+
+def watch_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False, interval: float = 1.0) -> None:
+    try:
+        while True:
+            sys.stdout.write("\x1b[H\x1b[2J")
+            sys.stdout.write(f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}\n\n")
+            print_log(cfg, pane, limit, pending)
+            sys.stdout.flush()
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return

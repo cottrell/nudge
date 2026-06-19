@@ -231,6 +231,8 @@ def build_parser() -> argparse.ArgumentParser:
     log_p.add_argument("--pane", help="Filter to a specific pane e.g. 0.2")
     log_p.add_argument("-n", "--limit", type=int, default=50)
     log_p.add_argument("--pending", action="store_true", help="Only show unread events for the given --pane (or summarize)")
+    log_p.add_argument("-w", "--watch", action="store_true", help="Refresh the log in place until interrupted")
+    log_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds (default: 1)")
 
     send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)", description="Send a message to a single target via the event log (instead of direct tmux-send)")
     send_p.add_argument("config", help="Path to YAML config")
@@ -429,63 +431,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "log":
             cfg = load_config(args.config)
-            try:
-                from .common import get_cursors, get_events, get_pending_events
-            except ImportError:
-                from common import get_cursors, get_events, get_pending_events
-            curs = get_cursors(cfg.session_name)
-            if curs:
-                print("cursors:")
-                for rec, lid in sorted(curs.items()):
-                    print(f"  {rec}: {lid}")
-            else:
-                print("cursors: (none)")
-            print()
-            if args.pending:
-                if args.pane:
-                    pend = get_pending_events(cfg.session_name, args.pane)
-                    for eid, ts, snd, typ, pay, meta in pend:
-                        from_ = snd or "-"
-                        to = args.pane
-                        print(f"from: {from_}")
-                        print(f"to: {to}")
-                        print(f"ts: {ts} id:{eid} type:{typ}")
-                        print(f"payload: {pay}")
-                        print()
-                    # also show pending broadcasts for this pane
-                    try:
-                        from .common import get_pending_broadcasts
-                    except ImportError:
-                        from common import get_pending_broadcasts
-                    bpend = get_pending_broadcasts(cfg.session_name, args.pane)
-                    for eid, ts, snd, typ, pay, meta in bpend:
-                        from_ = snd or "-"
-                        print(f"from: {from_}")
-                        print(f"to: {args.pane} (via broadcast)")
-                        print(f"ts: {ts} id:{eid} type:{typ}")
-                        print(f"payload: {pay}")
-                        print()
-
-                else:
-                    print("pending summary (use --pane for details):")
-                    try:
-                        bcasts = get_pending_events(cfg.session_name, "__broadcast__")
-                        print(f"  __broadcast__ pending: {len(bcasts)}")
-                    except Exception:
-                        pass
-                    print("  Run with --pane X.Y for per-pane pending")
-            else:
-                evs = get_events(cfg.session_name, args.pane, args.limit)
-                if not evs:
-                    print("(no events)")
-                for eid, ts, rec, snd, typ, pay, meta in evs:
-                    from_ = snd or "-"
-                    to = rec
-                    print(f"from: {from_}")
-                    print(f"to: {to}")
-                    print(f"ts: {ts} id:{eid} type:{typ}")
-                    print(f"payload: {pay}")
-                    print()
+            if args.watch:
+                swarm_topology.watch_log(cfg, args.pane, args.limit, args.pending, args.interval)
+                return 0
+            swarm_topology.print_log(cfg, args.pane, args.limit, args.pending)
             return 0
 
         if args.command == "send":
