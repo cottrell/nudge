@@ -1,5 +1,7 @@
-monitor-bin
-__pycache__/
-*.pyc
 .graphify_*
 graphify-out/
+*.log
+monitor-bin
+nudge.log
+*.pyc
+__pycache__/

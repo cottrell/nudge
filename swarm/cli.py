@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
     broadcast_p.add_argument("--via-log", action="store_true", help="Write to event log instead of direct tmux-send (consumer will deliver)")
 
-    stop_p = sub.add_parser("stop", help="Stop babysit workers and the tmux session")
+    stop_p = sub.add_parser("stop", help="Stop all worker loops (comms + babysit) and the tmux session")
     stop_p.add_argument("config", help="Path to YAML config")
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
 
@@ -269,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture_p.add_argument("config", help="Path to YAML config")
     capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
 
-    babysit_p = sub.add_parser("babysit", help="Manage the babysit prompt group (toggle on top of the always-on comms worker loop)")
+    babysit_p = sub.add_parser("babysit", help="Toggle the babysit prompt group on top of the base worker loop (comms always-on)")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
     for name in ("start", "status", "stop"):
         if name == "start":
