@@ -313,7 +313,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         headers = ["Target", "Title", "Agent", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "Agent", "Worker", "PID", "Worker Status", "Next Poll"]
+        headers = ["Target", "Title", "Command", "Agent", "PID", "Worker", "Next Poll"]
         rows = []
 
     for pane in cfg.panes:
@@ -323,7 +323,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             if brief:
                 rows.append((target, pane.title, "missing", "off"))
             else:
-                rows.append((target, pane.title, "-", "missing", "off", "-", "stopped", "-"))
+                rows.append((target, pane.title, "-", "missing", "-", "stopped", "-"))
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -333,7 +333,6 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = "off"
         worker_val = "off"
         pid_val = "-"
-        status_val = "-"
         next_val = "-"
         brief_val = "off"
         if pane.babysit.enabled or pane.comms:
@@ -404,29 +403,26 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 proc_state = "running"
 
             if proc_state == "stopped":
-                worker_val = "off"
+                worker_val = "stopped"
                 pid_val = "-"
-                status_val = "stopped"
                 next_val = "-"
                 brief_val = "stopped"
             else:
                 # 5. Format brief vs non-brief values
                 if proc_state == "stale":
                     brief_val = "stale"
-                    worker_val = active_mode
+                    worker_val = f"{active_mode} (stale)"
                     pid_val = str(pid) if pid else "-"
-                    status_val = "stale"
                     next_val = "-"
                 else:
                     # running
                     if note:
                         brief_val = f"next={next_str} ({note})" if next_str else note
-                        status_val = note
+                        worker_val = f"{active_mode} ({note})"
                     else:
                         brief_val = f"next={next_str}" if next_str else "running"
-                        status_val = "ok"
+                        worker_val = active_mode
 
-                    worker_val = active_mode
                     pid_val = str(pid) if pid else "-"
                     next_val = next_str or "-"
 
@@ -434,7 +430,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             rows.append((target, pane.title, monitor, brief_val))
         else:
             command = pane_current_command(cfg, pane.pane)
-            rows.append((target, pane.title, command or "-", monitor, worker_val, pid_val, status_val, next_val))
+            rows.append((target, pane.title, command or "-", monitor, pid_val, worker_val, next_val))
 
     if rows:
         all_rows = [headers] + rows
@@ -447,11 +443,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
         if not brief:
             lines.append("")
-            lines.append("  Agent         = live state of the agent in the pane (from its monitor: idle/working/etc)")
-            lines.append("  Worker        = active mode of the background helper process (comms or babysit)")
-            lines.append("  Worker Status = health of the background worker process")
-            lines.append("  Next Poll     = countdown to the background worker's next evaluation loop")
-            lines.append("                  Run `babysit start` / `babysit stop` to manage the babysit workers.")
+            lines.append("  Agent     = live state of the agent in the pane (from its monitor: idle/working/etc)")
+            lines.append("  Worker    = background helper process mode and health (comms or babysit)")
+            lines.append("  Next Poll = countdown to the background worker's next evaluation loop")
+            lines.append("              Run `babysit start` / `babysit stop` to manage the babysit workers.")
 
     return lines
 
