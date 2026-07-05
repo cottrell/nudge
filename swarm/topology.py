@@ -375,18 +375,26 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                     note = "drifted"
 
             # 3. Check state file for next poll
-            next_str = ""
+            comms_hb_str = "-"
+            nudge_hb_str = "-"
             state_file = babysit_state_path(cfg, pane.pane)
             if state_file.exists():
                 try:
                     data = json.loads(state_file.read_text())
                     now = int(time.time())
                     next_poll_at = int(data.get("next_poll_at") or 0)
+                    next_nudge_at = int(data.get("next_nudge_at") or 0)
+                    if next_nudge_at == 0:
+                        next_nudge_at = next_poll_at
                     if next_poll_at > 0:
-                        delta = max(0, next_poll_at - now)
-                        next_str = "≤5s" if delta <= 0 else f"{delta}s"
+                        delta_poll = max(0, next_poll_at - now)
+                        comms_hb_str = "≤5s" if delta_poll <= 0 else f"{delta_poll}s"
+                    if next_nudge_at > 0:
+                        delta_nudge = max(0, next_nudge_at - now)
+                        nudge_hb_str = "≤5s" if delta_nudge <= 0 else f"{delta_nudge}s"
                 except Exception:
-                    next_str = "?"
+                    comms_hb_str = "?"
+                    nudge_hb_str = "?"
 
             # 4. Check if PID file exists & check process running
             pid_file = babysit_pid_path(cfg, pane.pane)
@@ -418,7 +426,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             else:
                 # 5. Format brief vs non-brief values
                 pid_val = str(pid) if pid else "-"
-                comms_hb = next_str or "-"
+                comms_hb = comms_hb_str
 
                 if proc_state == "stale":
                     brief_val = "stale"
@@ -430,10 +438,11 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                     clear_hb = "-"
                 else:
                     # running
+                    hb_to_show = nudge_hb_str if pane.babysit.enabled and active_mode == "babysit" and note != "babysit not started" else comms_hb_str
                     if note:
-                        brief_val = f"next={next_str} ({note})" if next_str else note
+                        brief_val = f"next={hb_to_show} ({note})" if hb_to_show != "-" else note
                     else:
-                        brief_val = f"next={next_str}" if next_str else "running"
+                        brief_val = f"next={hb_to_show}" if hb_to_show != "-" else "running"
 
                     if pane.babysit.enabled:
                         if active_mode == "comms":
@@ -447,7 +456,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                         else:
                             # active running
                             babysit_val = "on"
-                            nudge_hb = next_str or "-"
+                            nudge_hb = nudge_hb_str
                             
                             # clear countdown
                             if spec:

@@ -184,6 +184,7 @@ def _write_state(
     nonidle_since: int,
     next_poll_at: int,
     next_force_at: int,
+    next_nudge_at: int = 0,
     ema: dict | None = None,
 ) -> None:
     if not path:
@@ -199,6 +200,7 @@ def _write_state(
         "nonidle_since": nonidle_since if nonidle_since > 0 else None,
         "next_poll_at": next_poll_at,
         "next_force_nudge_at": next_force_at,
+        "next_nudge_at": next_nudge_at,
     }
     if ema:
         d["ema"] = ema
@@ -273,24 +275,25 @@ def main() -> int:
 
     nonidle_since: int = 0
     stats_last_probe: float = 0.0
-    sleep_dur: float = float(interval)
+    poll_interval: float = min(5.0, float(interval))
+    now: int = int(time.time())
+    next_nudge_at: int = now + interval if long_nudge else 0
 
     # startup nudge
     if long_nudge:
-        now = int(time.time())
         print(f"{time.strftime('%H:%M:%S')} {session} startup babysit prompt")
         _log_nudge(session, target, "startup", long_nudge)
         _deliver(session, target, window_pane, long_nudge, etype="babysit_startup")
         pct_at_nudge = current_pct  # None until first probe
         nudge_sent_ts = time.time()
         nudge_count += 1
-        _write_state(state_file, target, interval, "", "startup_nudge", now, 0, now + interval, 0)
+        _write_state(state_file, target, interval, "", "startup_nudge", now, 0, now + int(poll_interval), 0, next_nudge_at)
 
     # initial comms drain (deliver anything that arrived before we started)
     _drain_comms(session, target, window_pane)
 
     while True:
-        time.sleep(sleep_dur)
+        time.sleep(poll_interval)
         now_f = time.time()
         now = int(now_f)
         ts = time.strftime("%H:%M:%S")
@@ -338,53 +341,60 @@ def main() -> int:
                     now = int(now_f)
                     ts = time.strftime("%H:%M:%S")
 
-                # measure C (% consumed this cycle) and D (AI processing time)
-                D = now_f - nudge_sent_ts if nudge_sent_ts > 0 else 0.0
-                if pct_at_nudge is not None and current_pct is not None and nudge_sent_ts > 0:
-                    C = pct_at_nudge - current_pct
-                    if C > 0:
-                        mu = _ALPHA * C + (1 - _ALPHA) * mu
-                        sigma = _ALPHA * abs(C - mu) + (1 - _ALPHA) * sigma
+                # Check if it is time to nudge
+                if now >= next_nudge_at:
+                    # measure C (% consumed this cycle) and D (AI processing time)
+                    D = now_f - nudge_sent_ts if nudge_sent_ts > 0 else 0.0
+                    if pct_at_nudge is not None and current_pct is not None and nudge_sent_ts > 0:
+                        C = pct_at_nudge - current_pct
+                        if C > 0:
+                            mu = _ALPHA * C + (1 - _ALPHA) * mu
+                            sigma = _ALPHA * abs(C - mu) + (1 - _ALPHA) * sigma
 
-                print(f"{ts} {session} is idle — nudging")
-                if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
-                    print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
-                    _log_nudge(session, target, "clear", "/clear")
-                    _deliver(session, target, window_pane, "/clear", etype="clear")
-                    time.sleep(1.0)
-                    _log_nudge(session, target, "restore", long_nudge)
-                    _deliver(session, target, window_pane, long_nudge, etype="babysit_restore")
+                    print(f"{ts} {session} is idle — nudging")
+                    if clear_every > 0 and nudge_count > 0 and (nudge_count % clear_every) == 0:
+                        print(f"{ts} {session} clearing context (nudge_count={nudge_count})")
+                        _log_nudge(session, target, "clear", "/clear")
+                        _deliver(session, target, window_pane, "/clear", etype="clear")
+                        time.sleep(1.0)
+                        _log_nudge(session, target, "restore", long_nudge)
+                        _deliver(session, target, window_pane, long_nudge, etype="babysit_restore")
+                    else:
+                        _log_nudge(session, target, "idle", short_nudge)
+                        _deliver(session, target, window_pane, short_nudge, etype="babysit")
+                    pct_at_nudge = current_pct
+                    nudge_sent_ts = now_f
+                    nudge_count += 1
+
+                    ema_ready = (
+                        nudge_count >= _EMA_WARMUP
+                        and current_pct is not None
+                        and current_reset_ts is not None
+                        and current_reset_ts > now_f
+                    )
+                    if ema_ready:
+                        T = max(current_reset_ts - now_f, 3600.0)
+                        S = max(current_pct, 1.0)
+                        tau = (T * (mu + _K_VAR * sigma)) / (S * _SAFETY)
+                        sleep_dur = max(_MIN_WAIT, min(_MAX_WAIT, tau - D))
+                        print(f"{ts} {session} EMA τ={tau:.0f}s D={D:.0f}s → next nudge in {sleep_dur:.0f}s"
+                              f" (μ={mu:.2f}% σ={sigma:.2f}%)")
+                    else:
+                        sleep_dur = float(interval)
+
+                    next_nudge_at = now + int(sleep_dur)
+                    ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
+                    _write_state(state_file, target, interval, state, "idle_nudge",
+                                 now, 0, now + int(poll_interval), 0, next_nudge_at, ema_state)
                 else:
-                    _log_nudge(session, target, "idle", short_nudge)
-                    _deliver(session, target, window_pane, short_nudge, etype="babysit")
-                pct_at_nudge = current_pct
-                nudge_sent_ts = now_f
-                nudge_count += 1
-
-                ema_ready = (
-                    nudge_count >= _EMA_WARMUP
-                    and current_pct is not None
-                    and current_reset_ts is not None
-                    and current_reset_ts > now_f
-                )
-                if ema_ready:
-                    T = max(current_reset_ts - now_f, 3600.0)  # type: ignore[operator]
-                    S = max(current_pct, 1.0)                   # type: ignore[arg-type]
-                    tau = (T * (mu + _K_VAR * sigma)) / (S * _SAFETY)
-                    sleep_dur = max(_MIN_WAIT, min(_MAX_WAIT, tau - D))
-                    print(f"{ts} {session} EMA τ={tau:.0f}s D={D:.0f}s → sleep {sleep_dur:.0f}s"
-                          f" (μ={mu:.2f}% σ={sigma:.2f}%)")
-                else:
-                    sleep_dur = float(interval)
-
-                ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
-                _write_state(state_file, target, interval, state, "idle_nudge",
-                             now, 0, now + int(sleep_dur), 0, ema_state)
+                    ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
+                    _write_state(state_file, target, interval, state, "idle_observe",
+                                 0, 0, now + int(poll_interval), 0, next_nudge_at, ema_state)
             else:
                 # comms-only worker (no prompts): still write basic state so status
                 # can show "next=Ns" instead of "restart-needed", and clear any old force timers.
                 _write_state(state_file, target, interval, state, "comms_idle",
-                             now, 0, now + int(sleep_dur), 0)
+                             now, 0, now + int(poll_interval), 0, 0)
 
         elif state == "unknown":
             if force_deadline > 0 and now >= force_deadline:
@@ -393,20 +403,18 @@ def main() -> int:
                 _deliver(session, target, window_pane, short_nudge, etype="babysit_forced")
                 nonidle_since = now
                 nudge_count += 1
-                sleep_dur = float(interval)
+                next_nudge_at = now + interval
                 _write_state(state_file, target, interval, state, "forced_nudge",
-                             now, nonidle_since, now + interval, 0)
+                             now, nonidle_since, now + int(poll_interval), 0, next_nudge_at)
             else:
                 print(f"{ts} {session} is unknown — waiting")
-                sleep_dur = float(interval)
                 _write_state(state_file, target, interval, state, "wait_unknown",
-                             0, nonidle_since, now + interval, next_force_at)
+                             0, nonidle_since, now + int(poll_interval), next_force_at, next_nudge_at)
 
         elif state == "rate_limited":
             print(f"{ts} {session} is rate_limited — waiting")
-            sleep_dur = float(interval)
             _write_state(state_file, target, interval, state, "wait_rate_limited",
-                         0, 0, now + interval, 0)
+                         0, 0, now + int(poll_interval), 0, next_nudge_at)
 
         elif state in ("working", "error"):
             if force_deadline > 0 and now >= force_deadline:
@@ -415,20 +423,18 @@ def main() -> int:
                 _deliver(session, target, window_pane, short_nudge, etype="babysit_forced")
                 nonidle_since = now
                 nudge_count += 1
-                sleep_dur = float(interval)
+                next_nudge_at = now + interval
                 _write_state(state_file, target, interval, state, "forced_nudge",
-                             now, nonidle_since, now + interval, 0)
+                             now, nonidle_since, now + int(poll_interval), 0, next_nudge_at)
             else:
                 print(f"{ts} {session} is {state}")
-                sleep_dur = float(interval)
                 _write_state(state_file, target, interval, state, f"wait_{state}",
-                             0, nonidle_since, now + interval, next_force_at)
+                             0, nonidle_since, now + int(poll_interval), next_force_at, next_nudge_at)
 
         else:
             print(f"{ts} {session} is {state!r}")
-            sleep_dur = float(interval)
             _write_state(state_file, target, interval, state, f"observe_{state}",
-                         0, 0, now + interval, 0)
+                         0, 0, now + int(poll_interval), 0, next_nudge_at)
 
 
 if __name__ == "__main__":
