@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-05 12:52'
-updated_date: '2026-07-05 12:55'
+updated_date: '2026-07-05 13:03'
 labels:
   - nudge
   - babysit
@@ -55,3 +55,12 @@ Partial fix: build_runtime_map now always includes for config.enabled but has_* 
 
 build_runtime_map now sets has_* from deployed spec content. Combined with hot-update in disable, future runtimes will reflect 'not active' for disabled babysit. Test for runtime map still passes.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-05 13:03
+---
+Runtime fix landed in same commit. Should help thoth/council-data false positives. Awaiting user testing and pane reviews.
+---
+<!-- COMMENTS:END -->

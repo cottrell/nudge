@@ -248,9 +248,10 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
             # UIs should check has_long_prompt (or future 'active') to know if the
             # prompt loop is actually on, not just configured. This fixes false
             # "babysit running" reports (e.g. in thoth) after babysit stop or full stop.
-            # has_* reflect deployed reality (may be false even if configured).
-            # Consumers (thoth etc.) should prefer has_* == true (or check pid + process)
-            # over mere presence of the key to decide "babysit running".
+            # has_* reflect the deployed spec for the babysit prompt group.
+            # The key is present for any pane with babysit.enabled in config (for path discovery).
+            # UIs should check has_long_prompt/has_short_prompt (true only when active prompts deployed)
+            # or inspect the actual pid to determine if the babysit group is running.
             entry["babysit"] = {
                 **bs_paths,
                 "has_long_prompt": has_long,
@@ -289,13 +290,15 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
         "CLI: aiswarm send <cfg> 0.2 \"msg here\"   (via log)",
         "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
-        "Comms consumer (message delivery) defaults to on for monitor: true panes (independent of babysit).",
-        "  `start` starts comms workers for all monitored panes.",
-        "Set nudge.comms.enabled: false to disable explicitly.",
-        "Babysit: enabled: true means the pane gets *prompt-loop* babysitting (nudges on idle).",
-        "  Use `babysit start` (not plain `start`) to start the actual babysitters for those panes.",
-        "Babysit nudges go via the log by default (nudge.comms + worker). Set babysit.via_log: false to send direct.",
-        "Consumer delivers via tmux-send when pane ready.",
+        "Worker loop (comms consumer / message delivery) defaults to on for monitor: true panes.",
+        "  `start` ensures the base worker loop for monitored panes (comms group always active).",
+        "  Babysit prompt group is independent and optional.",
+        "Set nudge.comms.enabled: false to disable the worker loop explicitly.",
+        "Babysit: enabled: true means the pane can have the prompt-nudge group (idle nudges, EMA, clears).",
+        "  Use `babysit start` to enable the babysit group on configured panes.",
+        "  Use `babysit stop` to disable the babysit group (worker loop stays for comms).",
+        "Babysit nudges go via the log by default. Set babysit.via_log: false to send direct.",
+        "Consumer delivers via tmux-send when pane is idle.",
         "Direct tmux-send still available.",
         "Clear with clear_comms(session, confirm=True) after y/confirm.",
         "",

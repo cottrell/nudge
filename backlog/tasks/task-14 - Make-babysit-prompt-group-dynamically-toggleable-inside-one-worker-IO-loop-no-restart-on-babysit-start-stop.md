@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-05 12:52'
-updated_date: '2026-07-05 12:54'
+updated_date: '2026-07-05 13:03'
 labels:
   - nudge
   - babysit
@@ -40,9 +40,9 @@ This is follow-on to the API refactor task.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A running worker loop for a pane can have its babysit behavior turned on and off by updating the spec without SIGTERM/restart (in most cases)
-- [ ] #2 babysit.py reads/re-evaluates prompt presence from spec (not only argv) on relevant cycles
-- [ ] #3 babysitctl disable_babysit (or equivalent) for an active pane updates spec and avoids unnecessary restart when possible
+- [x] #1 A running worker loop for a pane can have its babysit behavior turned on and off by updating the spec without SIGTERM/restart (in most cases)
+- [x] #2 babysit.py reads/re-evaluates prompt presence from spec (not only argv) on relevant cycles
+- [x] #3 babysitctl disable_babysit (or equivalent) for an active pane updates spec and avoids unnecessary restart when possible
 - [ ] #4 In-memory EMA and nudge state is preserved across a toggle where possible (or properly re-initialized)
 - [ ] #5 Tests (including e2e comms and status) still pass; add coverage for toggle-without-restart if feasible
 - [ ] #6 No breakage to forced nudges, clears, startup nudge, etc.
@@ -53,3 +53,12 @@ This is follow-on to the API refactor task.
 <!-- SECTION:NOTES:BEGIN -->
 Dynamic support: _current_prompts() in babysit.py re-reads spec each loop. _prompts_only_change + direct spec write in babysitctl avoids restart on toggle. Runtime map tweak as side effect for thoth issue.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-05 13:03
+---
+Dynamic reload and hot-update implemented + committed. Part of the same commit de3f580. Review delegated in parallel to claude/codex panes.
+---
+<!-- COMMENTS:END -->
