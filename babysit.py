@@ -77,6 +77,9 @@ def _query_socket(sock_path: str) -> dict:
 
 def _send_message(target: str, msg: str) -> None:
     # Babysit must send literal commands (e.g. /stats, /clear) unchanged.
+    if os.environ.get("BABYSIT_DRY_RUN") == "1":
+        print(f"  [DRY RUN] would tmux-send target={target} msg={msg!r}")
+        return
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
@@ -84,6 +87,9 @@ def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babys
     """Deliver a message. By default via the comms log (pushed to log, then drained by consumer on idle).
     Falls back to direct if via_log=false or log path fails.
     """
+    if os.environ.get("BABYSIT_DRY_RUN") == "1":
+        print(f"  [DRY RUN] would deliver session={session} pane={pane} etype={etype} msg={msg!r}")
+        return
     if via_log is None:
         via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
     if via_log:
