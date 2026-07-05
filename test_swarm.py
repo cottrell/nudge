@@ -275,8 +275,8 @@ windows:
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
     monkeypatch.setattr(swarm_start.time, "sleep", lambda *_: None)
-    monkeypatch.setattr(babysitctl, "start", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit start")))
-    monkeypatch.setattr(babysitctl, "start_comms", lambda *args, **kwargs: None)
+    monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
 
     swarm_start.start(cfg, dry_run=False)
 
@@ -311,8 +311,8 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
-    monkeypatch.setattr(babysitctl, "start", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit start")))
-    monkeypatch.setattr(babysitctl, "start_comms", lambda *args, **kwargs: None)
+    monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
 
     swarm_start.start(cfg, dry_run=True)
 
@@ -405,7 +405,7 @@ windows:
     monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
     monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, lp_file, sp_file, str(via_log), str(dry_run))))
 
-    babysitctl.start(cfg, dry_run=False)
+    babysitctl.apply_babysit(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
@@ -969,11 +969,11 @@ def test_cli_short_options_dispatch(monkeypatch):
 
 def test_cli_stop_dispatches_to_babysit_and_tmux_stop(monkeypatch):
     calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr(babysitctl, "stop", lambda cfg, dry_run: calls.append(("babysit", cfg.session_name, str(dry_run))))
+    monkeypatch.setattr(babysitctl, "stop_workers", lambda cfg, dry_run: calls.append(("workers", cfg.session_name, str(dry_run))))
     monkeypatch.setattr(swarm_cli, "_stop_tmux_session", lambda session_name, dry_run: calls.append(("tmux", session_name, str(dry_run))))
     rc = swarm_cli.main(["stop", "examples/swarm-grid.yaml"])
     assert rc == 0
-    assert calls == [("babysit", "agent_grid", "False"), ("tmux", "agent_grid", "False")]
+    assert calls == [("workers", "agent_grid", "False"), ("tmux", "agent_grid", "False")]
 
 
 def test_cli_babysit_status_dispatches(monkeypatch):
@@ -985,10 +985,10 @@ def test_cli_babysit_status_dispatches(monkeypatch):
     assert calls == [("status", "CFG")]
 
 
-def test_cli_babysit_stop_dispatches_to_start_comms(monkeypatch):
+def test_cli_babysit_stop_dispatches_to_disable_babysit(monkeypatch):
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
-    monkeypatch.setattr(babysitctl, "start_comms", lambda cfg, dry_run: calls.append(("start_comms", cfg, dry_run)))
+    monkeypatch.setattr(babysitctl, "disable_babysit", lambda cfg, dry_run: calls.append(("disable_babysit", cfg, dry_run)))
     rc = swarm_cli.main(["babysit", "stop", "examples/swarm-grid.yaml"])
     assert rc == 0
-    assert calls == [("start_comms", "CFG", False)]
+    assert calls == [("disable_babysit", "CFG", False)]

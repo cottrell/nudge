@@ -251,6 +251,32 @@ def main() -> int:
         print(f"  EMA pacing: alpha={_ALPHA} safety={_SAFETY} k_var={_K_VAR} warmup={_EMA_WARMUP} "
               f"min={_MIN_WAIT}s max={_MAX_WAIT}s")
 
+    _argv_long = long_nudge
+    _argv_short = short_nudge
+
+    def _current_prompts() -> tuple[str, str]:
+        """Re-read from on-disk spec if present (supports dynamic babysit enable/disable
+        without restarting the worker process). Fall back to launch argv values.
+        """
+        if state_file:
+            try:
+                p = Path(state_file)
+                # state is ...state.json ; spec is sibling .json with same stem
+                spec_p = p.with_name(p.name.replace(".state.json", ".json"))
+                if spec_p.exists():
+                    sp = json.loads(spec_p.read_text())
+                    lp = sp.get("long_prompt") or ""
+                    sp_ = sp.get("short_prompt") or lp
+                    # Use spec values (even if empty) if the spec file exists; this is how
+                    # disable_babysit signals "comms only".
+                    return lp, sp_
+            except Exception:
+                pass
+        return _argv_long, _argv_short
+
+    # Adopt any prompts from spec written before we started (or at launch).
+    long_nudge, short_nudge = _current_prompts()
+
     sock = f"/tmp/{session}_{window_pane}.sock"
 
     r = subprocess.run(["tmux", "list-panes", "-t", target], capture_output=True)
@@ -300,6 +326,10 @@ def main() -> int:
 
         data = _query_socket(sock)
         state = data.get("state", "")
+
+        # Refresh babysit prompts from live spec. This lets `babysit start` / `babysit stop`
+        # (disable) toggle the babysit group on a running worker without killing it.
+        long_nudge, short_nudge = _current_prompts()
 
         if state in ("idle", "rate_limited") or not state:
             nonidle_since = 0

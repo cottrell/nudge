@@ -240,18 +240,22 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                 try:
                     sp = json.loads(spec_file.read_text() or "{}")
                     has_long = bool(sp.get("long_prompt") or sp.get("short_prompt"))
-                    has_short = has_long  # if either, both usually present
+                    has_short = has_long
                 except Exception:
                     pass
-            if has_long or has_short or not spec_file.exists():
-                # Only advertise babysit in runtime map when config wants it
-                # and either no worker started yet, or the deployed spec actually
-                # has prompts (i.e. full babysit worker, not just comms from `start`).
-                entry["babysit"] = {
-                    **bs_paths,
-                    "has_long_prompt": has_long,
-                    "has_short_prompt": has_short,
-                }
+            # Always advertise the babysit paths when configured in yaml.
+            # has_* reflect the *deployed* spec (false if never started or disabled).
+            # UIs should check has_long_prompt (or future 'active') to know if the
+            # prompt loop is actually on, not just configured. This fixes false
+            # "babysit running" reports (e.g. in thoth) after babysit stop or full stop.
+            # has_* reflect deployed reality (may be false even if configured).
+            # Consumers (thoth etc.) should prefer has_* == true (or check pid + process)
+            # over mere presence of the key to decide "babysit running".
+            entry["babysit"] = {
+                **bs_paths,
+                "has_long_prompt": has_long,
+                "has_short_prompt": has_short,
+            }
         panes_map[pane.pane] = entry
     return {
         "session_name": cfg.session_name,
