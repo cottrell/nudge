@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-05 12:52'
-updated_date: '2026-07-05 13:11'
+updated_date: '2026-07-05 13:14'
 labels:
   - nudge
   - babysit
@@ -60,6 +60,9 @@ Additional naming string cleanups (cli stop help, babysit sub help, legacy comme
 Deeper pass committed in dba35e0: removed dead desired_panes(), cleaned redundant imports in babysit.py, hardened process_running(), more README terminology updates for 'worker loop' vs babysit group. No file renames (compat).
 
 Uncommitted work cleaned: committed review-requests/ (the manual review prompts for claude/codex), updated task md files, .gitignore for logs, final cli.py. Repo now clean. Deeper pass done.
+
+Review-requests/ directory removed from repo (user: do not need to commit the manual review prompts).
+No feedback received yet from the target panes.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

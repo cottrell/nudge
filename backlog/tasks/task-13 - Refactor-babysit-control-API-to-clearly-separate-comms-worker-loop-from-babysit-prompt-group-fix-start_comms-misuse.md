@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-07-05 12:51'
-updated_date: '2026-07-05 13:07'
+updated_date: '2026-07-05 13:14'
 labels:
   - nudge
   - babysit
@@ -73,5 +73,16 @@ Manual review prompts prepared in review-requests/ (claude and codex versions) b
 created: 2026-07-05 13:07
 ---
 Manual CLI runs performed (status, babysit status, help) and full review prompt files written to review-requests/{claude,codex}-review-TASK-13-14-16.md. No swarm sends or restarts. User can feed the prompts directly to claude/codex CLIs.
+---
+
+created: 2026-07-05 13:14
+---
+No reviews received from the claude (0.1) or codex (0.0) panes as of now.
+
+The original review requests are still present in the durable comms log for those panes (written via cli send), but no replies/feedback have come back.
+
+This is consistent with the swarm running pre-change code (the log consumers may not be active or the panes may not be processing).
+
+Manual review prompt files were prepared but (per your note) are not being kept committed in the repo.
 ---
 <!-- COMMENTS:END -->
