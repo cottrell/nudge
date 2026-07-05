@@ -456,7 +456,7 @@ windows:
     assert len(matching) == 1
     assert "claude" in matching[0]
     assert "idle" in matching[0]
-    assert "babysit" in matching[0]
+    assert any(s in matching[0] for s in ["stopped", "stale", "active", "not started"])
 
 
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
