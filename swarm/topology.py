@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from datetime import datetime
@@ -175,8 +176,36 @@ def ensure_monitor(cfg: SwarmConfig, pane: str, agent: str, dry_run: bool) -> No
 
 
 def pane_current_command(cfg: SwarmConfig, pane: str) -> str:
-    proc = run("tmux", "display-message", "-p", "-t", f"{cfg.session_name}:{pane}", "#{pane_current_command}")
-    return proc.stdout.strip()
+    raw = run("tmux", "display-message", "-p", "-t", f"{cfg.session_name}:{pane}", "#{pane_current_command}").stdout.strip()
+    if not raw:
+        return ""
+    # Node.js (and some other) wrappers often report the interpreter (node/python)
+    # instead of the tool name (codex, etc.). Try to resolve a friendlier name.
+    if raw in ("node", "python", "python3", "bun", "deno"):
+        pid = run("tmux", "display-message", "-p", "-t", f"{cfg.session_name}:{pane}", "#{pane_pid}").stdout.strip()
+        if pid and pid.isdigit():
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    parts = [p.decode("utf-8", errors="ignore") for p in f.read().split(b"\0") if p]
+                # Look for known tool names in the arguments (skip the interpreter itself)
+                for arg in parts[1:]:
+                    a = arg.lower()
+                    if "codex" in a:
+                        return "codex"
+                    if "claude" in a and "code" in a:
+                        return "claude"
+                    if "gemini" in a:
+                        return "gemini"
+                    if a.endswith("codex.js"):
+                        return "codex"
+                # Fallback: first non-empty non-interpreter basename
+                for arg in parts[1:]:
+                    base = os.path.basename(arg)
+                    if base and base not in ("node", "python", "python3", "bun", "deno"):
+                        return base
+            except Exception:
+                pass
+    return raw
 
 
 def ensure_title(cfg: SwarmConfig, pane: str, title: str, dry_run: bool) -> None:
@@ -479,7 +508,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         if brief:
             rows.append((target, pane.title, monitor, brief_val))
         else:
-            command = pane_current_command(cfg, pane.pane)
+            # Show the configured command from the YAML (what was requested),
+            # not the live process name from tmux (which for node-based tools
+            # like codex shows "node").
+            command = pane.command or pane_current_command(cfg, pane.pane) or "-"
             rows.append((target, pane.title, command or "-", monitor, pid_val, comms_hb, babysit_val, nudge_hb, clear_hb))
 
     if rows:
