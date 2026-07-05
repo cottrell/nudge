@@ -6,6 +6,45 @@ Primary workflow is the YAML swarm CLI under `swarm/cli.py`.
 
 States: `unknown` `working` `idle`
 
+## Basic operational flow
+
+```bash
+# 1. Turn on the swarm (tmux session + panes + per-pane monitors + comms workers)
+#    Note: this is mostly a "create" for the tmux grid. Changing pane counts later
+#    requires stopping and re-starting (see limitations below).
+python swarm/cli.py start ./swarm/<project>.yaml
+
+# Architecture notes:
+# - One tmux *session* per YAML file (named by `session_name`)
+# - One *monitor* (activity detector via monitor-bin) per `monitor: true` pane
+#   (creates a Unix socket /tmp/<session>_<W.N>.sock per pane)
+# - Comms workers (log consumers that deliver on idle) are started for monitored panes
+# - **Babysit (automatic nudging / prompt loops) is NOT turned on yet**
+#
+# Important: `start` is **not** a full declarative "update" for the tmux grid.
+# If you change the number of panes/windows in the YAML after the swarm is running,
+# re-running `start` will refuse and tell you to recreate the session first.
+# Worker configuration (comms/babysit) and monitor setup are more forgiving on re-start.
+```
+
+```bash
+# 2. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
+python swarm/cli.py babysit start ./swarm/<project>.yaml
+```
+
+```bash
+# 3. Turn off babysit only (swarm / monitors / comms stay up)
+python swarm/cli.py babysit stop ./swarm/<project>.yaml
+```
+
+```bash
+# 4. Full teardown
+# - stops babysit workers (if running)
+# - kills per-pane monitors
+# - tears down the tmux session
+python swarm/cli.py stop ./swarm/<project>.yaml
+```
+
 ## Swarm-first workflow
 
 Create a starter config and AGENTS note:
@@ -16,25 +55,20 @@ python swarm/cli.py init <project>
 
 View/edit `./swarm/<project>.yaml`.
 
-Apply and run:
+See the **Basic operational flow** section above for the recommended sequence (`start`, `babysit start`, `babysit stop`, `stop`).
+
+Other useful commands:
 
 ```bash
-python swarm/cli.py apply ./swarm/<project>.yaml
-python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
-python swarm/cli.py status ./swarm/<project>.yaml --brief
+python swarm/cli.py start --skip-grid ./swarm/<project>.yaml
 python swarm/cli.py status ./swarm/<project>.yaml --brief -w
 python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
 python swarm/cli.py broadcast --via-log ./swarm/<project>.yaml "use durable log"
 python swarm/cli.py send ./swarm/<project>.yaml 0.0 "hello via log"
 python swarm/cli.py log ./swarm/<project>.yaml --pending
-python swarm/cli.py cursors ./swarm/<project>.yaml
 python swarm/cli.py clear-comms ./swarm/<project>.yaml -y
 python swarm/cli.py quota ./swarm/<project>.yaml
 python swarm/cli.py av-usage ./swarm/<project>.yaml
-python swarm/cli.py stop ./swarm/<project>.yaml
-python swarm/cli.py babysit apply ./swarm/<project>.yaml
-python swarm/cli.py babysit status ./swarm/<project>.yaml
-python swarm/cli.py babysit stop ./swarm/<project>.yaml
 ```
 
 Status/usage reliability note:
@@ -44,17 +78,17 @@ Status/usage reliability note:
 - quiet long-running commands can appear idle, while continuous idle-screen redraws can appear working
 - `usage` is handled separately and remains best-effort; treat it as an operator hint
 
-Attach after apply if needed:
+Attach after start if needed:
 
 ```bash
-python swarm/cli.py apply ./swarm/<project>.yaml --attach
+python swarm/cli.py start ./swarm/<project>.yaml --attach
 ```
 
 tmuxp-first flow:
 
 ```bash
 tmuxp load ./swarm/<project>.yaml
-python swarm/cli.py apply --skip-grid ./swarm/<project>.yaml
+python swarm/cli.py start --skip-grid ./swarm/<project>.yaml
 ```
 
 Built-in examples:
@@ -74,9 +108,13 @@ Built-in examples:
 Notes:
 
 - pane IDs are derived as `W.N` (window index, pane index)
-- `apply` creates/expands windows and applies per-window tmux layout
-- `apply --skip-grid` skips session/window creation and only sets up monitors/titles/commands
-- `apply` and `babysit apply` write runtime files under `/tmp/nudge-swarm/<session>/`
+- `start` creates the tmux grid (session/windows/panes) according to the YAML.
+  It is **not** safe to re-run after changing pane counts or layout on a live session
+  (you'll be told to recreate the session).
+- One monitor per `monitor: true` pane (started by `start`)
+- `start` starts comms workers (message delivery). It does **not** start babysit prompt loops.
+- `babysit start` starts (or reconciles) the babysit workers for panes with `babysit.enabled: true`
+- `start` and `babysit start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
 - self-awareness note: `/tmp/nudge-swarm/<session>/self-awareness.txt`
 
@@ -104,7 +142,7 @@ aiswarm cursors ./swarm/<project>.yaml
 aiswarm clear-comms ./swarm/<project>.yaml -y
 ```
 
-`comms` workers (started automatically by `apply` for `monitor: true` panes; `babysit apply` also manages babysit prompt loops) consume the log and deliver via `tmux-send` when the pane is idle.
+`comms` workers (started automatically by `start` for `monitor: true` panes; `babysit start` also manages babysit prompt loops) consume the log and deliver via `tmux-send` when the pane is idle.
 
 Direct/manual still works with `tmux-send`.
 

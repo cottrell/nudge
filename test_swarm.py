@@ -11,7 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
-import topology as swarm_apply
+import topology as swarm_start
+swarm_apply = swarm_start
 import babysit as babysit_worker
 import babysitctl
 import cli as swarm_cli
@@ -249,7 +250,7 @@ windows:
     assert pane.babysit.clear_every == 10
 
 
-def test_apply_invokes_grid_monitor_and_command(monkeypatch, tmp_path: Path):
+def test_start_invokes_grid_monitor_and_command(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -273,11 +274,11 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
-    monkeypatch.setattr(swarm_apply.time, "sleep", lambda *_: None)
-    monkeypatch.setattr(babysitctl, "apply", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
-    monkeypatch.setattr(babysitctl, "apply_comms", lambda *args, **kwargs: None)
+    monkeypatch.setattr(swarm_start.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(babysitctl, "start", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit start")))
+    monkeypatch.setattr(babysitctl, "start_comms", lambda *args, **kwargs: None)
 
-    swarm_apply.apply(cfg, dry_run=False)
+    swarm_start.start(cfg, dry_run=False)
 
     assert calls == [
         ("grid", "demo", "False"),
@@ -291,7 +292,7 @@ windows:
     ]
 
 
-def test_apply_dry_run_writes_runtime_notes(monkeypatch, tmp_path: Path):
+def test_start_dry_run_writes_runtime_notes(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo_dry
 windows:
@@ -310,10 +311,10 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
-    monkeypatch.setattr(babysitctl, "apply", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
-    monkeypatch.setattr(babysitctl, "apply_comms", lambda *args, **kwargs: None)
+    monkeypatch.setattr(babysitctl, "start", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit start")))
+    monkeypatch.setattr(babysitctl, "start_comms", lambda *args, **kwargs: None)
 
-    swarm_apply.apply(cfg, dry_run=True)
+    swarm_start.start(cfg, dry_run=True)
 
     assert calls == [
         ("grid", "True"),
@@ -365,13 +366,13 @@ windows:
         raise AssertionError(f"unexpected tmux call: {args}")
 
     monkeypatch.setattr(swarm_apply, "run", fake_run)
-    swarm_apply.setup_grid(cfg, dry_run=False)
+    swarm_start.setup_grid(cfg, dry_run=False)
 
     assert ("tmux", "split-window", "-t", "demo:grid.0", "bash") in tmux_calls
     assert ("tmux", "select-layout", "-t", "demo:grid", "tiled") in tmux_calls
 
 
-def test_babysit_apply_restarts_worker_when_spec_changes(monkeypatch, tmp_path: Path):
+def test_babysit_start_restarts_worker_when_spec_changes(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -404,7 +405,7 @@ windows:
     monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
     monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, lp_file, sp_file, str(via_log), str(dry_run))))
 
-    babysitctl.apply(cfg, dry_run=False)
+    babysitctl.start(cfg, dry_run=False)
 
     assert actions == [
         ("stop", "0.0", "False"),
@@ -446,7 +447,7 @@ windows:
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "idle"})
 
-    swarm_apply.print_status(cfg)
+    swarm_start.print_status(cfg)
     out = capsys.readouterr().out
 
     assert "session=demo exists=yes panes=1/1" in out
@@ -455,7 +456,7 @@ windows:
     assert len(matching) == 1
     assert "claude" in matching[0]
     assert "idle" in matching[0]
-    assert "on" in matching[0]
+    assert "babysit" in matching[0]
 
 
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
@@ -493,7 +494,7 @@ windows:
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "working"})
 
-    swarm_apply.print_status(cfg, brief=True)
+    swarm_start.print_status(cfg, brief=True)
     out = capsys.readouterr().out
 
     assert "demo panes=2/2" in out
@@ -533,11 +534,11 @@ windows:
         raise AssertionError(f"unexpected tmux call: {args}")
 
     monkeypatch.setattr(swarm_apply, "run", fake_run)
-    assert swarm_apply.status_lines(cfg, brief=True) == ["demo missing"]
+    assert swarm_start.status_lines(cfg, brief=True) == ["demo missing"]
 
 
 def test_shell_prefixed_command_sets_ps1_prefix():
-    assert swarm_apply.shell_prefixed_command("codex", "codex") == "export PS1='[codex] '\"$PS1\"; codex"
+    assert swarm_start.shell_prefixed_command("codex", "codex") == "export PS1='[codex] '\"$PS1\"; codex"
 
 
 def test_runtime_map_contains_only_derived_runtime_paths(tmp_path: Path):
@@ -882,8 +883,8 @@ windows:
             returncode = 0
         return Proc()
 
-    monkeypatch.setattr(swarm_apply.subprocess, "run", fake_run)
-    swarm_apply.broadcast(cfg, "AGENTS updated", include_nonmonitored=False, dry_run=False)
+    monkeypatch.setattr(swarm_start.subprocess, "run", fake_run)
+    swarm_start.broadcast(cfg, "AGENTS updated", include_nonmonitored=False, dry_run=False)
     out = capsys.readouterr().out
 
     assert calls == [(str(ROOT_DIR / "tmux-send"), "demo:0.0", "broadcast: AGENTS updated")]
@@ -920,8 +921,8 @@ windows:
             returncode = 0
         return Proc()
 
-    monkeypatch.setattr(swarm_apply.subprocess, "run", fake_run)
-    swarm_apply.broadcast(cfg, "hello all", include_nonmonitored=True, dry_run=False)
+    monkeypatch.setattr(swarm_start.subprocess, "run", fake_run)
+    swarm_start.broadcast(cfg, "hello all", include_nonmonitored=True, dry_run=False)
 
     assert calls == [
         (str(ROOT_DIR / "tmux-send"), "demo:0.0", "broadcast: hello all"),
@@ -943,7 +944,7 @@ windows:
           monitor: true
 """))
     with pytest.raises(ValueError, match="must not be empty"):
-        swarm_apply.broadcast(cfg, "   ", include_nonmonitored=False, dry_run=False)
+        swarm_start.broadcast(cfg, "   ", include_nonmonitored=False, dry_run=False)
 
 
 def test_cli_status_watch_dispatches_to_watch_status(monkeypatch):

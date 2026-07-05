@@ -298,8 +298,11 @@ def main() -> int:
             if nonidle_since == 0:
                 nonidle_since = now
 
-        force_deadline = (nonidle_since + max_nonidle) if (max_nonidle > 0 and nonidle_since > 0) else 0
-        next_force_at = force_deadline if state in ("unknown", "working", "error") else 0
+        force_deadline = 0
+        next_force_at = 0
+        if long_nudge or short_nudge:
+            force_deadline = (nonidle_since + max_nonidle) if (max_nonidle > 0 and nonidle_since > 0) else 0
+            next_force_at = force_deadline if state in ("unknown", "working", "error") else 0
 
         if state == "idle":
             # Comms consumption (independent of babysit nudges)
@@ -371,6 +374,11 @@ def main() -> int:
                 ema_state = {"mu": round(mu, 3), "sigma": round(sigma, 3), "nudge_count": nudge_count}
                 _write_state(state_file, target, interval, state, "idle_nudge",
                              now, 0, now + int(sleep_dur), 0, ema_state)
+            else:
+                # comms-only worker (no prompts): still write basic state so status
+                # can show "next=Ns" instead of "restart-needed", and clear any old force timers.
+                _write_state(state_file, target, interval, state, "comms_idle",
+                             now, 0, now + int(sleep_dur), 0)
 
         elif state == "unknown":
             if force_deadline > 0 and now >= force_deadline:

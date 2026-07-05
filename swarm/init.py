@@ -163,5 +163,5 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
 
     print()
     print("Next:")
-    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} apply {config_path} -D")
-    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} apply {config_path}")
+    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} start {config_path} -D")
+    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} start {config_path}")

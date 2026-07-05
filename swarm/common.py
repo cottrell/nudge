@@ -232,11 +232,26 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
             "socket": str(monitor_socket_path(cfg.session_name, pane.pane)) if pane.monitor else None,
         }
         if pane.babysit.enabled:
-            entry["babysit"] = {
-                **babysit_runtime_paths(cfg, pane.pane),
-                "has_long_prompt": bool(pane.babysit.long_prompt),
-                "has_short_prompt": bool(pane.babysit.short_prompt),
-            }
+            bs_paths = babysit_runtime_paths(cfg, pane.pane)
+            spec_file = Path(bs_paths["spec"])
+            has_long = bool(pane.babysit.long_prompt)
+            has_short = bool(pane.babysit.short_prompt)
+            if spec_file.exists():
+                try:
+                    sp = json.loads(spec_file.read_text() or "{}")
+                    has_long = bool(sp.get("long_prompt") or sp.get("short_prompt"))
+                    has_short = has_long  # if either, both usually present
+                except Exception:
+                    pass
+            if has_long or has_short or not spec_file.exists():
+                # Only advertise babysit in runtime map when config wants it
+                # and either no worker started yet, or the deployed spec actually
+                # has prompts (i.e. full babysit worker, not just comms from `start`).
+                entry["babysit"] = {
+                    **bs_paths,
+                    "has_long_prompt": has_long,
+                    "has_short_prompt": has_short,
+                }
         panes_map[pane.pane] = entry
     return {
         "session_name": cfg.session_name,
@@ -270,8 +285,11 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
         "CLI: aiswarm send <cfg> 0.2 \"msg here\"   (via log)",
         "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
-        "Comms consumer defaults to on for monitor: true panes (independent of babysit).",
+        "Comms consumer (message delivery) defaults to on for monitor: true panes (independent of babysit).",
+        "  `start` starts comms workers for all monitored panes.",
         "Set nudge.comms.enabled: false to disable explicitly.",
+        "Babysit: enabled: true means the pane gets *prompt-loop* babysitting (nudges on idle).",
+        "  Use `babysit start` (not plain `start`) to start the actual babysitters for those panes.",
         "Babysit nudges go via the log by default (nudge.comms + worker). Set babysit.via_log: false to send direct.",
         "Consumer delivers via tmux-send when pane ready.",
         "Direct tmux-send still available.",
