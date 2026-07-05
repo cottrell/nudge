@@ -215,6 +215,9 @@ def monitor_socket_path(session_name: str, pane: str) -> Path:
 
 
 def babysit_runtime_paths(cfg: SwarmConfig, pane: str) -> dict[str, str]:
+    # Legacy "babysit-" prefix for worker runtime files (pid/log/spec/state).
+    # Kept for compatibility. This covers the single IO loop (comms base + optional
+    # babysit prompt group).
     stem = f"babysit-{pane.replace('.', '-')}"
     return {
         "pid": str(cfg.runtime_dir / f"{stem}.pid"),
