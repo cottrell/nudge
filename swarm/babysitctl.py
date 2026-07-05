@@ -150,7 +150,10 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
 
     worker_desired = {}
     for p in cfg.panes:
-        if include_babysit and p.babysit.enabled:
+        has_babysit_config = p.babysit.enabled
+        want_babysit_active = include_babysit and has_babysit_config
+
+        if want_babysit_active:
             worker_desired[p.pane] = (
                 p.babysit.interval_secs,
                 p.babysit.clear_every,
@@ -160,8 +163,20 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
                 p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
                 p.babysit.via_log,
             )
-        elif include_comms and p.comms:
-            worker_desired[p.pane] = (5, 0, "", "", "", "", True)
+        elif include_comms and (p.comms or has_babysit_config):
+            # Comms mode (or "babysit disabled" for a babysit-configured pane).
+            # Keep the original interval/clear if this pane has babysit config,
+            # so that disabling babysit can be a pure hot-update of prompts only
+            # (no worker restart, no gap in Comms HB).
+            if has_babysit_config:
+                iv = p.babysit.interval_secs
+                cl = p.babysit.clear_every
+                via = p.babysit.via_log
+            else:
+                iv = 5
+                cl = 0
+                via = True
+            worker_desired[p.pane] = (iv, cl, "", "", "", "", via)
 
     existing = {p.name.removeprefix("babysit-").removesuffix(".pid").replace("-", "."): p for p in cfg.runtime_dir.glob("babysit-*.pid")}
     for pane in sorted(existing):
