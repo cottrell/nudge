@@ -313,7 +313,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         headers = ["Target", "Title", "Agent", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "Agent", "PID", "Worker", "Next Poll"]
+        headers = ["Target", "Title", "Command", "Agent", "PID", "Comms HB", "Babysit"]
         rows = []
 
     for pane in cfg.panes:
@@ -323,7 +323,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             if brief:
                 rows.append((target, pane.title, "missing", "off"))
             else:
-                rows.append((target, pane.title, "-", "missing", "-", "stopped", "-"))
+                rows.append((target, pane.title, "-", "missing", "-", "-", "off"))
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -331,10 +331,11 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = state_str
         else:
             monitor = "off"
-        worker_val = "off"
         pid_val = "-"
-        next_val = "-"
+        hb_val = "-"
+        babysit_val = "off"
         brief_val = "off"
+
         if pane.babysit.enabled or pane.comms:
             # 1. Determine active mode from running spec (fallback to configured mode)
             active_mode = None
@@ -403,34 +404,60 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 proc_state = "running"
 
             if proc_state == "stopped":
-                worker_val = "stopped"
                 pid_val = "-"
-                next_val = "-"
+                hb_val = "-"
                 brief_val = "stopped"
+                if pane.babysit.enabled:
+                    babysit_val = "babysit (stopped)"
+                else:
+                    babysit_val = "off"
             else:
                 # 5. Format brief vs non-brief values
+                pid_val = str(pid) if pid else "-"
+                hb_val = next_str or "-"
+
                 if proc_state == "stale":
                     brief_val = "stale"
-                    worker_val = f"{active_mode} (stale)"
-                    pid_val = str(pid) if pid else "-"
-                    next_val = "-"
+                    if pane.babysit.enabled:
+                        babysit_val = "babysit (stale)"
+                    else:
+                        babysit_val = "off"
                 else:
                     # running
                     if note:
                         brief_val = f"next={next_str} ({note})" if next_str else note
-                        worker_val = f"{active_mode} ({note})"
                     else:
                         brief_val = f"next={next_str}" if next_str else "running"
-                        worker_val = active_mode
 
-                    pid_val = str(pid) if pid else "-"
-                    next_val = next_str or "-"
+                    if pane.babysit.enabled:
+                        if active_mode == "comms":
+                            babysit_val = "babysit (not started)"
+                        elif note == "drifted":
+                            babysit_val = "babysit (drifted)"
+                        else:
+                            # active
+                            clear_note = ""
+                            if spec:
+                                clear_every = int(spec.get("clear_every") or 0)
+                                if clear_every > 0:
+                                    if state_file.exists():
+                                        try:
+                                            data = json.loads(state_file.read_text())
+                                            ema = data.get("ema") or {}
+                                            nudge_count = int(ema.get("nudge_count") or 0)
+                                            rem = clear_every - (nudge_count % clear_every)
+                                            clear_note = f", clear in {rem}"
+                                        except Exception:
+                                            pass
+                            babysit_val = f"babysit (active{clear_note})"
+                    else:
+                        babysit_val = "off"
 
         if brief:
             rows.append((target, pane.title, monitor, brief_val))
         else:
             command = pane_current_command(cfg, pane.pane)
-            rows.append((target, pane.title, command or "-", monitor, pid_val, worker_val, next_val))
+            rows.append((target, pane.title, command or "-", monitor, pid_val, hb_val, babysit_val))
 
     if rows:
         all_rows = [headers] + rows
@@ -443,10 +470,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
         if not brief:
             lines.append("")
-            lines.append("  Agent     = live state of the agent in the pane (from its monitor: idle/working/etc)")
-            lines.append("  Worker    = background helper process mode and health (comms or babysit)")
-            lines.append("  Next Poll = countdown to the background worker's next evaluation loop")
-            lines.append("              Run `babysit start` / `babysit stop` to manage the babysit workers.")
+            lines.append("  Agent    = live state of the agent in the pane (from its monitor: idle/working/etc)")
+            lines.append("  Comms HB = countdown to the next background loop check (evaluates messages + polling)")
+            lines.append("  Babysit  = babysitting prompt loop status (active, clear countdown, or not started)")
+            lines.append("             Run `babysit start` / `babysit stop` to manage the babysit workers.")
 
     return lines
 
