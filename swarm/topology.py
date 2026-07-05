@@ -334,10 +334,42 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         worker_val = "off"
         brief_val = "off"
         if pane.babysit.enabled or pane.comms:
-            # 1. Determine configured mode
-            mode = "babysit" if pane.babysit.enabled else "comms"
+            # 1. Determine active mode from running spec (fallback to configured mode)
+            active_mode = None
+            note = ""
+            spec = load_babysit_spec(babysit_spec_path(cfg, pane.pane))
+            if spec:
+                has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
+                active_mode = "babysit" if has_prompts else "comms"
+            else:
+                active_mode = "babysit" if pane.babysit.enabled else "comms"
 
-            # 2. Check state file for next poll
+            # 2. Check for drift / babysit not started
+            if spec:
+                if pane.babysit.enabled:
+                    di, dc, dlp, dsp = (
+                        pane.babysit.interval_secs,
+                        pane.babysit.clear_every,
+                        pane.babysit.long_prompt,
+                        pane.babysit.short_prompt,
+                    )
+                    dlp_f = pane.babysit.long_prompt_file.name if pane.babysit.long_prompt_file else ""
+                    dsp_f = pane.babysit.short_prompt_file.name if pane.babysit.short_prompt_file else ""
+                    dvl = pane.babysit.via_log
+                else:
+                    di, dc, dlp, dsp, dlp_f, dsp_f, dvl = 5, 0, "", "", "", "", True
+
+                try:
+                    des = babysit_desired_spec(cfg, pane.pane, di, dc, dlp, dsp, dlp_f, dsp_f, dvl)
+                    if spec != des:
+                        if pane.babysit.enabled and active_mode == "comms":
+                            note = "babysit not started"
+                        else:
+                            note = "drifted"
+                except Exception:
+                    note = "drifted"
+
+            # 3. Check state file for next poll
             next_str = ""
             state_file = babysit_state_path(cfg, pane.pane)
             if state_file.exists():
@@ -351,7 +383,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 except Exception:
                     next_str = "?"
 
-            # 3. Check if PID file exists & check process running
+            # 4. Check if PID file exists & check process running
             pid_file = babysit_pid_path(cfg, pane.pane)
             pid = None
             is_running = False
@@ -372,38 +404,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 worker_val = "stopped"
                 brief_val = "stopped"
             else:
-                # 4. Check for config drift / comms-only
-                note = ""
-                spec = load_babysit_spec(babysit_spec_path(cfg, pane.pane))
-                if spec:
-                    if pane.babysit.enabled:
-                        di, dc, dlp, dsp = (
-                            pane.babysit.interval_secs,
-                            pane.babysit.clear_every,
-                            pane.babysit.long_prompt,
-                            pane.babysit.short_prompt,
-                        )
-                        dlp_f = pane.babysit.long_prompt_file.name if pane.babysit.long_prompt_file else ""
-                        dsp_f = pane.babysit.short_prompt_file.name if pane.babysit.short_prompt_file else ""
-                        dvl = pane.babysit.via_log
-                    else:
-                        di, dc, dlp, dsp, dlp_f, dsp_f, dvl = 5, 0, "", "", "", "", True
-
-                    try:
-                        des = babysit_desired_spec(cfg, pane.pane, di, dc, dlp, dsp, dlp_f, dsp_f, dvl)
-                        if spec != des:
-                            has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
-                            if pane.babysit.enabled and not has_prompts:
-                                note = "comms only; babysit not started"
-                            else:
-                                note = "drifted"
-                    except Exception:
-                        note = "drifted"
-
                 # 5. Format brief vs non-brief values
                 if proc_state == "stale":
                     brief_val = "stale"
-                    worker_val = f"{mode} (stale, pid {pid})" if pid else f"{mode} (stale)"
+                    worker_val = f"{active_mode} (stale, pid {pid})" if pid else f"{active_mode} (stale)"
                 else:
                     # running
                     if note:
@@ -418,7 +422,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                         parts.append(note)
                     if next_str:
                         parts.append(f"next={next_str}")
-                    worker_val = f"{mode} ({', '.join(parts)})"
+                    worker_val = f"{active_mode} ({', '.join(parts)})"
 
         if brief:
             rows.append((target, pane.title, monitor, brief_val))
