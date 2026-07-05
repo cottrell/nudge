@@ -983,3 +983,12 @@ def test_cli_babysit_status_dispatches(monkeypatch):
     rc = swarm_cli.main(["babysit", "status", "examples/swarm-grid.yaml"])
     assert rc == 0
     assert calls == [("status", "CFG")]
+
+
+def test_cli_babysit_stop_dispatches_to_start_comms(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(babysitctl, "start_comms", lambda cfg, dry_run: calls.append(("start_comms", cfg, dry_run)))
+    rc = swarm_cli.main(["babysit", "stop", "examples/swarm-grid.yaml"])
+    assert rc == 0
+    assert calls == [("start_comms", "CFG", False)]
