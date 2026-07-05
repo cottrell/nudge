@@ -274,6 +274,8 @@ windows:
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
     monkeypatch.setattr(swarm_apply.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(babysitctl, "apply", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
+    monkeypatch.setattr(babysitctl, "apply_comms", lambda *args, **kwargs: None)
 
     swarm_apply.apply(cfg, dry_run=False)
 
@@ -308,6 +310,8 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
     monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
+    monkeypatch.setattr(babysitctl, "apply", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
+    monkeypatch.setattr(babysitctl, "apply_comms", lambda *args, **kwargs: None)
 
     swarm_apply.apply(cfg, dry_run=True)
 

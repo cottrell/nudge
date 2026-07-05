@@ -104,7 +104,7 @@ aiswarm cursors ./swarm/<project>.yaml
 aiswarm clear-comms ./swarm/<project>.yaml -y
 ```
 
-`comms` workers (started automatically by `apply` / `babysit apply` for `monitor: true` panes) consume the log and deliver via `tmux-send` when the pane is idle.
+`comms` workers (started automatically by `apply` for `monitor: true` panes; `babysit apply` also manages babysit prompt loops) consume the log and deliver via `tmux-send` when the pane is idle.
 
 Direct/manual still works with `tmux-send`.
 

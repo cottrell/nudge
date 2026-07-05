@@ -199,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("--flavour", default="3x2", choices=["2x2", "3x2"], help="Pane flavour: NxM where N=agents, M=instances (heavy+light). Default: 1 pane per agent")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
-    apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, and initial commands")
+    apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, initial commands, and comms consumers")
     apply_p.add_argument("config", help="Path to YAML config")
     apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
     apply_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after apply")
@@ -269,10 +269,10 @@ def build_parser() -> argparse.ArgumentParser:
     capture_p.add_argument("config", help="Path to YAML config")
     capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
 
-    babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit workers")
+    babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit prompt loops and worker state")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
     for name in ("apply", "status", "stop"):
-        sp = babysit_sub.add_parser(name, help=f"Babysit {name}")
+        sp = babysit_sub.add_parser(name, help=f"Babysit {name} (prompt loops and worker state)")
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
             sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; apply still writes runtime notes")
