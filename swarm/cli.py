@@ -481,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ["BABYSIT_DRY_RUN"] = "1"
             swarm_babysit.start(cfg, args.dry_run)
         elif args.babysit_command == "stop":
-            swarm_babysit.stop(cfg, args.dry_run)
+            swarm_babysit.start_comms(cfg, args.dry_run)
         else:
             swarm_babysit.status(cfg)
         return 0
