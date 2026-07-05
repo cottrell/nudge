@@ -279,13 +279,13 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     if not skip_grid:
         setup_grid(cfg, dry_run)
     setup_monitors(cfg, dry_run)
-    # Ensure comms workers are running. Babysit prompt loops are managed
-    # separately via 'aiswarm babysit start'.
+    # Ensure base comms/IO workers (the single loop per pane) are running.
+    # Babysit prompt group is managed separately via 'aiswarm babysit start'.
     try:
         from . import babysitctl
     except ImportError:
         import babysitctl
-    babysitctl.start_comms(cfg, dry_run)
+    babysitctl.ensure_workers(cfg, dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")

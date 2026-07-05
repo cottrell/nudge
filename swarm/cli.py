@@ -269,10 +269,15 @@ def build_parser() -> argparse.ArgumentParser:
     capture_p.add_argument("config", help="Path to YAML config")
     capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
 
-    babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit prompt loops and worker state")
+    babysit_p = sub.add_parser("babysit", help="Manage the babysit prompt group (toggle on top of the always-on comms worker loop)")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
     for name in ("start", "status", "stop"):
-        help_text = f"Start babysit workers" if name == "start" else f"Babysit {name} (prompt loops and worker state)"
+        if name == "start":
+            help_text = "Enable babysit prompt loops for configured panes"
+        elif name == "stop":
+            help_text = "Disable babysit prompt loops (keep comms worker for messaging)"
+        else:
+            help_text = "Show babysit + worker status"
         sp = babysit_sub.add_parser(name, help=help_text)
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
@@ -456,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "stop":
             cfg = load_config(args.config)
-            swarm_babysit.stop(cfg, args.dry_run)
+            swarm_babysit.stop_workers(cfg, args.dry_run)
             _stop_tmux_session(cfg.session_name, args.dry_run)
             return 0
 
@@ -479,9 +484,9 @@ def main(argv: list[str] | None = None) -> int:
             if getattr(args, "no_action", False):
                 import os
                 os.environ["BABYSIT_DRY_RUN"] = "1"
-            swarm_babysit.start(cfg, args.dry_run)
+            swarm_babysit.apply_babysit(cfg, args.dry_run)
         elif args.babysit_command == "stop":
-            swarm_babysit.start_comms(cfg, args.dry_run)
+            swarm_babysit.disable_babysit(cfg, args.dry_run)
         else:
             swarm_babysit.status(cfg)
         return 0

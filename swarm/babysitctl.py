@@ -84,6 +84,19 @@ def load_spec(path: Path) -> dict | None:
     return json.loads(path.read_text())
 
 
+def _prompts_only_change(curr: dict | None, wanted: dict) -> bool:
+    """True if curr and wanted differ only in the prompt strings (safe for hot update of babysit group)."""
+    if not curr:
+        return False
+    keys = set(curr.keys()) | set(wanted.keys())
+    for k in keys:
+        if k in ("long_prompt", "short_prompt", "long_prompt_file", "short_prompt_file"):
+            continue
+        if curr.get(k) != wanted.get(k):
+            return False
+    return True
+
+
 def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str, short_prompt_file: str, via_log: bool, dry_run: bool) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     if dry_run:
@@ -175,6 +188,12 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
             pid = int(path.read_text().strip())
             if process_running(pid) and current_spec == wanted:
                 continue
+            if process_running(pid) and _prompts_only_change(current_spec, wanted):
+                # Dynamic toggle of babysit group: just update the spec on disk.
+                # The running worker will pick it up on next cycle via _current_prompts().
+                if not dry_run:
+                    spec_path(cfg, pane).write_text(json.dumps(wanted, indent=2) + "\n")
+                continue
             stop_worker(cfg, pane, dry_run)
         start_worker(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run)
 
@@ -186,22 +205,43 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
     print(f"{'Planned' if dry_run else 'Started'} {label} for {cfg.session_name}")
 
 
-def start(cfg: SwarmConfig, dry_run: bool) -> None:
-    _start_workers(cfg, dry_run, include_babysit=True, include_comms=True, label="workers (babysit+comms)")
+def ensure_workers(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Ensure the base comms/IO worker loop is running (comms group always on)."""
+    _start_workers(cfg, dry_run, include_babysit=False, include_comms=True, label="workers")
 
 
-def start_comms(cfg: SwarmConfig, dry_run: bool) -> None:
-    _start_workers(cfg, dry_run, include_babysit=False, include_comms=True, label="workers (comms)")
+def apply_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Apply/turn on babysit prompt loops (babysit group) for panes where enabled in config."""
+    _start_workers(cfg, dry_run, include_babysit=True, include_comms=True, label="babysit workers")
 
 
-def stop(cfg: SwarmConfig, dry_run: bool) -> None:
+def disable_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Disable babysit prompt loops (turn off babysit group) but keep comms workers for the panes."""
+    _start_workers(cfg, dry_run, include_babysit=False, include_comms=True, label="workers (babysit disabled)")
+
+
+def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
+    """Fully stop all worker loops (comms + babysit) for the session."""
     for path in cfg.runtime_dir.glob("babysit-*.pid"):
         pane = path.name.removeprefix("babysit-").removesuffix(".pid").replace("-", ".")
         stop_worker(cfg, pane, dry_run)
     if not dry_run:
         write_runtime_map(cfg)
         write_self_awareness_text(cfg)
-    print(f"{'Planned stop for' if dry_run else 'Stopped'} babysit workers for {cfg.session_name}")
+    print(f"{'Planned stop for' if dry_run else 'Stopped'} workers for {cfg.session_name}")
+
+
+# Back-compat shims (will be removed after callers updated)
+def start(cfg: SwarmConfig, dry_run: bool) -> None:
+    apply_babysit(cfg, dry_run)
+
+
+def start_comms(cfg: SwarmConfig, dry_run: bool) -> None:
+    ensure_workers(cfg, dry_run)
+
+
+def stop(cfg: SwarmConfig, dry_run: bool) -> None:
+    stop_workers(cfg, dry_run)
 
 
 def status(cfg: SwarmConfig) -> None:
