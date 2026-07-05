@@ -310,10 +310,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         return lines
 
     if brief:
-        headers = ["Target", "Title", "State", "Worker"]
+        headers = ["Target", "Title", "Agent", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "State", "Worker", "PID", "Status", "Next"]
+        headers = ["Target", "Title", "Command", "Agent", "Worker", "PID", "Worker Status", "Next Poll"]
         rows = []
 
     for pane in cfg.panes:
@@ -447,9 +447,11 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
         if not brief:
             lines.append("")
-            lines.append("  State  = live state of the agent in the pane (from its monitor: idle/working/etc)")
-            lines.append("  Worker = background helper process (comms: delivery + polling; babysit: nudges + delivery)")
-            lines.append("           Run `babysit start` / `babysit stop` to manage the babysit workers.")
+            lines.append("  Agent         = live state of the agent in the pane (from its monitor: idle/working/etc)")
+            lines.append("  Worker        = active mode of the background helper process (comms or babysit)")
+            lines.append("  Worker Status = health of the background worker process")
+            lines.append("  Next Poll     = countdown to the background worker's next evaluation loop")
+            lines.append("                  Run `babysit start` / `babysit stop` to manage the babysit workers.")
 
     return lines
 
