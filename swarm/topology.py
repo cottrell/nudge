@@ -313,7 +313,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         headers = ["Target", "Title", "State", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "State", "Worker"]
+        headers = ["Target", "Title", "Command", "State", "Worker", "PID", "Status", "Next"]
         rows = []
 
     for pane in cfg.panes:
@@ -323,7 +323,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             if brief:
                 rows.append((target, pane.title, "missing", "off"))
             else:
-                rows.append((target, pane.title, "-", "missing", "off"))
+                rows.append((target, pane.title, "-", "missing", "off", "-", "stopped", "-"))
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -332,6 +332,9 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         else:
             monitor = "off"
         worker_val = "off"
+        pid_val = "-"
+        status_val = "-"
+        next_val = "-"
         brief_val = "off"
         if pane.babysit.enabled or pane.comms:
             # 1. Determine active mode from running spec (fallback to configured mode)
@@ -401,34 +404,37 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 proc_state = "running"
 
             if proc_state == "stopped":
-                worker_val = "stopped"
+                worker_val = "off"
+                pid_val = "-"
+                status_val = "stopped"
+                next_val = "-"
                 brief_val = "stopped"
             else:
                 # 5. Format brief vs non-brief values
                 if proc_state == "stale":
                     brief_val = "stale"
-                    worker_val = f"{active_mode} (stale, pid {pid})" if pid else f"{active_mode} (stale)"
+                    worker_val = active_mode
+                    pid_val = str(pid) if pid else "-"
+                    status_val = "stale"
+                    next_val = "-"
                 else:
                     # running
                     if note:
                         brief_val = f"next={next_str} ({note})" if next_str else note
+                        status_val = note
                     else:
                         brief_val = f"next={next_str}" if next_str else "running"
+                        status_val = "ok"
 
-                    parts = ["running"]
-                    if pid:
-                        parts.append(f"pid {pid}")
-                    if note:
-                        parts.append(note)
-                    if next_str:
-                        parts.append(f"next={next_str}")
-                    worker_val = f"{active_mode} ({', '.join(parts)})"
+                    worker_val = active_mode
+                    pid_val = str(pid) if pid else "-"
+                    next_val = next_str or "-"
 
         if brief:
             rows.append((target, pane.title, monitor, brief_val))
         else:
             command = pane_current_command(cfg, pane.pane)
-            rows.append((target, pane.title, command or "-", monitor, worker_val))
+            rows.append((target, pane.title, command or "-", monitor, worker_val, pid_val, status_val, next_val))
 
     if rows:
         all_rows = [headers] + rows
