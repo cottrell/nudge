@@ -144,14 +144,12 @@ def stop_worker(cfg: SwarmConfig, pane: str, dry_run: bool) -> None:
             state_path(cfg, pane).unlink(missing_ok=True)
 
 
-def apply(cfg: SwarmConfig, dry_run: bool) -> None:
-    # Start worker for babysit or comms (one process handling both when both enabled)
+def _apply_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, include_comms: bool, label: str) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
 
-    # Expand for comms-only panes (use default poll interval)
     worker_desired = {}
     for p in cfg.panes:
-        if p.babysit.enabled:
+        if include_babysit and p.babysit.enabled:
             worker_desired[p.pane] = (
                 p.babysit.interval_secs,
                 p.babysit.clear_every,
@@ -161,8 +159,7 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
                 p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
                 p.babysit.via_log,
             )
-        elif p.comms:
-            # comms consumer only: poll frequently enough for delivery
+        elif include_comms and p.comms:
             worker_desired[p.pane] = (5, 0, "", "", "", "", True)
 
     existing = {p.name.removeprefix("babysit-").removesuffix(".pid").replace("-", "."): p for p in cfg.runtime_dir.glob("babysit-*.pid")}
@@ -186,7 +183,15 @@ def apply(cfg: SwarmConfig, dry_run: bool) -> None:
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
-    print(f"{'Planned' if dry_run else 'Applied'} workers (babysit+comms) for {cfg.session_name}")
+    print(f"{'Planned' if dry_run else 'Applied'} {label} for {cfg.session_name}")
+
+
+def apply(cfg: SwarmConfig, dry_run: bool) -> None:
+    _apply_workers(cfg, dry_run, include_babysit=True, include_comms=True, label="workers (babysit+comms)")
+
+
+def apply_comms(cfg: SwarmConfig, dry_run: bool) -> None:
+    _apply_workers(cfg, dry_run, include_babysit=False, include_comms=True, label="workers (comms)")
 
 
 def stop(cfg: SwarmConfig, dry_run: bool) -> None:
