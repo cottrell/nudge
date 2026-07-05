@@ -248,24 +248,33 @@ def main() -> int:
     _argv_long = long_nudge
     _argv_short = short_nudge
 
+    def _spec_path(state_file: str | None) -> Path | None:
+        """Derive spec .json path from the state .json path.
+        Must stay in sync with the stem convention in babysit_runtime_paths().
+        """
+        if not state_file:
+            return None
+        p = Path(state_file)
+        if ".state.json" in p.name:
+            return p.with_name(p.name.replace(".state.json", ".json"))
+        return p.with_suffix(".json")
+
     def _current_prompts() -> tuple[str, str]:
         """Re-read from on-disk spec if present (supports dynamic babysit enable/disable
         without restarting the worker process). Fall back to launch argv values.
         """
         if state_file:
             try:
-                p = Path(state_file)
-                # state is ...state.json ; spec is sibling .json with same stem
-                spec_p = p.with_name(p.name.replace(".state.json", ".json"))
-                if spec_p.exists():
+                spec_p = _spec_path(state_file)
+                if spec_p and spec_p.exists():
                     sp = json.loads(spec_p.read_text())
                     lp = sp.get("long_prompt") or ""
                     sp_ = sp.get("short_prompt") or lp
                     # Use spec values (even if empty) if the spec file exists; this is how
                     # disable_babysit signals "comms only".
                     return lp, sp_
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  warning: failed to load current prompts spec ({e}); falling back to launch values")
         return _argv_long, _argv_short
 
     # Adopt any prompts from spec written before we started (or at launch).

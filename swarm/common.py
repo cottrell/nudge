@@ -248,13 +248,10 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                     pass
             # Always advertise the babysit paths when configured in yaml.
             # has_* reflect the *deployed* spec (false if never started or disabled).
-            # UIs should check has_long_prompt (or future 'active') to know if the
-            # prompt loop is actually on, not just configured. This fixes false
-            # "babysit running" reports (e.g. in thoth) after babysit stop or full stop.
-            # has_* reflect the deployed spec for the babysit prompt group.
-            # The key is present for any pane with babysit.enabled in config (for path discovery).
-            # UIs should check has_long_prompt/has_short_prompt (true only when active prompts deployed)
-            # or inspect the actual pid to determine if the babysit group is running.
+            # Consumers must check has_long_prompt/has_short_prompt (or pid+running)
+            # rather than mere key presence. This was the root of stale "babysit running"
+            # reports after babysit stop (fixed on the producer side here; old consumers
+            # like some thoth views may still need updating).
             entry["babysit"] = {
                 **bs_paths,
                 "has_long_prompt": has_long,

@@ -179,6 +179,10 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
             if process_running(pid) and _prompts_only_change(current_spec, wanted):
                 # Dynamic toggle of babysit group: just update the spec on disk.
                 # The running worker will pick it up on next cycle via _current_prompts().
+                #
+                # Limitation: this only hot-swaps the prompt *text* (and file metadata).
+                # If babysit start/stop also changed non-prompt settings (interval, clear_every, EMA params),
+                # _prompts_only_change will be False and we fall through to a full restart (correct).
                 if not dry_run:
                     spec_path(cfg, pane).write_text(json.dumps(wanted, indent=2) + "\n")
                 continue
