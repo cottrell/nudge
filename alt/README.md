@@ -25,7 +25,7 @@ Persistent friction when running real multi-agent work under subscription CLIs:
 
 - One tmux session + windows + panes described in `swarm/*.yaml` (tmuxp-compatible + `nudge.*` extensions).
 - `nudge.agent`, `nudge.monitor`, `nudge.babysit` per pane.
-- `swarm/cli.py` (init / apply / status / broadcast / babysit apply / quota / av-usage ...).
+- `swarm/cli.py` (init / start / status / broadcast / babysit start / quota / av-usage ...).
 - Activity monitor (C) → working / idle only. No semantics.
 - Babysit workers (see `babysitctl.py` + spec/state files in `/tmp/nudge-swarm/<session>/`) that periodically poke panes.
 - Usage via per-agent scrapers in `swarm/usage/*.sh` + optional agentsview integration.
@@ -112,8 +112,8 @@ sequenceDiagram
 
 **Today (current system):**
 1. You edit or create a swarm yaml that describes 4 panes with appropriate agents and babysit specs.
-2. `swarm/cli.py apply ...`
-3. `swarm/cli.py babysit apply ...`
+2. `swarm/cli.py start ...`
+3. `swarm/cli.py babysit start ...`
 4. Manually broadcast an initial briefing or use the long_prompt mechanism.
 5. Use `tmux-send` or broadcast when you want to tell one pane something.
 6. Watch activity lights. Manually intervene when one gets stuck.

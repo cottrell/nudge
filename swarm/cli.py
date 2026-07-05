@@ -199,11 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("--flavour", default="3x2", choices=["2x2", "3x2"], help="Pane flavour: NxM where N=agents, M=instances (heavy+light). Default: 1 pane per agent")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
-    apply_p = sub.add_parser("apply", help="Apply tmux topology, monitors, titles, initial commands, and comms consumers")
-    apply_p.add_argument("config", help="Path to YAML config")
-    apply_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
-    apply_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after apply")
-    apply_p.add_argument("--skip-grid", action="store_true", help="Skip session/pane creation (use after tmuxp load)")
+    start_p = sub.add_parser("start", help="Start the swarm (tmux session, monitors, titles, commands, and comms workers)")
+    start_p.add_argument("config", help="Path to YAML config")
+    start_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
+    start_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after start")
+    start_p.add_argument("--skip-grid", action="store_true", help="Skip session/pane creation (use after tmuxp load)")
 
     status_p = sub.add_parser("status", help="Report current swarm state")
     status_p.add_argument("config", help="Path to YAML config")
@@ -271,11 +271,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     babysit_p = sub.add_parser("babysit", help="Manage config-driven babysit prompt loops and worker state")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
-    for name in ("apply", "status", "stop"):
-        sp = babysit_sub.add_parser(name, help=f"Babysit {name} (prompt loops and worker state)")
+    for name in ("start", "status", "stop"):
+        help_text = f"Start babysit workers" if name == "start" else f"Babysit {name} (prompt loops and worker state)"
+        sp = babysit_sub.add_parser(name, help=help_text)
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
-            sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; apply still writes runtime notes")
+            sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; start still writes runtime notes")
 
     return parser
 
@@ -290,9 +291,9 @@ def main(argv: list[str] | None = None) -> int:
             swarm_init.init(args.name, args.root, args.dry_run, agents, flavour=args.flavour)
             return 0
 
-        if args.command == "apply":
+        if args.command == "start":
             cfg = load_config(args.config)
-            swarm_topology.apply(cfg, args.dry_run, skip_grid=args.skip_grid)
+            swarm_topology.start(cfg, args.dry_run, skip_grid=args.skip_grid)
             if args.attach and not args.dry_run:
                 subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
             return 0
@@ -472,8 +473,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         cfg = load_config(args.config)
-        if args.babysit_command == "apply":
-            swarm_babysit.apply(cfg, args.dry_run)
+        if args.babysit_command == "start":
+            swarm_babysit.start(cfg, args.dry_run)
         elif args.babysit_command == "stop":
             swarm_babysit.stop(cfg, args.dry_run)
         else:

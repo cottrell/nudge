@@ -21,7 +21,12 @@ try:
         write_self_awareness_text,
     )
 
-    from .babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
+    from .babysitctl import (
+        load_spec as load_babysit_spec,
+        pid_path as babysit_pid_path,
+        spec_path as babysit_spec_path,
+        state_path as babysit_state_path,
+    )
 except ImportError:
     # direct script fallback
     from common import (
@@ -35,7 +40,12 @@ except ImportError:
         write_self_awareness_text,
     )
 
-    from babysitctl import pid_path as babysit_pid_path, state_path as babysit_state_path
+    from babysitctl import (
+        load_spec as load_babysit_spec,
+        pid_path as babysit_pid_path,
+        spec_path as babysit_spec_path,
+        state_path as babysit_state_path,
+    )
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -82,7 +92,9 @@ def _ensure_window(
         if count != expected and not allow_expand_existing:
             raise RuntimeError(
                 f"{target} has {count} panes, config expects {expected}. "
-                "Recreate the window/session before applying."
+                "The grid layout cannot be safely mutated on an existing session. "
+                "Run `stop` first (or `babysit stop` + kill the session) and then re-start, "
+                "or use `tmuxp load` + `start --skip-grid` for more flexible grid management."
             )
 
     while count < expected:
@@ -253,7 +265,7 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
     write_self_awareness_text(cfg)
 
 
-def apply(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
+def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     if not dry_run:
         try:
             from .common import init_comms_db
@@ -264,16 +276,16 @@ def apply(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
         setup_grid(cfg, dry_run)
     setup_monitors(cfg, dry_run)
     # Ensure comms workers are running. Babysit prompt loops are managed
-    # separately via 'aiswarm babysit apply'.
+    # separately via 'aiswarm babysit start'.
     try:
         from . import babysitctl
     except ImportError:
         import babysitctl
-    babysitctl.apply_comms(cfg, dry_run)
+    babysitctl.start_comms(cfg, dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
-    print(f"{'Planned' if dry_run else 'Applied'} swarm for {cfg.session_name}")
+    print(f"{'Planned' if dry_run else 'Started'} swarm for {cfg.session_name}")
     print()
     print(f"  Status: python {SWARM_CLI} status {cfg.path} --brief")
     print(f"  Watch:  python {SWARM_CLI} status {cfg.path} --brief -w")
@@ -294,10 +306,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         return lines
 
     if brief:
-        headers = ["Target", "Title", "Monitor", "Worker"]
+        headers = ["Target", "Title", "State", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "Monitor", "Worker"]
+        headers = ["Target", "Title", "Command", "State", "Worker"]
         rows = []
 
     for pane in cfg.panes:
@@ -322,12 +334,26 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             rows.append((target, pane.title, monitor, worker_note or "off"))
         else:
             command = pane_current_command(cfg, pane.pane)
-            if pane.babysit.enabled:
-                worker_val = ("on " + worker_note) if worker_note else "on"
-            elif pane.comms:
-                worker_val = ("comms " + worker_note) if worker_note else "comms"
+            # Prefer reality from the deployed worker spec (so status reflects
+            # what is actually running after `start` vs `babysit start`).
+            worker_type = None
+            spec = load_babysit_spec(babysit_spec_path(cfg, pane.pane))
+            if spec:
+                has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
+                worker_type = "babysit" if has_prompts else "comms"
             else:
-                worker_val = "off"
+                worker_type = "babysit" if pane.babysit.enabled else ("comms" if pane.comms else None)
+
+            if worker_type == "babysit":
+                prefix = "babysit"
+            elif worker_type == "comms":
+                prefix = "comms"
+            else:
+                prefix = "off"
+            if worker_note:
+                worker_val = f"{prefix} ({worker_note})"
+            else:
+                worker_val = prefix
             rows.append((target, pane.title, command or "-", monitor, worker_val))
 
     if rows:
@@ -338,6 +364,12 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         lines.append("  ".join(("-" * widths[i]).ljust(widths[i]) for i in range(len(headers))).rstrip())
         for row in rows:
             lines.append("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))).rstrip())
+
+        if not brief:
+            lines.append("")
+            lines.append("  State  = live state of the agent in the pane (from its monitor: idle/working/etc)")
+            lines.append("  Worker = background helper process (comms: delivery + polling; babysit: nudges + delivery)")
+            lines.append("           Run `babysit status` / `babysit start` to manage the babysit workers.")
 
     return lines
 
@@ -358,7 +390,11 @@ def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
     next_force_at = int(data.get("next_force_nudge_at") or 0)
     parts: list[str] = []
     if next_poll_at > 0:
-        parts.append(f"next={max(0, next_poll_at - now)}s")
+        delta = max(0, next_poll_at - now)
+        if delta <= 0:
+            parts.append("next≤5s")
+        else:
+            parts.append(f"next={delta}s")
     if next_force_at > 0 and last_monitor_state in {"unknown", "working", "error"}:
         parts.append(f"force={max(0, next_force_at - now)}s")
     if not parts:
