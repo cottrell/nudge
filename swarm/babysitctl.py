@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 import signal
@@ -30,28 +31,15 @@ def state_path(cfg: SwarmConfig, pane: str) -> Path:
 
 
 def process_running(pid: int) -> bool:
+    # Proper check for a live process (our own workers).
     try:
-        Path(f"/proc/{pid}")
-    except Exception:
+        os.kill(pid, 0)  # signal 0 = no-op, just check existence/permission
+        return True
+    except (OSError, ProcessLookupError):
         return False
-    return Path(f"/proc/{pid}").exists()
-
-
-def desired_panes(cfg: SwarmConfig) -> dict[str, tuple[int, int, str, str, str, str]]:
-    out: dict[str, tuple[int, int, str, str, str, str]] = {}
-    for pane in cfg.panes:
-        if not pane.babysit.enabled:
-            continue
-        out[pane.pane] = (
-            pane.babysit.interval_secs,
-            pane.babysit.clear_every,
-            pane.babysit.long_prompt,
-            pane.babysit.short_prompt,
-            pane.babysit.long_prompt_file.name if pane.babysit.long_prompt_file else "",
-            pane.babysit.short_prompt_file.name if pane.babysit.short_prompt_file else "",
-            pane.babysit.via_log,
-        )
-    return out
+    except Exception:
+        # Fallback to /proc for unusual cases
+        return Path(f"/proc/{pid}").exists()
 
 
 def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, long_prompt: str, short_prompt: str, long_prompt_file: str = "", short_prompt_file: str = "", via_log: bool = True) -> dict:
@@ -204,10 +192,9 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
     print(f"{'Planned' if dry_run else 'Started'} {label} for {cfg.session_name}")
 
-# Note on naming: The runtime files still use "babysit-*.pid" etc. for compatibility with
-# existing swarms, runtime.json consumers, and self-awareness notes. We treat "babysit"
-# as legacy for the worker identifier; the logical groups are "comms" (base loop) and
-# "babysit" (optional prompt group).
+# Naming note: "babysit-*" file prefixes and some function names are legacy for
+# compatibility. The worker is the single IO loop; "babysit" specifically refers
+# to the optional prompt-nudge group on top of the comms base.
 
 
 def ensure_workers(cfg: SwarmConfig, dry_run: bool) -> None:

@@ -9,7 +9,7 @@ States: `unknown` `working` `idle`
 ## Basic operational flow
 
 ```bash
-# 1. Turn on the swarm (tmux session + panes + per-pane monitors + comms workers)
+# 1. Turn on the swarm (tmux session + panes + per-pane monitors + worker loops)
 #    Note: this is mostly a "create" for the tmux grid. Changing pane counts later
 #    requires stopping and re-starting (see limitations below).
 python swarm/cli.py start ./swarm/<project>.yaml
@@ -39,7 +39,7 @@ python swarm/cli.py babysit stop ./swarm/<project>.yaml
 
 ```bash
 # 4. Full teardown
-# - stops babysit workers (if running)
+# - stops all workers (if running)
 # - kills per-pane monitors
 # - tears down the tmux session
 python swarm/cli.py stop ./swarm/<project>.yaml
@@ -112,8 +112,9 @@ Notes:
   It is **not** safe to re-run after changing pane counts or layout on a live session
   (you'll be told to recreate the session).
 - One monitor per `monitor: true` pane (started by `start`)
-- `start` starts comms workers (message delivery). It does **not** start babysit prompt loops.
-- `babysit start` starts (or reconciles) the babysit workers for panes with `babysit.enabled: true`
+- `start` ensures the base worker loop (comms/message delivery) for monitored panes.
+- `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
+  It does not affect the base comms worker loop.
 - `start` and `babysit start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
 - self-awareness note: `/tmp/nudge-swarm/<session>/self-awareness.txt`
@@ -142,7 +143,7 @@ aiswarm cursors ./swarm/<project>.yaml
 aiswarm clear-comms ./swarm/<project>.yaml -y
 ```
 
-`comms` workers (started automatically by `start` for `monitor: true` panes; `babysit start` also manages babysit prompt loops) consume the log and deliver via `tmux-send` when the pane is idle.
+The worker loop (started automatically by `start` for `monitor: true` panes) consumes the log and delivers via `tmux-send` when the pane is idle. `babysit start` additionally enables the prompt-nudge logic on top for configured panes.
 
 Direct/manual still works with `tmux-send`.
 

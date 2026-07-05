@@ -32,8 +32,6 @@ _ROOT_DIR = Path(__file__).resolve().parent
 _TMUX_SEND = _ROOT_DIR / "tmux-send"
 
 try:
-    import sys
-    from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent / "swarm"))
     from common import get_cached_provider_usage
 except Exception:
@@ -94,8 +92,6 @@ def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babys
         via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
     if via_log:
         try:
-            import sys
-            from pathlib import Path
             swarm_dir = str(Path(__file__).parent / "swarm")
             if swarm_dir not in sys.path:
                 sys.path.insert(0, swarm_dir)
@@ -113,8 +109,6 @@ def _drain_comms(session: str, target: str, pane: str) -> None:
     Uses per-pane cursors so independent from babysit nudging.
     """
     try:
-        import sys
-        from pathlib import Path
         swarm_dir = str(Path(__file__).parent / "swarm")
         if swarm_dir not in sys.path:
             sys.path.insert(0, swarm_dir)
