@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-07-05 12:51'
-updated_date: '2026-07-05 13:03'
+updated_date: '2026-07-05 13:07'
 labels:
   - nudge
   - babysit
@@ -53,6 +53,8 @@ Implemented core of point 1: new ensure/apply/disable/stop_workers API. Updated 
 Core implementation + test updates complete for API refactor. Dynamic support from point 2 also contributed here. Shims preserve compat.
 
 Core of point 1 complete. Dynamic elements from point 2 included.
+
+Review materials created without touching running swarms.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -61,5 +63,15 @@ Core of point 1 complete. Dynamic elements from point 2 included.
 created: 2026-07-05 13:03
 ---
 Implemented and committed in de3f580 [Grok/xAI]. New API: ensure_workers/apply_babysit/disable_babysit. Parallel review requested from claude (pane 0.1) and codex (pane 0.0) in agent_grid swarm. User will test.
+---
+
+created: 2026-07-05 13:07
+---
+Manual review prompts prepared in review-requests/ (claude and codex versions) because in-swarm comms is on pre-change code. Avoided swarm sends. CLI help/status captured manually via python swarm/cli.py. See files for direct copy-paste to external claude/codex.
+---
+
+created: 2026-07-05 13:07
+---
+Manual CLI runs performed (status, babysit status, help) and full review prompt files written to review-requests/{claude,codex}-review-TASK-13-14-16.md. No swarm sends or restarts. User can feed the prompts directly to claude/codex CLIs.
 ---
 <!-- COMMENTS:END -->
