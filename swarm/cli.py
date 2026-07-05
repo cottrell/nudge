@@ -277,6 +277,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("config", help="Path to YAML config")
         if name != "status":
             sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; start still writes runtime notes")
+            if name == "start":
+                sp.add_argument("--no-action", action="store_true", help="Start the worker loops but do not deliver any prompts (simulate loops)")
 
     return parser
 
@@ -474,6 +476,9 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = load_config(args.config)
         if args.babysit_command == "start":
+            if getattr(args, "no_action", False):
+                import os
+                os.environ["BABYSIT_DRY_RUN"] = "1"
             swarm_babysit.start(cfg, args.dry_run)
         elif args.babysit_command == "stop":
             swarm_babysit.stop(cfg, args.dry_run)
