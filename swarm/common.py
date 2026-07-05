@@ -1033,25 +1033,30 @@ def parse_agy_usage(text: str) -> dict:
                 for l_idx in range(1, len(limit_blocks), 2):
                     limit_label = limit_blocks[l_idx].strip().lower().replace(" limit", "")
                     limit_content = limit_blocks[l_idx+1]
-                    
-                    pct = 100
+
+                    pct_remaining = 0
                     reset = ""
-                    
-                    pct_m = re.search(r'(\d+(?:\.\d+)?)%', limit_content)
-                    if pct_m:
-                        pct = int(float(pct_m.group(1)))
-                        
-                    rem_m = re.search(r'(\d+%\s+remaining\s+·\s+)?Refreshes\s+in\s+(.+)', limit_content, re.IGNORECASE)
+
+                    # Check for "N% remaining · Refreshes in X" (explicit remaining)
+                    rem_m = re.search(r'(\d+(?:\.\d+)?)%\s+remaining\s+·\s+Refreshes\s+in\s+(.+)', limit_content, re.IGNORECASE)
                     if rem_m:
+                        pct_remaining = int(float(rem_m.group(1)))
                         reset = "in " + rem_m.group(2).strip()
                     elif "quota available" in limit_content.lower():
-                        reset = "Quota available"
-                        pct = 100
-                        
+                        # "Quota available" with 100% shown means exhausted (0% remaining)
+                        pct_remaining = 0
+                        reset = "Exhausted"
+                    else:
+                        # Fallback: extract percentage (used) and invert to get remaining
+                        pct_m = re.search(r'(\d+(?:\.\d+)?)%', limit_content)
+                        if pct_m:
+                            pct_used = int(float(pct_m.group(1)))
+                            pct_remaining = 100 - pct_used
+
                     reset_ts = _parse_reset_ts(reset) or 0
                     group_entry["limits"].append({
                         "label": limit_label,
-                        "pct": pct,
+                        "pct": pct_remaining,
                         "reset": reset,
                         "reset_ts": reset_ts,
                         "reset_iso": _ts_to_iso(reset_ts)
