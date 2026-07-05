@@ -313,7 +313,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         headers = ["Target", "Title", "Agent", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "Agent", "PID", "Comms HB", "Babysit"]
+        headers = ["Target", "Title", "Command", "Agent", "PID", "Comms HB", "Babysit", "Nudge HB", "Clear HB"]
         rows = []
 
     for pane in cfg.panes:
@@ -323,7 +323,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             if brief:
                 rows.append((target, pane.title, "missing", "off"))
             else:
-                rows.append((target, pane.title, "-", "missing", "-", "-", "off"))
+                rows.append((target, pane.title, "-", "missing", "-", "-", "off", "-", "-"))
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -332,8 +332,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         else:
             monitor = "off"
         pid_val = "-"
-        hb_val = "-"
+        comms_hb = "-"
         babysit_val = "off"
+        nudge_hb = "-"
+        clear_hb = "-"
         brief_val = "off"
 
         if pane.babysit.enabled or pane.comms:
@@ -405,16 +407,18 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
             if proc_state == "stopped":
                 pid_val = "-"
-                hb_val = "-"
+                comms_hb = "-"
                 brief_val = "stopped"
                 if pane.babysit.enabled:
                     babysit_val = "stopped"
                 else:
                     babysit_val = "off"
+                nudge_hb = "-"
+                clear_hb = "-"
             else:
                 # 5. Format brief vs non-brief values
                 pid_val = str(pid) if pid else "-"
-                hb_val = next_str or "-"
+                comms_hb = next_str or "-"
 
                 if proc_state == "stale":
                     brief_val = "stale"
@@ -422,6 +426,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                         babysit_val = "stale"
                     else:
                         babysit_val = "off"
+                    nudge_hb = "-"
+                    clear_hb = "-"
                 else:
                     # running
                     if note:
@@ -432,11 +438,18 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                     if pane.babysit.enabled:
                         if active_mode == "comms":
                             babysit_val = "not started"
+                            nudge_hb = "-"
+                            clear_hb = "-"
                         elif note == "drifted":
                             babysit_val = "drifted"
+                            nudge_hb = "-"
+                            clear_hb = "-"
                         else:
-                            # active
-                            clear_note = ""
+                            # active running
+                            babysit_val = "on"
+                            nudge_hb = next_str or "-"
+                            
+                            # clear countdown
                             if spec:
                                 clear_every = int(spec.get("clear_every") or 0)
                                 if clear_every > 0:
@@ -446,18 +459,19 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                                             ema = data.get("ema") or {}
                                             nudge_count = int(ema.get("nudge_count") or 0)
                                             rem = clear_every - (nudge_count % clear_every)
-                                            clear_note = f" (clear in {rem})"
+                                            clear_hb = str(rem)
                                         except Exception:
                                             pass
-                            babysit_val = f"active{clear_note}"
                     else:
                         babysit_val = "off"
+                        nudge_hb = "-"
+                        clear_hb = "-"
 
         if brief:
             rows.append((target, pane.title, monitor, brief_val))
         else:
             command = pane_current_command(cfg, pane.pane)
-            rows.append((target, pane.title, command or "-", monitor, pid_val, hb_val, babysit_val))
+            rows.append((target, pane.title, command or "-", monitor, pid_val, comms_hb, babysit_val, nudge_hb, clear_hb))
 
     if rows:
         all_rows = [headers] + rows
@@ -472,7 +486,9 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("")
             lines.append("  Agent    = live state of the agent in the pane (from its monitor: idle/working/etc)")
             lines.append("  Comms HB = countdown to the next background loop check (evaluates messages + polling)")
-            lines.append("  Babysit  = babysitting prompt loop status (active, clear countdown, or not started)")
+            lines.append("  Babysit  = babysitting prompt loop status (on, off, not started, drifted, stopped, stale)")
+            lines.append("  Nudge HB = countdown to the next idle nudge check")
+            lines.append("  Clear HB = remaining nudges until next context clear (/clear)")
             lines.append("             Run `babysit start` / `babysit stop` to manage the babysit workers.")
 
     return lines
