@@ -426,6 +426,9 @@ def main() -> int:
             else:
                 # comms-only worker (no prompts): still write basic state so status
                 # can show "next=Ns" instead of "restart-needed", and clear any old force timers.
+                # We deliberately keep writing next_poll_at so that "babysit stop" (which
+                # just hot-updates the spec to empty prompts) does not cause Comms HB to
+                # go blank in the watcher.
                 _write_state(state_file, target, interval, state, "comms_idle",
                              now, 0, now + int(poll_interval), 0, 0)
 
