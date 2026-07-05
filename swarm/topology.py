@@ -494,11 +494,11 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         if not brief:
             lines.append("")
             lines.append("  Agent    = live state of the agent in the pane (from its monitor: idle/working/etc)")
-            lines.append("  Comms HB = countdown to the next background loop check (evaluates messages + polling)")
-            lines.append("  Babysit  = babysitting prompt loop status (on, off, not started, drifted, stopped, stale)")
-            lines.append("  Nudge HB = countdown to the next idle nudge check")
+            lines.append("  Comms HB = countdown to the next background worker loop check (messages + polling)")
+            lines.append("  Babysit  = babysit prompt group status (on, off/not-started, drifted, stopped, stale)")
+            lines.append("  Nudge HB = countdown to the next idle nudge check (babysit group only)")
             lines.append("  Clear HB = remaining nudges until next context clear (/clear)")
-            lines.append("             Run `babysit start` / `babysit stop` to manage the babysit workers.")
+            lines.append("             Run `babysit start` / `babysit stop` to toggle the babysit prompt group.")
 
     return lines
 

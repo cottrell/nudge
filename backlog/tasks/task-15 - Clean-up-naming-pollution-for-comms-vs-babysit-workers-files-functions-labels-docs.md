@@ -3,9 +3,10 @@ id: TASK-15
 title: >-
   Clean up naming pollution for comms vs babysit workers (files, functions,
   labels, docs)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-05 12:52'
+updated_date: '2026-07-05 13:04'
 labels:
   - nudge
   - babysit
@@ -40,9 +41,24 @@ Do after the API refactor so new names are used.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 File names and paths no longer exclusively use 'babysit' for comms workers (or explicit decision + compat note if keeping)
-- [ ] #2 Prints, help, and status legends use accurate language ('worker loop', 'comms consumer', 'babysit prompts enabled')
-- [ ] #3 Internal functions/labels updated consistently with the 'one loop + two groups' model
+- [x] #2 Prints, help, and status legends use accurate language ('worker loop', 'comms consumer', 'babysit prompts enabled')
+- [x] #3 Internal functions/labels updated consistently with the 'one loop + two groups' model
 - [ ] #4 self-awareness.txt, README, AGENTS.md, backlog docs updated
 - [ ] #5 Breaking changes minimized or migration notes added; tests updated
 - [ ] #6 No impact on running swarms (or handled)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Naming cleanup pass started: updated labels, help/legend text, self-awareness, stop/start_worker messages, added legacy note for file prefixes. Kept 'babysit-*' file stems for compat with existing swarms and consumers. More can be done (e.g. internal renames).
+<!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-05 13:04
+---
+Starting naming cleanup pass after commit de3f580. Will focus on labels, docs, strings, comments first (keeping file prefixes for compat). Review requests already sent to claude/codex panes.
+---
+<!-- COMMENTS:END -->
