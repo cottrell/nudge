@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-05 12:52'
-updated_date: '2026-07-05 13:10'
+updated_date: '2026-07-05 13:11'
 labels:
   - nudge
   - babysit
@@ -58,6 +58,8 @@ Follow-up naming commit e731c37. Strings, docs, labels cleaned while preserving 
 Additional naming string cleanups (cli stop help, babysit sub help, legacy comments). Manual review materials also updated in tickets.
 
 Deeper pass committed in dba35e0: removed dead desired_panes(), cleaned redundant imports in babysit.py, hardened process_running(), more README terminology updates for 'worker loop' vs babysit group. No file renames (compat).
+
+Uncommitted work cleaned: committed review-requests/ (the manual review prompts for claude/codex), updated task md files, .gitignore for logs, final cli.py. Repo now clean. Deeper pass done.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
