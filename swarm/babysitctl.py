@@ -205,76 +205,8 @@ def stop(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def status(cfg: SwarmConfig) -> None:
-    # Report workers for both babysit and comms panes
-    worker_panes = {}
-    for p in cfg.panes:
-        if p.babysit.enabled:
-            worker_panes[p.pane] = (
-                p.babysit.interval_secs,
-                p.babysit.clear_every,
-                p.babysit.long_prompt,
-                p.babysit.short_prompt,
-                p.babysit.long_prompt_file.name if p.babysit.long_prompt_file else "",
-                p.babysit.short_prompt_file.name if p.babysit.short_prompt_file else "",
-            )
-        elif p.comms:
-            worker_panes[p.pane] = (5, 0, "", "", "", "", p.comms)  # via_log True for comms
-
-    # Build rows for table output
-    rows = []
-    for pane in sorted(worker_panes):
-        path = pid_path(cfg, pane)
-        if not path.exists():
-            rows.append((f"{cfg.session_name}:{pane}", "-", "-", "stopped", "-"))
-            continue
-        pid = int(path.read_text().strip())
-        proc_state = "running" if process_running(pid) else "stale"
-        note = ""
-        spec = load_spec(spec_path(cfg, pane))
-        if spec:
-            tup = worker_panes[pane]
-            if len(tup) == 7:
-                di, dc, dlp, dsp, dlp_f, dsp_f, dvl = tup
-            else:
-                di, dc, dlp, dsp, dlp_f, dsp_f = tup
-                dvl = True
-            if spec != desired_spec(cfg, pane, di, dc, dlp, dsp, dlp_f, dsp_f, dvl):
-                has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
-                pane_spec = next((p for p in cfg.panes if p.pane == pane), None)
-                is_babysit_pane = bool(pane_spec and pane_spec.babysit.enabled)
-                if is_babysit_pane and not has_prompts:
-                    note = "comms only; babysit not started"
-                else:
-                    note = "drifted"
-        next_str = "-"
-        state_file = state_path(cfg, pane)
-        if state_file.exists():
-            try:
-                data = json.loads(state_file.read_text())
-                now = int(__import__("time").time())
-                next_poll_at = int(data.get("next_poll_at") or 0)
-                if next_poll_at > 0:
-                    delta = max(0, next_poll_at - now)
-                    next_str = "≤5s" if delta <= 0 else f"{delta}s"
-            except Exception:
-                next_str = "?"
-
-        pane_obj = next((p for p in cfg.panes if p.pane == pane), None)
-        mode = "babysit" if (pane_obj and pane_obj.babysit.enabled) else "comms"
-        status_str = proc_state
-        if note:
-            status_str = f"{proc_state} ({note})"
-        rows.append((f"{cfg.session_name}:{pane}", mode, str(pid), status_str, next_str))
-
-    if not rows:
-        print(f"{cfg.session_name}: no workers")
-        return
-
-    headers = ["Target", "Mode", "PID", "Status", "Next"]
-    all_rows = [headers] + rows
-    widths = [max(len(r[i]) for r in all_rows) for i in range(len(headers))]
-    print(f"{cfg.session_name} worker status")
-    print("  ".join(h.ljust(w) for h, w in zip(headers, widths)))
-    print("  ".join("-" * w for w in widths))
-    for r in rows:
-        print("  ".join(v.ljust(w) for v, w in zip(r, widths)))
+    try:
+        from . import topology as swarm_topology
+    except ImportError:
+        import topology as swarm_topology
+    swarm_topology.print_status(cfg)

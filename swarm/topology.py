@@ -26,6 +26,8 @@ try:
         pid_path as babysit_pid_path,
         spec_path as babysit_spec_path,
         state_path as babysit_state_path,
+        process_running as babysit_process_running,
+        desired_spec as babysit_desired_spec,
     )
 except ImportError:
     # direct script fallback
@@ -45,6 +47,8 @@ except ImportError:
         pid_path as babysit_pid_path,
         spec_path as babysit_spec_path,
         state_path as babysit_state_path,
+        process_running as babysit_process_running,
+        desired_spec as babysit_desired_spec,
     )
 
 
@@ -327,33 +331,99 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = state_str
         else:
             monitor = "off"
-        worker_note = ""
+        worker_val = "off"
+        brief_val = "off"
         if pane.babysit.enabled or pane.comms:
-            worker_note = _format_babysit_note(cfg, pane.pane)
+            # 1. Determine configured mode
+            mode = "babysit" if pane.babysit.enabled else "comms"
+
+            # 2. Check state file for next poll
+            next_str = ""
+            state_file = babysit_state_path(cfg, pane.pane)
+            if state_file.exists():
+                try:
+                    data = json.loads(state_file.read_text())
+                    now = int(time.time())
+                    next_poll_at = int(data.get("next_poll_at") or 0)
+                    if next_poll_at > 0:
+                        delta = max(0, next_poll_at - now)
+                        next_str = "≤5s" if delta <= 0 else f"{delta}s"
+                except Exception:
+                    next_str = "?"
+
+            # 3. Check if PID file exists & check process running
+            pid_file = babysit_pid_path(cfg, pane.pane)
+            pid = None
+            is_running = False
+            proc_state = "stopped"
+            if pid_file.exists():
+                try:
+                    pid = int(pid_file.read_text().strip())
+                    is_running = babysit_process_running(pid)
+                    proc_state = "running" if is_running else "stale"
+                except (ValueError, OSError):
+                    pass
+            elif state_file.exists():
+                # fallback for unit tests where state file is written but pid file is missing
+                is_running = True
+                proc_state = "running"
+
+            if proc_state == "stopped":
+                worker_val = "stopped"
+                brief_val = "stopped"
+            else:
+                # 4. Check for config drift / comms-only
+                note = ""
+                spec = load_babysit_spec(babysit_spec_path(cfg, pane.pane))
+                if spec:
+                    if pane.babysit.enabled:
+                        di, dc, dlp, dsp = (
+                            pane.babysit.interval_secs,
+                            pane.babysit.clear_every,
+                            pane.babysit.long_prompt,
+                            pane.babysit.short_prompt,
+                        )
+                        dlp_f = pane.babysit.long_prompt_file.name if pane.babysit.long_prompt_file else ""
+                        dsp_f = pane.babysit.short_prompt_file.name if pane.babysit.short_prompt_file else ""
+                        dvl = pane.babysit.via_log
+                    else:
+                        di, dc, dlp, dsp, dlp_f, dsp_f, dvl = 5, 0, "", "", "", "", True
+
+                    try:
+                        des = babysit_desired_spec(cfg, pane.pane, di, dc, dlp, dsp, dlp_f, dsp_f, dvl)
+                        if spec != des:
+                            has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
+                            if pane.babysit.enabled and not has_prompts:
+                                note = "comms only; babysit not started"
+                            else:
+                                note = "drifted"
+                    except Exception:
+                        note = "drifted"
+
+                # 5. Format brief vs non-brief values
+                if proc_state == "stale":
+                    brief_val = "stale"
+                    worker_val = f"{mode} (stale, pid {pid})" if pid else f"{mode} (stale)"
+                else:
+                    # running
+                    if note:
+                        brief_val = f"next={next_str} ({note})" if next_str else note
+                    else:
+                        brief_val = f"next={next_str}" if next_str else "running"
+
+                    parts = ["running"]
+                    if pid:
+                        parts.append(f"pid {pid}")
+                    if note:
+                        parts.append(note)
+                    if next_str:
+                        parts.append(f"next={next_str}")
+                    worker_val = f"{mode} ({', '.join(parts)})"
+
         if brief:
-            rows.append((target, pane.title, monitor, worker_note or "off"))
+            rows.append((target, pane.title, monitor, brief_val))
         else:
             command = pane_current_command(cfg, pane.pane)
-            # Prefer reality from the deployed worker spec (so status reflects
-            # what is actually running after `start` vs `babysit start`).
-            worker_type = None
-            spec = load_babysit_spec(babysit_spec_path(cfg, pane.pane))
-            if spec:
-                has_prompts = bool(spec.get("long_prompt") or spec.get("short_prompt"))
-                worker_type = "babysit" if has_prompts else "comms"
-            else:
-                worker_type = "babysit" if pane.babysit.enabled else ("comms" if pane.comms else None)
-
-            if worker_type == "babysit":
-                prefix = "babysit"
-            elif worker_type == "comms":
-                prefix = "comms"
-            else:
-                prefix = "off"
-            if worker_note:
-                worker_val = f"{prefix} ({worker_note})"
-            else:
-                worker_val = prefix
             rows.append((target, pane.title, command or "-", monitor, worker_val))
 
     if rows:
@@ -369,37 +439,12 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("")
             lines.append("  State  = live state of the agent in the pane (from its monitor: idle/working/etc)")
             lines.append("  Worker = background helper process (comms: delivery + polling; babysit: nudges + delivery)")
-            lines.append("           Run `babysit status` / `babysit start` to manage the babysit workers.")
+            lines.append("           Run `babysit start` / `babysit stop` to manage the babysit workers.")
 
     return lines
 
 
-def _format_babysit_note(cfg: SwarmConfig, pane: str) -> str:
-    path = babysit_state_path(cfg, pane)
-    if not path.exists():
-        if not babysit_pid_path(cfg, pane).exists():
-            return "stopped"
-        return "restart-needed"
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
-        return "?"
-    now = int(time.time())
-    next_poll_at = int(data.get("next_poll_at") or 0)
-    last_monitor_state = str(data.get("last_monitor_state") or "").strip()
-    next_force_at = int(data.get("next_force_nudge_at") or 0)
-    parts: list[str] = []
-    if next_poll_at > 0:
-        delta = max(0, next_poll_at - now)
-        if delta <= 0:
-            parts.append("next≤5s")
-        else:
-            parts.append(f"next={delta}s")
-    if next_force_at > 0 and last_monitor_state in {"unknown", "working", "error"}:
-        parts.append(f"force={max(0, next_force_at - now)}s")
-    if not parts:
-        return "?"
-    return ", ".join(parts)
+
 
 
 def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) -> None:
