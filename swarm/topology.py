@@ -408,7 +408,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 hb_val = "-"
                 brief_val = "stopped"
                 if pane.babysit.enabled:
-                    babysit_val = "babysit (stopped)"
+                    babysit_val = "stopped"
                 else:
                     babysit_val = "off"
             else:
@@ -419,7 +419,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 if proc_state == "stale":
                     brief_val = "stale"
                     if pane.babysit.enabled:
-                        babysit_val = "babysit (stale)"
+                        babysit_val = "stale"
                     else:
                         babysit_val = "off"
                 else:
@@ -431,9 +431,9 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
                     if pane.babysit.enabled:
                         if active_mode == "comms":
-                            babysit_val = "babysit (not started)"
+                            babysit_val = "not started"
                         elif note == "drifted":
-                            babysit_val = "babysit (drifted)"
+                            babysit_val = "drifted"
                         else:
                             # active
                             clear_note = ""
@@ -446,10 +446,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                                             ema = data.get("ema") or {}
                                             nudge_count = int(ema.get("nudge_count") or 0)
                                             rem = clear_every - (nudge_count % clear_every)
-                                            clear_note = f", clear in {rem}"
+                                            clear_note = f" (clear in {rem})"
                                         except Exception:
                                             pass
-                            babysit_val = f"babysit (active{clear_note})"
+                            babysit_val = f"active{clear_note}"
                     else:
                         babysit_val = "off"
 
