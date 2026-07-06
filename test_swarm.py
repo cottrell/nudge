@@ -99,7 +99,7 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
                 self.stderr = stderr
                 self.returncode = returncode
 
-        if argv == ["codex", "debug", "models"]:
+        if argv == ["codex", "debug", "models", "--bundled"]:
             return Proc('{"models":[{"slug":"gpt-test","visibility":"list"}]}')
         if argv == ["grok", "models"]:
             return Proc("Available models:\n  - grok-build\n  * grok-composer-2.5-fast (default)\n")
@@ -117,7 +117,7 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     out = capsys.readouterr().out
 
     assert "codex:" in out
-    assert "list: codex debug models" in out
+    assert "list: codex debug models --bundled (stable local catalog)" in out
     assert "gpt-test" in out
     assert (
         'shell_command: "codex --dangerously-bypass-approvals-and-sandbox '
