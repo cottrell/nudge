@@ -25,7 +25,7 @@ except ImportError:
 MODEL_HELPERS = {
     "codex": {
         "command": "codex",
-        "list": ["codex", "debug", "models"],
+        "list": ["codex", "debug", "models", "--bundled"],
         "run": "codex -m <model>",
         "swarm": (
             "codex --dangerously-bypass-approvals-and-sandbox -m <model>"
@@ -118,20 +118,28 @@ def _grok_models() -> tuple[list[str], str | None]:
 
 
 def _codex_models() -> tuple[list[str], str | None]:
-    proc = _run_capture(MODEL_HELPERS["codex"]["list"])
-    if proc.returncode != 0:
-        msg = (proc.stderr or proc.stdout or "command failed").strip()
-        return [], msg
-    try:
-        data = json.loads(proc.stdout)
-        models = [
-            m["slug"]
-            for m in data.get("models", [])
-            if m.get("visibility") == "list" and m.get("slug")
-        ]
-    except (json.JSONDecodeError, TypeError, KeyError) as e:
-        return [], f"could not parse codex debug models: {e}"
-    return models, None
+    cmds = [
+        MODEL_HELPERS["codex"]["list"],
+        ["codex", "debug", "models"],
+    ]
+    last_error: str | None = None
+    for argv in cmds:
+        proc = _run_capture(argv)
+        if proc.returncode != 0:
+            last_error = (proc.stderr or proc.stdout or "command failed").strip()
+            continue
+        try:
+            data = json.loads(proc.stdout)
+            models = [
+                m["slug"]
+                for m in data.get("models", [])
+                if m.get("visibility") == "list" and m.get("slug")
+            ]
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+            last_error = f"could not parse codex debug models: {e}"
+            continue
+        return models, None
+    return [], last_error or "could not query codex debug models"
 
 
 def _model_flag_status(helper: dict[str, object]) -> str:
@@ -166,7 +174,8 @@ def print_model_help() -> None:
         print(f"  installed: yes ({shutil.which(command)})")
         if name in {"codex", "grok"}:
             list_cmd = " ".join(str(p) for p in helper["list"])
-            print(f"  list: {list_cmd}")
+            suffix = " (stable local catalog)" if name == "codex" else ""
+            print(f"  list: {list_cmd}{suffix}")
             models_fn = _codex_models if name == "codex" else _grok_models
             models, error = models_fn()
             if error:
