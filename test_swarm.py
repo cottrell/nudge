@@ -77,7 +77,8 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "## Swarm" in agents
     assert "Runtime map: `/tmp/nudge-swarm/demo/runtime.json`" in agents
     assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
-    assert 'aiswarm send <cfg> <pane> "msg"' in agents
+    assert f'Swarm CLI: `python {ROOT_DIR / "swarm" / "cli.py"}`' in agents
+    assert f'python {ROOT_DIR / "swarm" / "cli.py"} send <cfg> <pane> "msg"' in agents
     assert "The worker consumes the log and delivers via `tmux-send`" in agents
     assert "Direct/manual still works" in agents
     assert "Do NOT use raw `tmux send-keys ... Enter`" in agents
@@ -656,6 +657,7 @@ windows:
 """))
     text = build_self_awareness_text(cfg)
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
+    assert f"Swarm CLI: python {SWARM_CLI}" in text
     assert f"Status: python {SWARM_CLI} status {cfg.path} --brief" in text
     assert f"Watch: python {SWARM_CLI} status {cfg.path} --brief -w" in text
     assert "log_send" in text or "tmux-send" in text
@@ -798,7 +800,7 @@ def test_comms_end_to_end_plain_pane_no_agent(tmp_path: Path):
             start_new_session=True,
         )
 
-        # 4. Write a unique message to the log (simulates aiswarm send / broadcast --via-log)
+        # 4. Write a unique message to the log (simulates cli.py send / broadcast --via-log)
         msg = f"COMMS-E2E-TEST-{uniq}"
         from common import log_send, init_comms_db
         init_comms_db(session)

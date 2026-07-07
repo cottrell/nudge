@@ -132,15 +132,15 @@ Use the built-in log for reliable agent-to-agent messages (durable, replayable, 
 
 ```bash
 # direct to pane via log (buffered until consumer delivers on idle)
-aiswarm send ./swarm/<project>.yaml 0.2 "review this"
+python swarm/cli.py send ./swarm/<project>.yaml 0.2 "review this"
 
 # broadcast via log
-aiswarm broadcast --via-log ./swarm/<project>.yaml "new plan"
+python swarm/cli.py broadcast --via-log ./swarm/<project>.yaml "new plan"
 
 # inspect
-aiswarm log ./swarm/<project>.yaml --pending
-aiswarm cursors ./swarm/<project>.yaml
-aiswarm clear-comms ./swarm/<project>.yaml -y
+python swarm/cli.py log ./swarm/<project>.yaml --pending
+python swarm/cli.py cursors ./swarm/<project>.yaml
+python swarm/cli.py clear-comms ./swarm/<project>.yaml -y
 ```
 
 The worker loop (started automatically by `start` for `monitor: true` panes) consumes the log and delivers via `tmux-send` when the pane is idle. `babysit start` additionally enables the prompt-nudge logic on top for configured panes.
