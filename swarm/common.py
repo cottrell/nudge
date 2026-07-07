@@ -279,6 +279,7 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         f"Swarm session: {cfg.session_name}",
         f"Windows: {', '.join(w.window_name for w in cfg.windows)}",
         f"Runtime map: {cfg.runtime_map_path}",
+        f"Swarm CLI: python {SWARM_CLI}",
         f"Status: python {SWARM_CLI} status {config_path} --brief",
         f"Watch: python {SWARM_CLI} status {config_path} --brief -w",
         "",
@@ -288,8 +289,8 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "- babysit pid/log/spec paths",
         "",
         "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
-        "CLI: aiswarm send <cfg> 0.2 \"msg here\"   (via log)",
-        "CLI: aiswarm log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
+        f"CLI: python {SWARM_CLI} send <cfg> 0.2 \"msg here\"   (via log)",
+        f"CLI: python {SWARM_CLI} log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
         "Worker loop (comms consumer / message delivery) defaults to on for monitor: true panes.",
         "  `start` ensures the base worker loop for monitored panes (comms group always active).",
         "  Babysit prompt group is independent and optional.",
@@ -1240,5 +1241,4 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         "parsed": parsed,
         "limits": parsed.get("limits", [])
     }
-
 
