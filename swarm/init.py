@@ -22,15 +22,17 @@ Use as source of truth for:
 - monitor sockets, live state
 - babysit pid/log/spec/state files
 
-Messaging another tmux pane: ALWAYS use `tmux-send`.
+Messaging (durable, preferred):
+- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `aiswarm log <cfg> [--pending] [--pane 0.2]`, `aiswarm cursors <cfg>`.
+- Direct/manual still works: `{ROOT_DIR / "tmux-send"} <target> "message"`.
+
+Worker loop:
+- `aiswarm start <cfg>` starts the base comms worker for `monitor: true` panes.
+- The worker consumes the log and delivers via `tmux-send` when the pane is idle.
+- Babysit prompt nudges are independent; use `aiswarm babysit start|stop <cfg>`.
+
 Do NOT use raw `tmux send-keys ... Enter`.
-
-Required form:
-- `{ROOT_DIR / "tmux-send"} <target> "message"`
-
-Reason:
-- raw `tmux send-keys ... Enter` often fails to submit Enter
-- prompts can sit unexecuted until next nudge or manual Enter
 
 Swarm scripts: `{ROOT_DIR / "swarm"}`.
 """
