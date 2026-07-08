@@ -673,6 +673,38 @@ def watch_av_usage(agents: list[str] | None, recent_minutes: int = 0, interval: 
         return
 
 
+def _kv(name: str, value) -> str:
+    return f"{name}={json.dumps(value, separators=(',', ':'))}"
+
+
+def _print_log_event(
+    eid: int,
+    ts: str,
+    rec: str,
+    snd: str | None,
+    typ: str,
+    pay: str,
+    meta: str | None,
+    **extra,
+) -> None:
+    parts = [
+        _kv("id", eid),
+        _kv("ts", ts),
+        _kv("type", typ),
+        _kv("from", snd or "-"),
+        _kv("to", rec),
+    ]
+    for key, value in extra.items():
+        parts.append(_kv(key, value))
+    parts.append(_kv("payload", pay))
+    if meta:
+        try:
+            parts.append(_kv("meta", json.loads(meta)))
+        except json.JSONDecodeError:
+            parts.append(_kv("meta", meta))
+    print(" ".join(parts))
+
+
 def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False) -> None:
     try:
         from .common import get_cursors, get_events, get_pending_events, get_pending_broadcasts
@@ -690,22 +722,11 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
         if pane:
             pend = get_pending_events(cfg.session_name, pane)
             for eid, ts, snd, typ, pay, meta in pend:
-                from_ = snd or "-"
-                to = pane
-                print(f"from: {from_}")
-                print(f"to: {to}")
-                print(f"ts: {ts} id:{eid} type:{typ}")
-                print(f"payload: {pay}")
-                print()
+                _print_log_event(eid, ts, pane, snd, typ, pay, meta)
             try:
                 bpend = get_pending_broadcasts(cfg.session_name, pane)
                 for eid, ts, snd, typ, pay, meta in bpend:
-                    from_ = snd or "-"
-                    print(f"from: {from_}")
-                    print(f"to: {pane} (via broadcast)")
-                    print(f"ts: {ts} id:{eid} type:{typ}")
-                    print(f"payload: {pay}")
-                    print()
+                    _print_log_event(eid, ts, pane, snd, typ, pay, meta, via="broadcast")
             except Exception:
                 pass
         else:
@@ -721,16 +742,30 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
         if not evs:
             print("(no events)")
         for eid, ts, rec, snd, typ, pay, meta in evs:
-            from_ = snd or "-"
-            to = rec
-            print(f"from: {from_}")
-            print(f"to: {to}")
-            print(f"ts: {ts} id:{eid} type:{typ}")
-            print(f"payload: {pay}")
-            print()
+            _print_log_event(eid, ts, rec, snd, typ, pay, meta)
 
 
 def watch_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False, interval: float = 1.0) -> None:
+    if not pending:
+        try:
+            from .common import get_events
+        except ImportError:
+            from common import get_events
+        last_id = 0
+        try:
+            print(f"watch interval={interval:.1f}s session={cfg.session_name}")
+            print()
+            while True:
+                evs = get_events(cfg.session_name, pane, limit)
+                new = [ev for ev in evs if ev[0] > last_id]
+                for eid, ts, rec, snd, typ, pay, meta in new:
+                    _print_log_event(eid, ts, rec, snd, typ, pay, meta)
+                    last_id = eid
+                sys.stdout.flush()
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            return
+
     try:
         while True:
             sys.stdout.write("\x1b[H\x1b[2J")

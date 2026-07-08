@@ -370,6 +370,25 @@ def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = 
     # or we can enumerate panes here. Start simple.
     log_send(session_name, "__broadcast__", message, sender, "broadcast")
 
+
+def log_ack(session_name: str, pane: str, acked_event_id: int,
+            acked_recipient: str, target: str) -> int:
+    return log_send(
+        session_name,
+        f"{pane}:ack",
+        "",
+        sender="consumer",
+        etype="ack",
+        meta={
+            "acked_event_id": acked_event_id,
+            "acked_recipient": acked_recipient,
+            "pane": pane,
+            "target": target,
+            "delivery": "tmux-send",
+        },
+    )
+
+
 def get_pending_events(session_name: str, recipient: str):
     """Return (id, ts, sender, type, payload, meta) for unread events."""
     db = _comms_db_path(session_name)
@@ -413,10 +432,16 @@ def get_events(session_name: str, recipient: str | None = None, limit: int = 100
         return []
     with _sqlite3.connect(str(db)) as conn:
         if recipient is not None:
-            sql = "SELECT id, ts, recipient, sender, type, payload, meta FROM events WHERE recipient=? ORDER BY id DESC LIMIT ?"
-            params = (recipient, limit)
+            sql = (
+                "SELECT id, ts, recipient, sender, type, payload, meta FROM events "
+                "WHERE recipient IN (?,?) ORDER BY id DESC LIMIT ?"
+            )
+            params = (recipient, f"{recipient}:ack", limit)
         else:
-            sql = "SELECT id, ts, recipient, sender, type, payload, meta FROM events ORDER BY id DESC LIMIT ?"
+            sql = (
+                "SELECT id, ts, recipient, sender, type, payload, meta FROM events "
+                "ORDER BY id DESC LIMIT ?"
+            )
             params = (limit,)
         rows = list(conn.execute(sql, params))
         return list(reversed(rows))
@@ -1241,4 +1266,3 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         "parsed": parsed,
         "limits": parsed.get("limits", [])
     }
-

@@ -112,7 +112,7 @@ def _drain_comms(session: str, target: str, pane: str) -> None:
         swarm_dir = str(Path(__file__).parent / "swarm")
         if swarm_dir not in sys.path:
             sys.path.insert(0, swarm_dir)
-        from common import get_pending_events, advance_cursor, get_pending_broadcasts, advance_broadcast_cursor
+        from common import get_pending_events, advance_cursor, get_pending_broadcasts, advance_broadcast_cursor, log_ack
     except Exception as e:
         print(f"  comms import failed: {e}")
         return
@@ -124,6 +124,7 @@ def _drain_comms(session: str, target: str, pane: str) -> None:
         for eid, ts, snd, typ, payload, meta in pending:
             print(f"  comms: deliver direct eid={eid} to {target}")
             _send_message(target, payload)
+            log_ack(session, pane, eid, pane, target)
             last_id = eid
         if pending and last_id > 0:
             advance_cursor(session, pane, last_id)
@@ -137,6 +138,7 @@ def _drain_comms(session: str, target: str, pane: str) -> None:
         for eid, ts, snd, typ, payload, meta in bcasts:
             print(f"  comms: deliver broadcast eid={eid} to {target}")
             _send_message(target, payload)
+            log_ack(session, pane, eid, "__broadcast__", target)
             last_id = eid
         if bcasts and last_id > 0:
             advance_broadcast_cursor(session, pane, last_id)

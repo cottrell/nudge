@@ -699,18 +699,33 @@ windows:
 
 def test_comms_helpers(tmp_path: Path):
     import os
-    from common import init_comms_db, log_send, log_broadcast, get_events, get_pending_events, get_pending_broadcasts, advance_cursor, advance_broadcast_cursor, get_cursors
+    from common import (
+        init_comms_db,
+        log_send,
+        log_broadcast,
+        log_ack,
+        get_events,
+        get_pending_events,
+        get_pending_broadcasts,
+        advance_cursor,
+        advance_broadcast_cursor,
+        get_cursors,
+    )
     # force a temp session db by chdir and monkey the path? but functions hardcode /tmp
     # instead test via direct sqlite for now is complex; test the logic with a session that uses /tmp
     sess = "test_comms_" + str(os.getpid())
     try:
         init_comms_db(sess)
-        log_send(sess, "0.0", "direct to 0.0")
+        direct_id = log_send(sess, "0.0", "direct to 0.0")
         log_broadcast(sess, "broadcast msg")
+        log_ack(sess, "0.0", direct_id, "0.0", "test:0.0")
         evs = get_events(sess)
-        assert len(evs) >= 2
+        assert len(evs) >= 3
+        pane_evs = get_events(sess, "0.0")
+        assert any(row[4] == "ack" for row in pane_evs)
         pend = get_pending_events(sess, "0.0")
         assert len(pend) >= 1
+        assert all(row[3] != "ack" for row in pend)
         bcasts = get_pending_broadcasts(sess, "0.0")
         assert len(bcasts) >= 1
         # advance
