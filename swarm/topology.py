@@ -703,6 +703,7 @@ def _print_log_event(
         except json.JSONDecodeError:
             parts.append(_kv("meta", meta))
     print(" ".join(parts))
+    print()
 
 
 def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False) -> None:
