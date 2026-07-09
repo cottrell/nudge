@@ -269,14 +269,16 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
                 print(f"log-broadcast to {target} ({pane.title})")
                 sent += 1
     else:
-        payload = f"broadcast: {message.strip()}"
+        payload = message.strip()
+        # Keep broadcast payloads literal. If a future label/prefix is added,
+        # do not alter slash commands like "/clear".
         for pane in matching_panes:
             target = f"{cfg.session_name}:{pane.pane}"
             if dry_run:
                 print(f"would tmux-broadcast to {target} ({pane.title})")
                 sent += 1
                 continue
-            subprocess.run([str(ROOT_DIR / "tmux-send"), target, payload], check=True, text=True)
+            subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", target, payload], check=True, text=True)
             print(f"tmux-broadcast to {target} ({pane.title})")
             sent += 1
     if sent == 0:
