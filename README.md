@@ -71,6 +71,8 @@ python swarm/cli.py quota ./swarm/<project>.yaml
 python swarm/cli.py av-usage ./swarm/<project>.yaml
 ```
 
+Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged.
+
 Status/usage reliability note:
 
 - monitor state is activity-based: any pane output means `working`; 10 seconds without output means `idle`
