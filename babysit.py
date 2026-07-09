@@ -75,6 +75,7 @@ def _query_socket(sock_path: str) -> dict:
 
 def _send_message(target: str, msg: str) -> None:
     # Babysit must send literal commands (e.g. /stats, /clear) unchanged.
+    # If prefixing is ever reintroduced, keep any payload that starts with "/" raw.
     if os.environ.get("BABYSIT_DRY_RUN") == "1":
         print(f"  [DRY RUN] would tmux-send target={target} msg={msg!r}")
         return
