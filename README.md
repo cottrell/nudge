@@ -1,6 +1,11 @@
 # nudge
 
-Config-driven tmux agent orchestration and monitoring.
+Config-driven tmux orchestration for local AI coding-agent swarms, with activity
+monitoring, durable log comms, and quota-aware babysitting.
+
+Primary use: keep multiple LLM agents (Claude, Codex, Grok, etc.) productive in
+tmux panes without constant manual intervention. Designed for personal multi-agent
+workflows; works standalone.
 
 Primary workflow is the YAML swarm CLI under `swarm/cli.py`.
 
@@ -242,7 +247,26 @@ agents except `grok`, any pane output means `working` until the quiet timeout,
 while `grok` still relies on parsing OSC terminal-title updates where title
 `grok` means `idle` and any other title means `working`.
 
+## Rough edges / limitations
+
+Most of these are intentional trade-offs or already documented inline above:
+
+- Changing pane counts / layout after `start` requires a full session recreate
+  (`start` is create-oriented, not a declarative grid update)
+- Monitor is activity-based only (not semantic agent status); quiet long jobs can
+  look idle, busy idle-screen redraws can look working
+- Quota EMA pacing is noisy when multiple swarms share one provider quota
+  (overestimates → slower nudges; usually the safe direction)
+- `usage` / quota reporting is best-effort operator hint, not a hard scheduler
+
+See `backlog/tasks/` for planned work. Contributions welcome via issues or PRs
+(see `AGENTS.md`).
+
 ## Similar projects
+
+Many of these are status indicators, session launchers, or general tmux managers.
+nudge's focus is swarm lifecycle (YAML start/stop), durable log-based pane comms,
+and quota-paced babysitting on top of activity monitors.
 
 - [ccmanager](https://github.com/kbwo/ccmanager)
 - [tallr](https://github.com/kaihochak/tallr)
@@ -255,5 +279,3 @@ while `grok` still relies on parsing OSC terminal-title updates where title
 - [tmuxinator](https://github.com/tmuxinator/tmuxinator)
 - [teamocil](https://github.com/remiprev/teamocil)
 - [Zellij](https://zellij.dev/)
-
-See `AGENTS.md` for contribution guidance and `backlog/tasks/` for planned work.
