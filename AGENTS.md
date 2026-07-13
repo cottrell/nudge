@@ -79,10 +79,10 @@ Use as source of truth for:
 - babysit pid/log/spec/state files
 
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `python /home/cottrell/dev/nudge/swarm/cli.py send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `python /home/cottrell/dev/nudge/swarm/cli.py log <cfg> [--pending] [--pane X.Y]`, `python /home/cottrell/dev/nudge/swarm/cli.py cursors <cfg>`.
-- Direct/manual still works: `/home/cottrell/dev/nudge/tmux-send <target> "message"`.
+- Use the comms log for reliability between agents: `python swarm/cli.py send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `python swarm/cli.py log <cfg> [--pending] [--pane X.Y]`, `python swarm/cli.py cursors <cfg>`.
+- Direct/manual still works: `./tmux-send <target> "message"`.
 
 Do NOT use raw `tmux send-keys ... Enter` (fails to submit reliably).
 
-Swarm scripts: `/home/cottrell/dev/nudge/swarm`.
+Swarm scripts: `swarm/`.
