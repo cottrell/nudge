@@ -8,14 +8,14 @@ import subprocess
 import sys
 
 # Relative imports (for `python -m swarm.cli`) with bare fallback for direct
-# `python swarm/cli.py` / aiswarm (avoids "relative import with no known parent").
+# script execution or the installed `aiswarm` entrypoint.
 try:
     from . import topology as swarm_topology
     from . import babysitctl as swarm_babysit
     from . import init as swarm_init
     from .common import load_config
 except ImportError:
-    # direct script fallback (python swarm/cli.py or aiswarm alias)
+    # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
     import babysitctl as swarm_babysit
     import init as swarm_init

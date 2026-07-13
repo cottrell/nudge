@@ -7,7 +7,14 @@ Primary use: keep multiple LLM agents (Claude, Codex, Grok, etc.) productive in
 tmux panes without constant manual intervention. Designed for personal multi-agent
 workflows; works standalone.
 
-Primary workflow is the YAML swarm CLI under `swarm/cli.py`.
+Primary workflow is the installed `aiswarm` command. From a repo checkout,
+`python -m swarm.cli` or `python swarm/cli.py` also works.
+
+Install `aiswarm` into your `uv` tool environment:
+
+```bash
+make install-aiswarm
+```
 
 States: `unknown` `working` `idle`
 
@@ -17,7 +24,7 @@ States: `unknown` `working` `idle`
 # 1. Turn on the swarm (tmux session + panes + per-pane monitors + worker loops)
 #    Note: this is mostly a "create" for the tmux grid. Changing pane counts later
 #    requires stopping and re-starting (see limitations below).
-python swarm/cli.py start ./swarm/<project>.yaml
+aiswarm start ./swarm/<project>.yaml
 
 # Architecture notes:
 # - One tmux *session* per YAML file (named by `session_name`)
@@ -34,12 +41,12 @@ python swarm/cli.py start ./swarm/<project>.yaml
 
 ```bash
 # 2. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
-python swarm/cli.py babysit start ./swarm/<project>.yaml
+aiswarm babysit start ./swarm/<project>.yaml
 ```
 
 ```bash
 # 3. Turn off babysit only (swarm / monitors / comms stay up)
-python swarm/cli.py babysit stop ./swarm/<project>.yaml
+aiswarm babysit stop ./swarm/<project>.yaml
 ```
 
 ```bash
@@ -47,7 +54,7 @@ python swarm/cli.py babysit stop ./swarm/<project>.yaml
 # - stops all workers (if running)
 # - kills per-pane monitors
 # - tears down the tmux session
-python swarm/cli.py stop ./swarm/<project>.yaml
+aiswarm stop ./swarm/<project>.yaml
 ```
 
 ## Swarm-first workflow
@@ -55,7 +62,7 @@ python swarm/cli.py stop ./swarm/<project>.yaml
 Create a starter config and AGENTS note:
 
 ```bash
-python swarm/cli.py init <project>
+aiswarm init <project>
 ```
 
 View/edit `./swarm/<project>.yaml`.
@@ -65,15 +72,15 @@ See the **Basic operational flow** section above for the recommended sequence (`
 Other useful commands:
 
 ```bash
-python swarm/cli.py start --skip-grid ./swarm/<project>.yaml
-python swarm/cli.py status ./swarm/<project>.yaml --brief -w
-python swarm/cli.py broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
-python swarm/cli.py broadcast --via-log ./swarm/<project>.yaml "use durable log"
-python swarm/cli.py send ./swarm/<project>.yaml 0.0 "hello via log"
-python swarm/cli.py log ./swarm/<project>.yaml --pending
-python swarm/cli.py clear-comms ./swarm/<project>.yaml -y
-python swarm/cli.py quota ./swarm/<project>.yaml
-python swarm/cli.py av-usage ./swarm/<project>.yaml
+aiswarm start --skip-grid ./swarm/<project>.yaml
+aiswarm status ./swarm/<project>.yaml --brief -w
+aiswarm broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
+aiswarm broadcast --via-log ./swarm/<project>.yaml "use durable log"
+aiswarm send ./swarm/<project>.yaml 0.0 "hello via log"
+aiswarm log ./swarm/<project>.yaml --pending
+aiswarm clear-comms ./swarm/<project>.yaml -y
+aiswarm quota ./swarm/<project>.yaml
+aiswarm av-usage ./swarm/<project>.yaml
 ```
 
 Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged.
@@ -88,14 +95,14 @@ Status/usage reliability note:
 Attach after start if needed:
 
 ```bash
-python swarm/cli.py start ./swarm/<project>.yaml --attach
+aiswarm start ./swarm/<project>.yaml --attach
 ```
 
 tmuxp-first flow:
 
 ```bash
 tmuxp load ./swarm/<project>.yaml
-python swarm/cli.py start --skip-grid ./swarm/<project>.yaml
+aiswarm start --skip-grid ./swarm/<project>.yaml
 ```
 
 Built-in examples:
@@ -139,15 +146,15 @@ Use the built-in log for reliable agent-to-agent messages (durable, replayable, 
 
 ```bash
 # direct to pane via log (buffered until consumer delivers on idle)
-python swarm/cli.py send ./swarm/<project>.yaml 0.2 "review this"
+aiswarm send ./swarm/<project>.yaml 0.2 "review this"
 
 # broadcast via log
-python swarm/cli.py broadcast --via-log ./swarm/<project>.yaml "new plan"
+aiswarm broadcast --via-log ./swarm/<project>.yaml "new plan"
 
 # inspect
-python swarm/cli.py log ./swarm/<project>.yaml --pending
-python swarm/cli.py cursors ./swarm/<project>.yaml
-python swarm/cli.py clear-comms ./swarm/<project>.yaml -y
+aiswarm log ./swarm/<project>.yaml --pending
+aiswarm cursors ./swarm/<project>.yaml
+aiswarm clear-comms ./swarm/<project>.yaml -y
 ```
 
 The worker loop (started automatically by `start` for `monitor: true` panes) consumes the log and delivers via `tmux-send` when the pane is idle. `babysit start` additionally enables the prompt-nudge logic on top for configured panes.

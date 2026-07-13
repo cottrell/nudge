@@ -15,6 +15,9 @@ test-swarm:
 
 test: test-c test-swarm
 
+install-aiswarm:
+	uv tool install --editable . --force
+
 capture:
 	@test -n "$(AGENT)" || (echo "Usage: make capture AGENT=<claude|codex|copilot|gemini|vibe|qwen|antigravity|grok> [DUR=60]"; exit 1)
 	./capture_fixture.sh $(AGENT) $${DUR:-60}

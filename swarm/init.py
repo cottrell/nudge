@@ -17,17 +17,17 @@ Use as source of truth for:
 - monitor sockets, live state
 - babysit pid/log/spec/state files
 
-Swarm CLI: `python swarm/cli.py`
+Swarm CLI: `aiswarm`
 
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `python swarm/cli.py send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `python swarm/cli.py log <cfg> [--pending] [--pane 0.2]`, `python swarm/cli.py cursors <cfg>`.
+- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `aiswarm log <cfg> [--pending] [--pane 0.2]`, `aiswarm cursors <cfg>`.
 - Direct/manual still works: `./tmux-send <target> "message"`.
 
 Worker loop:
-- `python swarm/cli.py start <cfg>` starts the base comms worker for `monitor: true` panes.
+- `aiswarm start <cfg>` starts the base comms worker for `monitor: true` panes.
 - The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit prompt nudges are independent; use `python swarm/cli.py babysit start|stop <cfg>`.
+- Babysit prompt nudges are independent; use `aiswarm babysit start|stop <cfg>`.
 
 Do NOT use raw `tmux send-keys ... Enter`.
 
@@ -162,5 +162,5 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
 
     print()
     print("Next:")
-    print(f"  python swarm/cli.py start swarm/{name}.yaml -D")
-    print(f"  python swarm/cli.py start swarm/{name}.yaml")
+    print(f"  aiswarm start swarm/{name}.yaml -D")
+    print(f"  aiswarm start swarm/{name}.yaml")

@@ -79,8 +79,8 @@ Use as source of truth for:
 - babysit pid/log/spec/state files
 
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `python swarm/cli.py send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `python swarm/cli.py log <cfg> [--pending] [--pane X.Y]`, `python swarm/cli.py cursors <cfg>`.
+- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `aiswarm log <cfg> [--pending] [--pane X.Y]`, `aiswarm cursors <cfg>`.
 - Direct/manual still works: `./tmux-send <target> "message"`.
 
 Do NOT use raw `tmux send-keys ... Enter` (fails to submit reliably).
