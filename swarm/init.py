@@ -18,6 +18,7 @@ Use as source of truth for:
 - babysit pid/log/spec/state files
 
 Swarm CLI: `aiswarm`
+Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
 
 Messaging (durable, preferred):
 - Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
