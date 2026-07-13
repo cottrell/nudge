@@ -10,6 +10,8 @@ workflows; works standalone.
 Primary workflow is the installed `aiswarm` command. From a repo checkout,
 `python -m swarm.cli` or `python swarm/cli.py` also works.
 
+`aiswarm` must be on `PATH`; from this repo, run `make install-aiswarm`.
+
 Install `aiswarm` into your `uv` tool environment:
 
 ```bash

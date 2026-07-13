@@ -79,6 +79,7 @@ Use as source of truth for:
 - babysit pid/log/spec/state files
 
 Messaging (durable, preferred):
+- Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
 - Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
 - Inspect: `aiswarm log <cfg> [--pending] [--pane X.Y]`, `aiswarm cursors <cfg>`.
 - Direct/manual still works: `./tmux-send <target> "message"`.

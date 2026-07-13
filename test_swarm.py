@@ -78,6 +78,7 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "Runtime map: `/tmp/nudge-swarm/demo/runtime.json`" in agents
     assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
     assert "Swarm CLI: `aiswarm`" in agents
+    assert "Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`." in agents
     assert "aiswarm send <cfg> <pane> \"msg\"" in agents
     assert "The worker consumes the log and delivers via `tmux-send`" in agents
     assert "Direct/manual still works: `./tmux-send <target> \"message\"`." in agents
