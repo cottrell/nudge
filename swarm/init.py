@@ -3,11 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-try:
-    from .common import ROOT_DIR
-except ImportError:
-    from common import ROOT_DIR
-
 
 def agent_block(name: str) -> str:
     runtime_dir = Path("/tmp/nudge-swarm") / name
@@ -22,21 +17,21 @@ Use as source of truth for:
 - monitor sockets, live state
 - babysit pid/log/spec/state files
 
-Swarm CLI: `python {ROOT_DIR / "swarm" / "cli.py"}`
+Swarm CLI: `python swarm/cli.py`
 
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `python {ROOT_DIR / "swarm" / "cli.py"} send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `python {ROOT_DIR / "swarm" / "cli.py"} log <cfg> [--pending] [--pane 0.2]`, `python {ROOT_DIR / "swarm" / "cli.py"} cursors <cfg>`.
-- Direct/manual still works: `{ROOT_DIR / "tmux-send"} <target> "message"`.
+- Use the comms log for reliability between agents: `python swarm/cli.py send <cfg> <pane> "msg"` or `log_broadcast`.
+- Inspect: `python swarm/cli.py log <cfg> [--pending] [--pane 0.2]`, `python swarm/cli.py cursors <cfg>`.
+- Direct/manual still works: `./tmux-send <target> "message"`.
 
 Worker loop:
-- `python {ROOT_DIR / "swarm" / "cli.py"} start <cfg>` starts the base comms worker for `monitor: true` panes.
+- `python swarm/cli.py start <cfg>` starts the base comms worker for `monitor: true` panes.
 - The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit prompt nudges are independent; use `python {ROOT_DIR / "swarm" / "cli.py"} babysit start|stop <cfg>`.
+- Babysit prompt nudges are independent; use `python swarm/cli.py babysit start|stop <cfg>`.
 
 Do NOT use raw `tmux send-keys ... Enter`.
 
-Swarm scripts: `{ROOT_DIR / "swarm"}`.
+Swarm scripts: `swarm/`.
 """
 
 
@@ -167,5 +162,5 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
 
     print()
     print("Next:")
-    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} start {config_path} -D")
-    print(f"  python {ROOT_DIR / 'swarm' / 'cli.py'} start {config_path}")
+    print(f"  python swarm/cli.py start swarm/{name}.yaml -D")
+    print(f"  python swarm/cli.py start swarm/{name}.yaml")
