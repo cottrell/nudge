@@ -12,12 +12,14 @@ import sys
 try:
     from . import topology as swarm_topology
     from . import babysitctl as swarm_babysit
+    from . import tasksctl as swarm_tasks
     from . import init as swarm_init
     from .common import load_config
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
     import babysitctl as swarm_babysit
+    import tasksctl as swarm_tasks
     import init as swarm_init
     from common import load_config
 
@@ -227,7 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
     broadcast_p.add_argument("--via-log", action="store_true", help="Write to event log instead of direct tmux-send (consumer will deliver)")
 
-    stop_p = sub.add_parser("stop", help="Stop all worker loops (comms + babysit) and the tmux session")
+    stop_p = sub.add_parser("stop", help="Stop tasks dispatcher, worker loops (comms + babysit), and the tmux session")
     stop_p.add_argument("config", help="Path to YAML config")
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
 
@@ -293,6 +295,27 @@ def build_parser() -> argparse.ArgumentParser:
             sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; start still writes runtime notes")
             if name == "start":
                 sp.add_argument("--no-action", action="store_true", help="Start the worker loops but do not deliver any prompts (simulate loops)")
+
+    tasks_p = sub.add_parser(
+        "tasks",
+        help="Session task dispatcher: pull work from a source (v1: backlog) and assign to free panes (separate from babysit)",
+    )
+    tasks_sub = tasks_p.add_subparsers(dest="tasks_command", required=True)
+    for name, help_text in (
+        ("start", "Start the tasks dispatcher process for this swarm"),
+        ("stop", "Stop the tasks dispatcher process"),
+        ("status", "Show dispatcher status, assignments, and candidate tasks"),
+        ("once", "Run a single claim/dispatch pass (no long-running process)"),
+    ):
+        sp = tasks_sub.add_parser(name, help=help_text)
+        sp.add_argument("config", help="Path to YAML config")
+        if name != "status":
+            sp.add_argument(
+                "-D",
+                "--dry-run",
+                action="store_true",
+                help="Print planned claims/dispatches without editing backlog or sending",
+            )
 
     return parser
 
@@ -470,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "stop":
             cfg = load_config(args.config)
+            swarm_tasks.stop_dispatcher(cfg, args.dry_run)
             swarm_babysit.stop_workers(cfg, args.dry_run)
             _stop_tmux_session(cfg.session_name, args.dry_run)
             return 0
@@ -486,6 +510,20 @@ def main(argv: list[str] | None = None) -> int:
             except ImportError:
                 from common import clear_comms
             clear_comms(cfg.session_name, confirm=True)
+            return 0
+
+        if args.command == "tasks":
+            cfg = load_config(args.config)
+            if args.tasks_command == "start":
+                swarm_tasks.start_dispatcher(cfg, getattr(args, "dry_run", False))
+            elif args.tasks_command == "stop":
+                swarm_tasks.stop_dispatcher(cfg, getattr(args, "dry_run", False))
+            elif args.tasks_command == "once":
+                actions = swarm_tasks.dispatch_once(cfg, dry_run=getattr(args, "dry_run", False))
+                if not actions:
+                    print("no dispatch (no free pane or no candidates)")
+            else:
+                swarm_tasks.status(cfg)
             return 0
 
         cfg = load_config(args.config)
