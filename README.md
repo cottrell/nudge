@@ -47,12 +47,22 @@ aiswarm babysit start ./swarm/<project>.yaml
 ```
 
 ```bash
+# 2b. Optional: pull real work from backlog into free panes (separate from babysit)
+#     Requires top-level `tasks:` and per-pane `nudge.tasks.enabled: true`
+aiswarm tasks start ./swarm/<project>.yaml
+aiswarm tasks status ./swarm/<project>.yaml
+aiswarm tasks once ./swarm/<project>.yaml -D   # dry-run single pass
+aiswarm tasks stop ./swarm/<project>.yaml
+```
+
+```bash
 # 3. Turn off babysit only (swarm / monitors / comms stay up)
 aiswarm babysit stop ./swarm/<project>.yaml
 ```
 
 ```bash
 # 4. Full teardown
+# - stops tasks dispatcher (if running)
 # - stops all workers (if running)
 # - kills per-pane monitors
 # - tears down the tmux session
@@ -118,8 +128,9 @@ Built-in examples:
 - one or more tmux windows
 - each window has `window_name`, `layout`, and `panes`
 - pane command is `shell_command`
-- nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`, `comms`)
+- nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`, `comms`, `tasks`)
 - `comms.enabled` (defaults to `monitor`) starts a per-pane worker that consumes the durable log and delivers on idle
+- optional top-level `tasks:` configures the session task dispatcher (v1 source: backlog)
 
 Notes:
 
@@ -131,9 +142,56 @@ Notes:
 - `start` ensures the base worker loop (comms/message delivery) for monitored panes.
 - `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
   It does not affect the base comms worker loop.
-- `start` and `babysit start` write runtime files under `/tmp/nudge-swarm/<session>/`
+- `tasks start` runs a **session-level** dispatcher (not folded into babysit) that lists backlog
+  tasks matching `tasks.ingest` (default: `To Do` only), claims them, and delivers a prompt via
+  the durable log to free panes with `nudge.tasks.enabled: true`.
+- `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
 - self-awareness note: `/tmp/nudge-swarm/<session>/self-awareness.txt`
+- tasks dispatcher state: `/tmp/nudge-swarm/<session>/tasks/`
+
+## Tasks dispatcher (backlog → free panes)
+
+Why: fixed babysit “please continue” prompts waste tokens when real work already lives in backlog.
+The orchestrator must touch backlog itself (list + claim) so agents only receive a concrete task
+when free. Delivery uses the durable log so the existing idle consumer still gates tmux-send.
+
+```yaml
+# top-level (session)
+tasks:
+  source: backlog                 # v1 only; name stays generic for future sources
+  backlog_dir: ../backlog         # optional; walks up for backlog/config.yml if omitted
+  ingest: [To Do]                 # add "In Progress" to also reclaim; default is To Do only
+  poll_secs: 60
+  unassigned_only: true
+  require_label: null             # e.g. auto — only tasks with this label
+  claim_assignee_prefix: aiswarm  # assignee becomes aiswarm:<session>:<pane>
+  require_idle: true
+  via_log: true
+
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          babysit:
+            enabled: false        # prefer not both on same pane
+          tasks:
+            enabled: true
+```
+
+```bash
+aiswarm tasks start ./swarm/<project>.yaml
+aiswarm tasks status ./swarm/<project>.yaml
+aiswarm tasks once ./swarm/<project>.yaml
+aiswarm tasks stop ./swarm/<project>.yaml
+```
+
+Claim happens **before** log delivery (`In Progress` + assignee). Completion is **not** inferred
+from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
+state is cleared on the next poll when status is Done.
 
 ## Internal plumbing
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -51,6 +51,22 @@ class BabysitSpec:
 
 
 @dataclass
+class TasksSpec:
+    """Session-level work dispatcher (source=backlog for v1; name stays source-agnostic)."""
+    source: str = "backlog"
+    backlog_dir: Path | None = None
+    # Statuses to pull from the source. Default: only To Do (In Progress is opt-in).
+    ingest: list[str] = field(default_factory=lambda: ["To Do"])
+    poll_secs: int = 60
+    require_label: str | None = None
+    unassigned_only: bool = True
+    claim_assignee_prefix: str = "aiswarm"
+    via_log: bool = True
+    max_inflight: int = 0  # 0 = unlimited (one task per free pane still)
+    require_idle: bool = True
+
+
+@dataclass
 class PaneSpec:
     pane: str        # "W.N" — window index . pane index within window
     agent: str | None
@@ -59,6 +75,7 @@ class PaneSpec:
     monitor: bool
     babysit: BabysitSpec
     comms: bool = False
+    tasks_enabled: bool = False
 
     @property
     def pane_index(self) -> int:
@@ -84,6 +101,7 @@ class SwarmConfig:
     path: Path
     session_name: str
     windows: list[WindowSpec]
+    tasks: TasksSpec | None = None
 
     @property
     def window_name(self) -> str:
@@ -108,6 +126,10 @@ class SwarmConfig:
     @property
     def self_awareness_path(self) -> Path:
         return self.runtime_dir / "self-awareness.txt"
+
+    @property
+    def task_panes(self) -> list[PaneSpec]:
+        return [p for p in self.panes if p.tasks_enabled]
 
 
 def _parse_babysit(raw: dict, pane_id: str, cfg_path: Path) -> BabysitSpec:
@@ -147,6 +169,64 @@ def _parse_babysit(raw: dict, pane_id: str, cfg_path: Path) -> BabysitSpec:
         ema_warmup=int(raw.get("ema_warmup", 3)),
         ema_min_wait=int(raw.get("ema_min_wait", 30)),
         ema_max_wait=int(raw.get("ema_max_wait", 1200)),
+    )
+
+
+def resolve_backlog_dir(cfg_path: Path, explicit: str | None) -> Path:
+    """Resolve backlog directory: explicit path, else walk up for backlog/config.yml."""
+    if explicit:
+        p = Path(explicit)
+        if not p.is_absolute():
+            p = (cfg_path.parent / p).resolve()
+        else:
+            p = p.resolve()
+        if not (p / "config.yml").exists() and not p.is_dir():
+            raise ValueError(f"tasks.backlog_dir not found: {p}")
+        if not p.is_dir():
+            raise ValueError(f"tasks.backlog_dir is not a directory: {p}")
+        return p
+    for base in [cfg_path.parent, *cfg_path.parent.parents]:
+        cand = base / "backlog"
+        if (cand / "config.yml").exists():
+            return cand.resolve()
+    raise ValueError(
+        "tasks.backlog_dir not set and no backlog/config.yml found above config path; "
+        "set tasks.backlog_dir in the swarm YAML"
+    )
+
+
+def _parse_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec | None:
+    if not raw:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("tasks must be a mapping")
+    source = str(raw.get("source") or "backlog").strip().lower()
+    if source != "backlog":
+        raise ValueError(f"tasks.source={source!r} not supported yet (v1: backlog only)")
+    ingest_raw = raw.get("ingest", ["To Do"])
+    if isinstance(ingest_raw, str):
+        ingest = [s.strip() for s in ingest_raw.split(",") if s.strip()]
+    else:
+        ingest = [str(s).strip() for s in (ingest_raw or []) if str(s).strip()]
+    if not ingest:
+        raise ValueError("tasks.ingest must list at least one status")
+    require_label = raw.get("require_label")
+    require_label = str(require_label).strip() if require_label else None
+    explicit_dir = raw.get("backlog_dir")
+    backlog_dir = resolve_backlog_dir(
+        cfg_path, str(explicit_dir).strip() if explicit_dir else None
+    )
+    return TasksSpec(
+        source=source,
+        backlog_dir=backlog_dir,
+        ingest=ingest,
+        poll_secs=max(5, int(raw.get("poll_secs", 60))),
+        require_label=require_label,
+        unassigned_only=bool(raw.get("unassigned_only", True)),
+        claim_assignee_prefix=str(raw.get("claim_assignee_prefix") or "aiswarm").strip(),
+        via_log=bool(raw.get("via_log", True)),
+        max_inflight=max(0, int(raw.get("max_inflight", 0))),
+        require_idle=bool(raw.get("require_idle", True)),
     )
 
 
@@ -191,6 +271,11 @@ def load_config(path: str | Path) -> SwarmConfig:
             if bool(babysit_raw.get("enabled", False)) and not monitor:
                 raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
 
+            tasks_raw = nudge.get("tasks") or {}
+            tasks_enabled = bool(tasks_raw.get("enabled", False))
+            if tasks_enabled and not monitor:
+                raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
+
             comms_raw = nudge.get("comms") or {}
             # default to monitor (gives state awareness) but can be toggled independently
             comms_enabled = bool(comms_raw.get("enabled", monitor))
@@ -203,11 +288,23 @@ def load_config(path: str | Path) -> SwarmConfig:
                 monitor=monitor,
                 babysit=_parse_babysit(babysit_raw, pane_id, cfg_path),
                 comms=comms_enabled,
+                tasks_enabled=tasks_enabled,
             ))
 
         windows.append(WindowSpec(window_name=window_name, layout=layout, panes=panes))
 
-    return SwarmConfig(path=cfg_path, session_name=session_name, windows=windows)
+    tasks_spec = _parse_tasks(data.get("tasks"), cfg_path)
+    task_panes = [p for w in windows for p in w.panes if p.tasks_enabled]
+    if task_panes and tasks_spec is None:
+        # Auto-discover backlog so pane-only enable works without a full tasks block.
+        tasks_spec = _parse_tasks({"source": "backlog"}, cfg_path)
+
+    return SwarmConfig(
+        path=cfg_path,
+        session_name=session_name,
+        windows=windows,
+        tasks=tasks_spec,
+    )
 
 
 def monitor_socket_path(session_name: str, pane: str) -> Path:
@@ -257,13 +354,29 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                 "has_long_prompt": has_long,
                 "has_short_prompt": has_short,
             }
+        if pane.tasks_enabled:
+            entry["tasks"] = {"enabled": True}
         panes_map[pane.pane] = entry
+    tasks_info = None
+    if cfg.tasks:
+        tdir = cfg.runtime_dir / "tasks"
+        tasks_info = {
+            "source": cfg.tasks.source,
+            "backlog_dir": str(cfg.tasks.backlog_dir) if cfg.tasks.backlog_dir else None,
+            "ingest": list(cfg.tasks.ingest),
+            "poll_secs": cfg.tasks.poll_secs,
+            "pid": str(tdir / "dispatcher.pid"),
+            "log": str(tdir / "dispatcher.log"),
+            "state": str(tdir / "state.json"),
+            "panes": [p.pane for p in cfg.task_panes],
+        }
     return {
         "session_name": cfg.session_name,
         "windows": [w.window_name for w in cfg.windows],
         "runtime_dir": str(cfg.runtime_dir),
         "runtime_map": str(cfg.runtime_map_path),
         "panes": panes_map,
+        "tasks": tasks_info,
     }
 
 
@@ -299,6 +412,11 @@ def build_self_awareness_text(cfg: SwarmConfig) -> str:
         "  Use `babysit start` to enable the babysit group on configured panes.",
         "  Use `babysit stop` to disable the babysit group (worker loop stays for comms).",
         "Babysit nudges go via the log by default. Set babysit.via_log: false to send direct.",
+        "Tasks dispatcher (separate from babysit): pulls work from a task source (v1: backlog).",
+        "  Per-pane: nudge.tasks.enabled: true",
+        "  Session: tasks.backlog_dir / tasks.ingest (default [To Do]) / tasks.poll_secs",
+        "  CLI: aiswarm tasks start|stop|status|once <cfg>",
+        "  Claims task (In Progress + assignee) before log delivery; agent marks Done in backlog.",
         "Consumer delivers via tmux-send when pane is idle.",
         "Direct tmux-send still available.",
         "Clear with clear_comms(session, confirm=True) after y/confirm.",

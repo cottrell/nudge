@@ -18,6 +18,7 @@ import babysitctl
 import cli as swarm_cli
 import init as swarm_init
 from common import ROOT_DIR, SWARM_CLI, build_runtime_map, build_self_awareness_text, load_config
+import tasksctl
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -989,11 +990,16 @@ def test_cli_short_options_dispatch(monkeypatch):
 
 def test_cli_stop_dispatches_to_babysit_and_tmux_stop(monkeypatch):
     calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(tasksctl, "stop_dispatcher", lambda cfg, dry_run: calls.append(("tasks", cfg.session_name, str(dry_run))))
     monkeypatch.setattr(babysitctl, "stop_workers", lambda cfg, dry_run: calls.append(("workers", cfg.session_name, str(dry_run))))
     monkeypatch.setattr(swarm_cli, "_stop_tmux_session", lambda session_name, dry_run: calls.append(("tmux", session_name, str(dry_run))))
     rc = swarm_cli.main(["stop", "examples/swarm-grid.yaml"])
     assert rc == 0
-    assert calls == [("workers", "agent_grid", "False"), ("tmux", "agent_grid", "False")]
+    assert calls == [
+        ("tasks", "agent_grid", "False"),
+        ("workers", "agent_grid", "False"),
+        ("tmux", "agent_grid", "False"),
+    ]
 
 
 def test_cli_babysit_status_dispatches(monkeypatch):
@@ -1012,3 +1018,214 @@ def test_cli_babysit_stop_dispatches_to_disable_babysit(monkeypatch):
     rc = swarm_cli.main(["babysit", "stop", "examples/swarm-grid.yaml"])
     assert rc == 0
     assert calls == [("disable_babysit", "CFG", False)]
+
+
+def _write_backlog_project(root: Path) -> Path:
+    bdir = root / "backlog"
+    bdir.mkdir(parents=True, exist_ok=True)
+    (bdir / "config.yml").write_text(
+        'project_name: "demo"\n'
+        'statuses: ["To Do", "In Progress", "Done"]\n'
+        'default_status: "To Do"\n'
+    )
+    (bdir / "tasks").mkdir(exist_ok=True)
+    return bdir
+
+
+def test_load_config_tasks_defaults_and_pane_enable(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg_path = write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  ingest: ["To Do"]
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+      - shell_command: codex
+        nudge:
+          agent: codex
+          monitor: true
+          babysit:
+            enabled: true
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.tasks is not None
+    assert cfg.tasks.source == "backlog"
+    assert cfg.tasks.backlog_dir == bdir.resolve()
+    assert cfg.tasks.ingest == ["To Do"]
+    assert cfg.tasks.unassigned_only is True
+    assert cfg.panes[0].tasks_enabled is True
+    assert cfg.panes[1].tasks_enabled is False
+    assert [p.pane for p in cfg.task_panes] == ["0.0"]
+
+
+def test_load_config_tasks_ingest_in_progress_opt_in(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  ingest: ["To Do", "In Progress"]
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    assert cfg.tasks.ingest == ["To Do", "In Progress"]
+
+
+def test_load_config_rejects_tasks_without_monitor(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg_path = write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: bash
+        nudge:
+          monitor: false
+          tasks:
+            enabled: true
+""")
+    with pytest.raises(ValueError, match="cannot enable tasks when monitor=false"):
+        load_config(cfg_path)
+
+
+def test_parse_task_list_plain_priority_and_status():
+    text = """
+To Do:
+  [HIGH] TASK-9 - Design DAG management
+  [MEDIUM] TASK-10 - Session launch metadata
+  TASK-19 - Low-ish thing
+In Progress:
+  [LOW] TASK-3 - Capture fixture
+"""
+    tasks = tasksctl.parse_task_list_plain(text)
+    assert [t.id for t in tasks] == ["TASK-9", "TASK-10", "TASK-3", "TASK-19"]
+    assert tasks[0].priority == "HIGH"
+    assert tasks[0].status == "To Do"
+    assert tasks[2].status == "In Progress"
+
+
+def test_build_task_prompt_includes_claim_and_complete_instructions(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    task = tasksctl.BacklogTask(id="TASK-9", title="Do the thing", status="To Do", priority="HIGH")
+    prompt = tasksctl.build_task_prompt(cfg, task, "0.0", "body here")
+    assert "TASK-9" in prompt
+    assert "aiswarm:demo:0.0" in prompt
+    assert "backlog task complete TASK-9" in prompt
+    assert "body here" in prompt
+
+
+def test_dispatch_once_dry_run_claims_without_side_effects(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    # Isolate runtime under tmp
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    monkeypatch.setattr(
+        tasksctl,
+        "list_candidate_tasks",
+        lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
+    )
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
+    actions = tasksctl.dispatch_once(cfg, dry_run=True)
+    assert len(actions) == 1
+    assert actions[0]["task_id"] == "TASK-42"
+    assert actions[0]["pane"] == "0.0"
+    assert actions[0]["dry_run"] is True
+    # dry-run must not write assignments
+    assert tasksctl.load_state(cfg).get("assignments") in ({}, None) or not tasksctl.load_state(cfg).get("assignments")
+    out = capsys.readouterr().out
+    assert "would claim TASK-42" in out
+
+
+def test_cli_tasks_once_and_status_dispatch(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(
+        tasksctl,
+        "dispatch_once",
+        lambda cfg, dry_run=False: calls.append(("once", cfg, dry_run)) or [{"task_id": "TASK-1"}],
+    )
+    monkeypatch.setattr(tasksctl, "status", lambda cfg: calls.append(("status", cfg)))
+    monkeypatch.setattr(tasksctl, "start_dispatcher", lambda cfg, dry_run=False: calls.append(("start", cfg, dry_run)))
+    monkeypatch.setattr(tasksctl, "stop_dispatcher", lambda cfg, dry_run=False: calls.append(("stop", cfg, dry_run)))
+    assert swarm_cli.main(["tasks", "once", "examples/swarm-grid.yaml", "-D"]) == 0
+    assert swarm_cli.main(["tasks", "status", "examples/swarm-grid.yaml"]) == 0
+    assert swarm_cli.main(["tasks", "start", "examples/swarm-grid.yaml", "-D"]) == 0
+    assert swarm_cli.main(["tasks", "stop", "examples/swarm-grid.yaml"]) == 0
+    assert calls == [
+        ("once", "CFG", True),
+        ("status", "CFG"),
+        ("start", "CFG", True),
+        ("stop", "CFG", False),
+    ]
+
+
+def test_self_awareness_mentions_tasks_dispatcher(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    text = build_self_awareness_text(cfg)
+    assert "aiswarm tasks start" in text
+    assert "Tasks dispatcher" in text
