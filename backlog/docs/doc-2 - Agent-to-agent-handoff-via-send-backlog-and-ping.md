@@ -155,7 +155,7 @@ They compose:
 
 ```bash
 # identity / targets
-cat /tmp/nudge-swarm/<session>/self-awareness.txt
+aiswarm this
 cat /tmp/nudge-swarm/<session>/runtime.json | head
 
 # send / inspect

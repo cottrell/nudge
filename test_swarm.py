@@ -21,7 +21,7 @@ from common import (
     ROOT_DIR,
     SWARM_CLI,
     build_runtime_map,
-    build_self_awareness_text,
+    build_this_text,
     find_aiswarm_config,
     load_config,
     looks_like_config_path,
@@ -88,8 +88,9 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert swarm_init.BLOCK_START in agents
     assert swarm_init.BLOCK_END in agents
     assert "## Swarm" in agents
-    assert "Runtime: `/tmp/nudge-swarm/demo/runtime.json`" in agents
-    assert "Self-awareness: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
+    assert "`/tmp/nudge-swarm/demo/runtime.json`" in agents
+    assert "self-awareness" not in agents
+    assert "aiswarm this" in agents
     assert "Swarm CLI: `aiswarm`" in agents
     assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
@@ -142,10 +143,12 @@ def test_cli_bare_and_instructions(capsys):
     assert "Common workflow:" in bare
     assert "aiswarm instructions" in bare
     assert "aiswarm start" in bare
+    assert "aiswarm this" in bare
 
     assert swarm_cli.main(["instructions"]) == 0
     idx = capsys.readouterr().out
     assert "aiswarm instructions overview" in idx
+    assert "aiswarm this" in idx
     assert "handoff" in idx
     assert "tasks" in idx
 
@@ -155,6 +158,8 @@ def test_cli_bare_and_instructions(capsys):
     assert "aiswarm send" in ov
     assert "babysit" in ov
     assert "tasks" in ov
+    assert "aiswarm this" in ov
+    assert "self-awareness" not in ov
 
     assert swarm_cli.main(["instructions", "handoff"]) == 0
     hf = capsys.readouterr().out
@@ -388,7 +393,6 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", pane, title, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
-    monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
     monkeypatch.setattr(swarm_start.time, "sleep", lambda *_: None)
     monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
     monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
@@ -403,7 +407,6 @@ windows:
         ("title", "0.1", "codex", "False"),
         ("command", "0.1", "codex", "codex", "False"),
         ("runtime_map", "demo"),
-        ("self_awareness", "demo"),
     ]
 
 
@@ -425,7 +428,6 @@ windows:
     monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
-    monkeypatch.setattr(swarm_apply, "write_self_awareness_text", lambda cfg: calls.append(("self_awareness", cfg.session_name)))
     monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
     monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
 
@@ -437,7 +439,6 @@ windows:
         ("title", "True"),
         ("command", "True"),
         ("runtime_map", "demo_dry"),
-        ("self_awareness", "demo_dry"),
     ]
 
 
@@ -755,7 +756,7 @@ windows:
     assert matching[0].split() == ["demo_stopped:0.0", "claude", "idle", "stopped"]
 
 
-def test_self_awareness_text_mentions_runtime_map_and_status(tmp_path: Path):
+def test_this_text_points_at_runtime_map(tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -767,13 +768,13 @@ windows:
           agent: claude
           monitor: true
 """))
-    text = build_self_awareness_text(cfg)
-    assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
+    text = build_this_text(cfg)
+    assert "Session: demo" in text
+    assert f"Config:  {cfg.path}" in text
+    assert "Runtime: /tmp/nudge-swarm/demo/runtime.json" in text
+    assert "missing" in text  # map not written yet
+    assert "0.0" in text
     assert "aiswarm instructions overview" in text
-    assert f"aiswarm status -c {cfg.path} --brief" in text
-    assert f"aiswarm send -c {cfg.path}" in text
-    assert f"python {SWARM_CLI}" in text  # checkout fallback mentioned
-    assert "Do NOT raw tmux send-keys" in text
 
 
 def test_comms_defaults_to_monitor(tmp_path: Path):
@@ -1320,12 +1321,9 @@ def test_cli_tasks_once_and_status_dispatch(monkeypatch):
     ]
 
 
-def test_self_awareness_mentions_tasks_dispatcher(tmp_path: Path):
-    bdir = _write_backlog_project(tmp_path)
-    cfg = load_config(write_config(tmp_path, f"""
+def test_cli_this_command(tmp_path: Path, capsys, monkeypatch):
+    cfg_path = write_config(tmp_path, """
 session_name: demo
-tasks:
-  backlog_dir: "{bdir}"
 windows:
   - window_name: grid
     panes:
@@ -1333,9 +1331,10 @@ windows:
         nudge:
           agent: claude
           monitor: true
-          tasks:
-            enabled: true
-"""))
-    text = build_self_awareness_text(cfg)
-    assert "aiswarm tasks start" in text
-    assert "Tasks dispatcher" in text
+""")
+    monkeypatch.chdir(tmp_path)
+    assert swarm_cli.main(["this", str(cfg_path)]) == 0
+    out = capsys.readouterr().out
+    assert "Session: demo" in out
+    assert "runtime.json" in out
+    assert "0.0" in out

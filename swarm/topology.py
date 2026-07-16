@@ -19,7 +19,6 @@ try:
         SwarmConfig,
         WindowSpec,
         write_runtime_map,
-        write_self_awareness_text,
     )
 
     from .babysitctl import (
@@ -40,7 +39,6 @@ except ImportError:
         SwarmConfig,
         WindowSpec,
         write_runtime_map,
-        write_self_awareness_text,
     )
 
     from babysitctl import (
@@ -297,7 +295,6 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
         ensure_title(cfg, pane.pane, pane.title, dry_run)
         ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
     write_runtime_map(cfg)
-    write_self_awareness_text(cfg)
 
 
 def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
@@ -326,7 +323,6 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
         swarm_init.write_agents_block(agents_md, cfg.session_name, dry_run=dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
-        print(f"wrote self-awareness note to {cfg.self_awareness_path}")
     print(f"{'Planned' if dry_run else 'Started'} swarm for {cfg.session_name}")
     print()
     print(f"  Status: python {SWARM_CLI} status {cfg.path} --brief")

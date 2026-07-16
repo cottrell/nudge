@@ -17,10 +17,9 @@ Read workflow first:
 - `aiswarm` — common commands cheat sheet
 - `aiswarm instructions overview` — required agent briefing
 - `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
+- `aiswarm this` — this swarm's config + runtime.json path
 
-After start, live map (not git):
-- Runtime: `{runtime_dir / "runtime.json"}`
-- Self-awareness: `{runtime_dir / "self-awareness.txt"}`
+After start, machine map (not git): `{runtime_dir / "runtime.json"}`
 
 Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
 Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
@@ -232,7 +231,8 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
         config_path: config_text(name, agents, flavour=flavour),
         prompts_dir / "worker_long.md": (
             "Continue the assigned work. Read AGENTS.md; for swarm ops run "
-            "`aiswarm instructions overview` (and handoff/tasks as needed).\n"
+            "`aiswarm instructions overview` (and handoff/tasks as needed). "
+            "Session paths: `aiswarm this`.\n"
         ),
         prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
     }

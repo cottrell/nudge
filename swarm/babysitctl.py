@@ -9,9 +9,9 @@ import signal
 import subprocess
 
 try:
-    from .common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
+    from .common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map
 except ImportError:
-    from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map, write_self_awareness_text
+    from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
@@ -205,10 +205,8 @@ def _start_workers(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, inclu
         start_worker(cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run)
 
     write_runtime_map(cfg)
-    write_self_awareness_text(cfg)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
-        print(f"wrote self-awareness note to {cfg.self_awareness_path}")
     print(f"{'Planned' if dry_run else 'Started'} {label} for {cfg.session_name}")
 
 # Naming note: "babysit-*" file prefixes and some function names are legacy for
@@ -238,7 +236,6 @@ def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
         stop_worker(cfg, pane, dry_run)
     if not dry_run:
         write_runtime_map(cfg)
-        write_self_awareness_text(cfg)
     print(f"{'Planned stop for' if dry_run else 'Stopped'} workers for {cfg.session_name}")
 
 

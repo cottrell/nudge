@@ -1,9 +1,11 @@
 ---
 id: TASK-30
 title: 'Self-awareness: prefer aiswarm instructions this over /tmp prose file'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - grok
 created_date: '2026-07-16 10:28'
+updated_date: '2026-07-16 10:59'
 labels: []
 dependencies: []
 references:
@@ -11,6 +13,18 @@ references:
   - task-27
 documentation:
   - doc-2
+modified_files:
+  - swarm/common.py
+  - swarm/cli.py
+  - swarm/instructions.py
+  - swarm/topology.py
+  - swarm/babysitctl.py
+  - swarm/tasksctl.py
+  - swarm/init.py
+  - AGENTS.md
+  - README.md
+  - test_swarm.py
+  - backlog/docs/doc-2 - Agent-to-agent-handoff-via-send-backlog-and-ping.md
 type: spike
 ---
 
@@ -91,14 +105,33 @@ Static text in the package **cannot** honestly hardcode those. Putting live path
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Record design choice: drop /tmp prose in favor of live CLI dump vs slim file
-- [ ] #2 If implementing CLI path: instructions this (or name) uses resolve_config + runtime.json
-- [ ] #3 Static overview/AGENTS no longer teach cat self-awareness.txt as primary
-- [ ] #4 runtime.json remains machine state; do not put dynamic session values in package-static guide text
+- [x] #1 Record design choice: drop /tmp prose in favor of live CLI dump vs slim file
+- [x] #2 If implementing CLI path: instructions this (or name) uses resolve_config + runtime.json
+- [x] #3 Static overview/AGENTS no longer teach cat self-awareness.txt as primary
+- [x] #4 runtime.json remains machine state; do not put dynamic session values in package-static guide text
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Confirm (c) vs (b) with operator. 2. Implement or park. 3. Update docs pointers. 4. Tests.
+Decision: keep runtime.json on disk; stop self-awareness.txt; add aiswarm this as identity pointer only (no enrichment).
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (2026-07-16):
+
+1. Keep /tmp/.../runtime.json as machine map (targets, sockets, sibling pids/paths). Tools/UIs/scripts need a file.
+2. Stop writing and teaching self-awareness.txt prose (duplicates instructions; drifts).
+3. Add aiswarm this: resolve config, print session + config path + runtime.json path (+ present/missing) + pane ids. No status enrichment, no second manual.
+4. Workflow stays in aiswarm instructions overview/handoff/tasks.
+
+Implemented: build_this_text + aiswarm this; removed write_self_awareness_text call sites; AGENTS/init/overview/README/doc-2 updated; tests green.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Kept runtime.json as the on-disk machine map. Dropped self-awareness.txt write path. Added aiswarm this (session, config path, runtime.json location + present/missing, pane ids). Docs/AGENTS/overview point at it; no enrichment beyond path identity. 46 tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
