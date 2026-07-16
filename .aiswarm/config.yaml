@@ -8,6 +8,8 @@ windows:
           title: codex heavy
           agent: codex
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 7200
