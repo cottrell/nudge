@@ -337,8 +337,10 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
             if bool(babysit_raw.get("enabled", False)) and not monitor:
                 raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
 
-            tasks_raw = nudge.get("tasks") or {}
-            tasks_enabled = bool(tasks_raw.get("enabled", True))
+            tasks_raw = nudge.get("tasks")
+            # Tasks are enabled by default only if a tasks: section exists (even if empty).
+            # Absence of tasks: section entirely means disabled (for backward compat with tests).
+            tasks_enabled = bool(tasks_raw is not None and tasks_raw.get("enabled", True))
             if tasks_enabled and not monitor:
                 raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
 

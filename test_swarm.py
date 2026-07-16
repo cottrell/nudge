@@ -1174,7 +1174,7 @@ windows:
     assert cfg.tasks.ingest == ["To Do"]
     assert cfg.tasks.unassigned_only is True
     assert cfg.panes[0].tasks_enabled is True
-    assert cfg.panes[1].tasks_enabled is False
+    assert cfg.panes[1].tasks_enabled is False  # no tasks: section means disabled
     assert [p.pane for p in cfg.task_panes] == ["0.0"]
 
 
