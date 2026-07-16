@@ -70,32 +70,18 @@ If unsure about a change, err on the side of making it — the test suite provid
 <!-- AISWARM/NUDGE GUIDELINES START -->
 ## Swarm
 
-Swarm workflow: read first:
-- Runtime map: `/tmp/nudge-swarm/nudge/runtime.json`
-- Self-awareness note: `/tmp/nudge-swarm/nudge/self-awareness.txt`
+Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm`).
 
-Use as source of truth for:
-- tmux pane targets
-- monitor sockets, live state
-- babysit pid/log/spec/state files
+Read workflow first:
+- `aiswarm` — common commands cheat sheet
+- `aiswarm instructions overview` — required agent briefing
+- `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
 
-Swarm CLI: `aiswarm`
-Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
+After start, live map (not git):
+- Runtime: `/tmp/nudge-swarm/nudge/runtime.json`
+- Self-awareness: `/tmp/nudge-swarm/nudge/self-awareness.txt`
 
-Config: consumer default is `.aiswarm/config.yaml` (cwd walk-up) or `$AISWARM_CONFIG`.
-**This implementer repo** still uses explicit `nudgeswarm/nudge.yaml` (do not put harness under package `swarm/`).
-
-Messaging (durable, preferred):
-- `aiswarm send <pane> "msg"` (or `aiswarm send <cfg> <pane> "msg"` / `log_broadcast`).
-- Inspect: `aiswarm log [--pending] [--pane 0.2]`.
-- Direct/manual still works: `./tmux-send <target> "message"`.
-
-Worker loop:
-- `aiswarm start [cfg]` starts the base comms worker for `monitor: true` panes.
-- The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit: `aiswarm babysit start|stop [cfg]`.
-
-Do NOT use raw `tmux send-keys ... Enter`.
-
-Package code: `swarm/`. Harness for this repo: `nudgeswarm/`.
+Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
+**This implementer repo:** package is `swarm/`; live harness is `nudgeswarm/nudge.yaml` (pass path or set `$AISWARM_CONFIG`).
+Messaging: `aiswarm send <pane> "msg"`. Do NOT raw `tmux send-keys`.
 <!-- AISWARM/NUDGE GUIDELINES END -->

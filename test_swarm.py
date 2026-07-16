@@ -88,14 +88,12 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert swarm_init.BLOCK_START in agents
     assert swarm_init.BLOCK_END in agents
     assert "## Swarm" in agents
-    assert "Runtime map: `/tmp/nudge-swarm/demo/runtime.json`" in agents
-    assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
+    assert "Runtime: `/tmp/nudge-swarm/demo/runtime.json`" in agents
+    assert "Self-awareness: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
     assert "Swarm CLI: `aiswarm`" in agents
-    assert "Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`." in agents
+    assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
-    assert "The worker consumes the log and delivers via `tmux-send`" in agents
-    assert "Direct/manual still works: `./tmux-send <target> \"message\"`." in agents
-    assert "Do NOT use raw `tmux send-keys ... Enter`" in agents
+    assert "Do NOT raw `tmux send-keys`" in agents
     # default discovery finds the inited config
     found = resolve_config_path(None, start=tmp_path)
     assert found == (tmp_path / ".aiswarm" / "config.yaml").resolve()
@@ -136,6 +134,42 @@ def test_cli_send_token_split():
         ["hi", "there"],
     )
     assert swarm_cli._split_send_tokens(["0.2", "hi"], "x.yaml") == ("x.yaml", "0.2", ["hi"])
+
+
+def test_cli_bare_and_instructions(capsys):
+    assert swarm_cli.main([]) == 0
+    bare = capsys.readouterr().out
+    assert "Common workflow:" in bare
+    assert "aiswarm instructions" in bare
+    assert "aiswarm start" in bare
+
+    assert swarm_cli.main(["instructions"]) == 0
+    idx = capsys.readouterr().out
+    assert "aiswarm instructions overview" in idx
+    assert "handoff" in idx
+    assert "tasks" in idx
+
+    assert swarm_cli.main(["instructions", "overview"]) == 0
+    ov = capsys.readouterr().out
+    assert "Do **not** use raw `tmux send-keys`" in ov or "Do **not** use raw" in ov
+    assert "aiswarm send" in ov
+    assert "babysit" in ov
+    assert "tasks" in ov
+
+    assert swarm_cli.main(["instructions", "handoff"]) == 0
+    hf = capsys.readouterr().out
+    assert "backlog" in hf.lower()
+    assert "send" in hf.lower()
+    assert "Do **not** attach" in hf
+
+    assert swarm_cli.main(["instructions", "tasks"]) == 0
+    ts = capsys.readouterr().out
+    assert "tasks start" in ts
+    assert "Done" in ts
+
+    assert swarm_cli.main(["instructions", "nope"]) == 1
+    err = capsys.readouterr().err
+    assert "unknown guide" in err
 
 
 def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
