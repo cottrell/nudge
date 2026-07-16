@@ -179,8 +179,8 @@ Common workflow:
   aiswarm start                       Start session, monitors, comms workers
   aiswarm status --brief              Pane states
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
-  aiswarm babysit start|stop          Optional idle prompt loops
-  aiswarm tasks start|status|stop     Optional backlog → free panes
+  aiswarm babysit start|stop          Optional idle nudges (per-pane worker)
+  aiswarm tasks start|status|stop     Optional backlog → free panes (session loop)
   aiswarm stop                        Tear down workers + tmux session
 
 Config (when path omitted):
