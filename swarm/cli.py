@@ -14,14 +14,36 @@ try:
     from . import babysitctl as swarm_babysit
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
-    from .common import load_config
+    from .common import load_config, looks_like_config_path
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
     import babysitctl as swarm_babysit
     import tasksctl as swarm_tasks
     import init as swarm_init
-    from common import load_config
+    from common import load_config, looks_like_config_path
+
+CONFIG_ARG_HELP = (
+    "YAML config path (optional). Default: $AISWARM_CONFIG or walk-up "
+    ".aiswarm/config.yaml from cwd"
+)
+
+
+def _cfg_from_args(args) -> object:
+    """Load SwarmConfig from optional args.config / args.config_file."""
+    explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
+    return load_config(explicit)
+
+
+def _add_optional_config(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("config", nargs="?", default=None, help=CONFIG_ARG_HELP)
+    parser.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help="Config path (same as optional positional; flag form)",
+    )
 
 
 MODEL_HELPERS = {
@@ -211,34 +233,44 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     start_p = sub.add_parser("start", help="Start the swarm (tmux session, monitors, titles, commands, and comms workers)")
-    start_p.add_argument("config", help="Path to YAML config")
+    _add_optional_config(start_p)
     start_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
     start_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after start")
     start_p.add_argument("--skip-grid", action="store_true", help="Skip session/pane creation (use after tmuxp load)")
 
     status_p = sub.add_parser("status", help="Report current swarm state")
-    status_p.add_argument("config", help="Path to YAML config")
+    _add_optional_config(status_p)
     status_p.add_argument("-b", "--brief", action="store_true", help="Print a compact per-pane state view")
     status_p.add_argument("-w", "--watch", action="store_true", help="Refresh the status in place until interrupted")
     status_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
 
     broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm agent panes (flavours: tmux or log)")
-    broadcast_p.add_argument("config", help="Path to YAML config")
-    broadcast_p.add_argument("message", nargs="+", help="Broadcast message text")
+    broadcast_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    broadcast_p.add_argument(
+        "words",
+        nargs="+",
+        help="Message text; optional leading config path for BC: broadcast [cfg] msg...",
+    )
     broadcast_p.add_argument("-A", "--include-nonmonitored", action="store_true", help="Also send to agent panes with monitor=false")
     broadcast_p.add_argument("-D", "--dry-run", action="store_true", help="Print targets without sending")
     broadcast_p.add_argument("--via-log", action="store_true", help="Write to event log instead of direct tmux-send (consumer will deliver)")
 
     stop_p = sub.add_parser("stop", help="Stop tasks dispatcher, worker loops (comms + babysit), and the tmux session")
-    stop_p.add_argument("config", help="Path to YAML config")
+    _add_optional_config(stop_p)
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
 
     clear_p = sub.add_parser("clear-comms", help="Clear the event log for a session (destructive)")
-    clear_p.add_argument("config", help="Path to YAML config")
+    _add_optional_config(clear_p)
     clear_p.add_argument("-y", "--yes", action="store_true", help="Skip 'y' confirmation")
 
     log_p = sub.add_parser("log", help="Inspect the comms event log (events + cursors)")
-    log_p.add_argument("config", help="Path to YAML config")
+    _add_optional_config(log_p)
     log_p.add_argument("--pane", help="Filter to a specific pane e.g. 0.2")
     log_p.add_argument("-n", "--limit", type=int, default=50)
     log_p.add_argument("--pending", action="store_true", help="Only show unread events for the given --pane (or summarize)")
@@ -246,20 +278,43 @@ def build_parser() -> argparse.ArgumentParser:
     log_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds (default: 1)")
 
     send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)", description="Send a message to a single target via the event log (instead of direct tmux-send)")
-    send_p.add_argument("config", help="Path to YAML config")
-    send_p.add_argument("target", help="Recipient pane id e.g. 0.2 or __broadcast__")
-    send_p.add_argument("message", nargs="+", help="Message text")
+    send_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    send_p.add_argument(
+        "tokens",
+        nargs="+",
+        help="target message... or legacy: config target message...",
+    )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
 
     avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
-    avu_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
+    avu_p.add_argument("config", nargs="?", default=None, help=CONFIG_ARG_HELP + " (limits report to its agents when given)")
+    avu_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help="Config path (flag form)",
+    )
     avu_p.add_argument("--json", action="store_true", help="Emit JSON")
     avu_p.add_argument("--recent", type=int, default=0, metavar="MIN", help="Include rolling tokens for last N minutes (in addition)")
     avu_p.add_argument("-w", "--watch", action="store_true", help="Refresh the report in place until interrupted")
     avu_p.add_argument("-i", "--interval", type=float, default=30.0, help="Watch refresh interval in seconds (default: 30)")
 
     quota_p = sub.add_parser("quota", help="Get cached/live provider account quotas")
-    quota_p.add_argument("config", nargs="?", default=None, help="Optional path to YAML config (limits report to the agents declared in it)")
+    quota_p.add_argument("config", nargs="?", default=None, help=CONFIG_ARG_HELP + " (limits report to its agents when given)")
+    quota_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help="Config path (flag form)",
+    )
     quota_p.add_argument("--ttl", type=int, default=600, help="Cache TTL in seconds")
     quota_p.add_argument("--force", action="store_true", help="Force refresh")
     quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
@@ -277,8 +332,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     capture_p = sub.add_parser("capture", help="Dump current pane content")
-    capture_p.add_argument("config", help="Path to YAML config")
-    capture_p.add_argument("pane", help="Pane index (e.g. 0.0)")
+    capture_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    capture_p.add_argument(
+        "tokens",
+        nargs="+",
+        help="pane id, or legacy: config pane",
+    )
 
     babysit_p = sub.add_parser("babysit", help="Toggle the babysit prompt group on top of the base worker loop (comms always-on)")
     babysit_sub = babysit_p.add_subparsers(dest="babysit_command", required=True)
@@ -290,7 +355,7 @@ def build_parser() -> argparse.ArgumentParser:
         else:
             help_text = "Show babysit + worker status"
         sp = babysit_sub.add_parser(name, help=help_text)
-        sp.add_argument("config", help="Path to YAML config")
+        _add_optional_config(sp)
         if name != "status":
             sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; start still writes runtime notes")
             if name == "start":
@@ -308,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("once", "Run a single claim/dispatch pass (no long-running process)"),
     ):
         sp = tasks_sub.add_parser(name, help=help_text)
-        sp.add_argument("config", help="Path to YAML config")
+        _add_optional_config(sp)
         if name != "status":
             sp.add_argument(
                 "-D",
@@ -318,6 +383,39 @@ def build_parser() -> argparse.ArgumentParser:
             )
 
     return parser
+
+
+def _split_send_tokens(tokens: list[str], config_file: str | None) -> tuple[str | None, str, list[str]]:
+    """Return (explicit_config, target, message_parts)."""
+    if config_file:
+        if len(tokens) < 2:
+            raise ValueError("send requires TARGET and MESSAGE")
+        return config_file, tokens[0], tokens[1:]
+    if len(tokens) >= 3 and looks_like_config_path(tokens[0]):
+        return tokens[0], tokens[1], tokens[2:]
+    if len(tokens) < 2:
+        raise ValueError("send requires TARGET and MESSAGE (optional leading CONFIG)")
+    return None, tokens[0], tokens[1:]
+
+
+def _split_broadcast_words(words: list[str], config_file: str | None) -> tuple[str | None, str]:
+    if config_file:
+        return config_file, " ".join(words)
+    if len(words) >= 2 and looks_like_config_path(words[0]):
+        return words[0], " ".join(words[1:])
+    return None, " ".join(words)
+
+
+def _split_capture_tokens(tokens: list[str], config_file: str | None) -> tuple[str | None, str]:
+    if config_file:
+        if len(tokens) != 1:
+            raise ValueError("capture requires a single PANE when -c is set")
+        return config_file, tokens[0]
+    if len(tokens) == 1:
+        return None, tokens[0]
+    if len(tokens) == 2 and looks_like_config_path(tokens[0]):
+        return tokens[0], tokens[1]
+    raise ValueError("capture requires PANE or CONFIG PANE")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -331,14 +429,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "start":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             swarm_topology.start(cfg, args.dry_run, skip_grid=args.skip_grid)
             if args.attach and not args.dry_run:
                 subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
             return 0
 
         if args.command == "status":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             if args.interval <= 0:
                 raise ValueError("--interval must be > 0")
             if args.watch:
@@ -353,11 +451,18 @@ def main(argv: list[str] | None = None) -> int:
             except ImportError:
                 from common import get_cached_provider_usage, get_agents_from_config, QUOTA_AGENT_MAP
             import time
-            if args.config:
-                cfg = load_config(args.config)
+            # Optional config: only limit agents when path/env/default is available.
+            cfg_explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
+            agents = ["claude", "codex", "agy"]
+            if cfg_explicit:
+                cfg = load_config(cfg_explicit)
                 agents = get_agents_from_config(cfg)
             else:
-                agents = ["claude", "codex", "agy"]
+                try:
+                    cfg = load_config(None)
+                    agents = get_agents_from_config(cfg)
+                except FileNotFoundError:
+                    pass
             agents = [QUOTA_AGENT_MAP.get(a, a) for a in agents]
             agents = [a for a in agents if a in {"claude", "codex", "agy"}]
             if not agents:
@@ -430,11 +535,20 @@ def main(argv: list[str] | None = None) -> int:
                 from common import get_agents_from_config, get_swarm_agentsview_report
             import json as _json
 
-            if args.config:
-                cfg = load_config(args.config)
+            cfg_explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
+            agents = None
+            limited = False
+            if cfg_explicit:
+                cfg = load_config(cfg_explicit)
                 agents = get_agents_from_config(cfg)
+                limited = True
             else:
-                agents = None
+                try:
+                    cfg = load_config(None)
+                    agents = get_agents_from_config(cfg)
+                    limited = True
+                except FileNotFoundError:
+                    agents = None
 
             report = get_swarm_agentsview_report(agents)
 
@@ -450,7 +564,11 @@ def main(argv: list[str] | None = None) -> int:
                 swarm_topology.watch_av_usage(agents, args.recent, args.interval)
                 return 0
 
-            title = f"agentsview usage limited to swarm agents: {effective}" if args.config else "agentsview global usage (all agents)"
+            title = (
+                f"agentsview usage limited to swarm agents: {effective}"
+                if limited
+                else "agentsview global usage (all agents)"
+            )
             lines = swarm_topology.av_usage_lines(report, recent_minutes=args.recent, title=title)
             print("\n".join(lines))
             return 0
@@ -460,17 +578,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "capture":
-            cfg = load_config(args.config)
-            swarm_topology.capture_pane(cfg, args.pane)
+            explicit, pane = _split_capture_tokens(args.tokens, getattr(args, "config_file", None))
+            cfg = load_config(explicit)
+            swarm_topology.capture_pane(cfg, pane)
             return 0
 
         if args.command == "broadcast":
-            cfg = load_config(args.config)
-            swarm_topology.broadcast(cfg, " ".join(args.message), args.include_nonmonitored, args.dry_run, via_log=args.via_log)
+            explicit, msg = _split_broadcast_words(args.words, getattr(args, "config_file", None))
+            cfg = load_config(explicit)
+            swarm_topology.broadcast(cfg, msg, args.include_nonmonitored, args.dry_run, via_log=args.via_log)
             return 0
 
         if args.command == "log":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             if args.watch:
                 swarm_topology.watch_log(cfg, args.pane, args.limit, args.pending, args.interval)
                 return 0
@@ -478,28 +598,31 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "send":
-            cfg = load_config(args.config)
-            msg = " ".join(args.message)
+            explicit, target, msg_parts = _split_send_tokens(
+                args.tokens, getattr(args, "config_file", None)
+            )
+            cfg = load_config(explicit)
+            msg = " ".join(msg_parts)
             try:
                 from .common import log_send
             except ImportError:
                 from common import log_send
             if args.dry_run:
-                print(f"would log-send session={cfg.session_name} target={args.target} msg={msg}")
+                print(f"would log-send session={cfg.session_name} target={target} msg={msg}")
             else:
-                eid = log_send(cfg.session_name, args.target, msg, sender="cli send")
-                print(f"log-sent id={eid} session={cfg.session_name} target={args.target}")
+                eid = log_send(cfg.session_name, target, msg, sender="cli send")
+                print(f"log-sent id={eid} session={cfg.session_name} target={target}")
             return 0
 
         if args.command == "stop":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             swarm_tasks.stop_dispatcher(cfg, args.dry_run)
             swarm_babysit.stop_workers(cfg, args.dry_run)
             _stop_tmux_session(cfg.session_name, args.dry_run)
             return 0
 
         if args.command == "clear-comms":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             if not args.yes:
                 resp = input(f"Clear comms log for {cfg.session_name}? [y/N] ")
                 if resp.lower() != "y":
@@ -513,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "tasks":
-            cfg = load_config(args.config)
+            cfg = _cfg_from_args(args)
             if args.tasks_command == "start":
                 swarm_tasks.start_dispatcher(cfg, getattr(args, "dry_run", False))
             elif args.tasks_command == "stop":
@@ -526,7 +649,7 @@ def main(argv: list[str] | None = None) -> int:
                 swarm_tasks.status(cfg)
             return 0
 
-        cfg = load_config(args.config)
+        cfg = _cfg_from_args(args)
         if args.babysit_command == "start":
             if getattr(args, "no_action", False):
                 import os

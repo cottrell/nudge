@@ -23,19 +23,21 @@ Use as source of truth for:
 Swarm CLI: `aiswarm`
 Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
 
+Config (default discovery):
+- Project harness: `.aiswarm/config.yaml` (walk-up from cwd), or `$AISWARM_CONFIG`, or explicit path.
+- Prefer: `aiswarm status` / `aiswarm send 0.2 "msg"` without typing the yaml path.
+
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `aiswarm log <cfg> [--pending] [--pane 0.2]`, `aiswarm cursors <cfg>`.
+- Use the comms log: `aiswarm send <pane> "msg"` or `aiswarm send <cfg> <pane> "msg"`.
+- Inspect: `aiswarm log [--pending] [--pane 0.2]`.
 - Direct/manual still works: `./tmux-send <target> "message"`.
 
 Worker loop:
-- `aiswarm start <cfg>` starts the base comms worker for `monitor: true` panes.
+- `aiswarm start` starts the base comms worker for `monitor: true` panes.
 - The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit prompt nudges are independent; use `aiswarm babysit start|stop <cfg>`.
+- Babysit: `aiswarm babysit start|stop`. Tasks: `aiswarm tasks start|stop|status|once`.
 
 Do NOT use raw `tmux send-keys ... Enter`.
-
-Swarm scripts: `swarm/`.
 """
 
 
@@ -234,10 +236,13 @@ windows:
 
 def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[str] | None = None, flavour: str | None = None) -> None:
     root_path = Path(root).resolve()
-    swarm_dir = root_path / "swarm"
-    prompts_dir = swarm_dir / "prompts"
-    config_path = swarm_dir / f"{name}.yaml"
+    # Consumer harness dir (not the aiswarm Python package). Default discovery: .aiswarm/config.yaml
+    aiswarm_dir = root_path / ".aiswarm"
+    prompts_dir = aiswarm_dir / "prompts"
+    config_path = aiswarm_dir / "config.yaml"
     agents_path = root_path / "AGENTS.md"
+    gitignore_path = root_path / ".gitignore"
+    gitignore_line = ".aiswarm/"
 
     files = {
         config_path: config_text(name, agents, flavour=flavour),
@@ -256,9 +261,28 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
         path.write_text(content)
         print(f"created: {path}")
 
+    # Default: treat harness as personal/tooling (gitignore). Opt out by committing .aiswarm/ yourself.
+    if gitignore_path.is_file():
+        gi = gitignore_path.read_text()
+        if gitignore_line not in gi.splitlines() and gitignore_line.rstrip("/") not in gi.splitlines():
+            if dry_run:
+                print(f"would append {gitignore_line!r} to {gitignore_path}")
+            else:
+                with gitignore_path.open("a") as f:
+                    if gi and not gi.endswith("\n"):
+                        f.write("\n")
+                    f.write(f"{gitignore_line}\n")
+                print(f"appended {gitignore_line!r} to {gitignore_path}")
+    elif not dry_run:
+        gitignore_path.write_text(f"{gitignore_line}\n")
+        print(f"created: {gitignore_path} ({gitignore_line})")
+    else:
+        print(f"would create: {gitignore_path} ({gitignore_line})")
+
     write_agents_block(agents_path, name, dry_run=dry_run)
 
     print()
-    print("Next:")
-    print(f"  aiswarm start swarm/{name}.yaml -D")
-    print(f"  aiswarm start swarm/{name}.yaml")
+    print("Next (config is discovered from .aiswarm/config.yaml):")
+    print("  aiswarm start -D")
+    print("  aiswarm start")
+    print(f"  # or explicit: aiswarm start {config_path.relative_to(root_path)}")
