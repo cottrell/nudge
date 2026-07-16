@@ -16,6 +16,7 @@ Primary workflow is the installed `aiswarm` command. From a repo checkout,
 aiswarm                      # workflow cheat sheet
 aiswarm instructions         # agent guides index
 aiswarm instructions overview
+aiswarm this                 # this swarm: config + runtime.json path
 aiswarm <command> --help     # flags
 ```
 
@@ -181,8 +182,7 @@ Notes:
   tasks matching `tasks.ingest` (default: `To Do` only), claims them, and delivers a prompt via
   the durable log to free panes with `nudge.tasks.enabled: true`.
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
-- runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
-- self-awareness note: `/tmp/nudge-swarm/<session>/self-awareness.txt`
+- runtime map: `/tmp/nudge-swarm/<session>/runtime.json` (path via `aiswarm this`)
 - tasks dispatcher state: `/tmp/nudge-swarm/<session>/tasks/`
 
 ## Tasks dispatcher (backlog → free panes)

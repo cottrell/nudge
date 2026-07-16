@@ -21,7 +21,6 @@ try:
         log_send,
         monitor_socket_path,
         write_runtime_map,
-        write_self_awareness_text,
     )
 except ImportError:
     from common import (
@@ -32,7 +31,6 @@ except ImportError:
         log_send,
         monitor_socket_path,
         write_runtime_map,
-        write_self_awareness_text,
     )
 
 TASK_LINE_RE = re.compile(
@@ -476,7 +474,6 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
         )
         spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
         write_runtime_map(cfg)
-        write_self_awareness_text(cfg)
         return
     env = dict(os.environ)
     env["AISWARM_TASKS_CONFIG"] = str(cfg.path)
@@ -492,7 +489,6 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
     pid_path(cfg).write_text(str(proc.pid) + "\n")
     spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
     write_runtime_map(cfg)
-    write_self_awareness_text(cfg)
     print(f"Started tasks dispatcher for {cfg.session_name} pid={proc.pid}")
 
 

@@ -124,10 +124,6 @@ class SwarmConfig:
         return self.runtime_dir / "runtime.json"
 
     @property
-    def self_awareness_path(self) -> Path:
-        return self.runtime_dir / "self-awareness.txt"
-
-    @property
     def task_panes(self) -> list[PaneSpec]:
         return [p for p in self.panes if p.tasks_enabled]
 
@@ -456,53 +452,27 @@ def write_runtime_map(cfg: SwarmConfig) -> None:
     cfg.runtime_map_path.write_text(json.dumps(build_runtime_map(cfg), indent=2) + "\n")
 
 
-def build_self_awareness_text(cfg: SwarmConfig) -> str:
-    """Live session note written under /tmp on start (not a full workflow manual).
+def build_this_text(cfg: SwarmConfig) -> str:
+    """Resolved identity for this swarm (config + runtime.json location).
 
-    Workflow procedure lives in `aiswarm instructions`; this file is the
-    session-specific map (paths, config, how to poke the CLI for *this* swarm).
+    Machine state stays in runtime.json on disk. Workflow lives in
+    `aiswarm instructions`. This is only "which swarm / where is the map".
     """
-    config_path = str(cfg.path)
-    task_panes = [p.pane for p in cfg.panes if p.tasks_enabled]
-    lines = [
-        f"Swarm session: {cfg.session_name}",
-        f"Config: {config_path}",
-        f"Windows: {', '.join(w.window_name for w in cfg.windows)}",
-        f"Runtime map: {cfg.runtime_map_path}",
-        f"Self-awareness: {cfg.self_awareness_path}",
-        "",
-        "Workflow (read these; do not reinvent from this file):",
-        "  aiswarm",
-        "  aiswarm instructions overview",
-        "  aiswarm instructions handoff",
-        "  aiswarm instructions tasks",
-        "  aiswarm <command> --help",
-        "",
-        "This session (prefer aiswarm on PATH; checkout fallback below):",
-        f"  aiswarm status -c {config_path} --brief",
-        f"  aiswarm send -c {config_path} 0.2 \"msg\"",
-        f"  aiswarm log -c {config_path} --pending",
-        f"  aiswarm babysit start|stop -c {config_path}",
-        f"  aiswarm tasks start|stop|status|once -c {config_path}",
-        f"  # fallback: python {SWARM_CLI} … same subcommands …",
-        "",
-        "Runtime map has: tmux targets, monitor sockets, babysit/tasks paths.",
-        "Messaging: durable log via aiswarm send (delivered on idle). Do NOT raw tmux send-keys.",
-    ]
-    if task_panes:
-        lines.append(
-            f"Tasks dispatcher: panes with tasks.enabled: {', '.join(task_panes)} "
-            "(claims backlog before log delivery; agent marks Done)."
-        )
-    else:
-        lines.append("Tasks dispatcher: no panes with nudge.tasks.enabled in this config.")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def write_self_awareness_text(cfg: SwarmConfig) -> None:
-    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
-    cfg.self_awareness_path.write_text(build_self_awareness_text(cfg))
+    map_path = cfg.runtime_map_path
+    map_note = "present" if map_path.is_file() else "missing — run aiswarm start"
+    panes = " ".join(p.pane for p in cfg.panes) or "(none)"
+    return "\n".join(
+        [
+            f"Session: {cfg.session_name}",
+            f"Config:  {cfg.path}",
+            f"Runtime: {map_path}  ({map_note})",
+            f"Panes:   {panes}",
+            "",
+            "Runtime JSON is the machine map (targets, sockets, paths).",
+            "Workflow: aiswarm instructions overview",
+            "",
+        ]
+    )
 
 
 # --- Event log comms (source of truth + buffer) ---

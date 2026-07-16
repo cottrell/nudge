@@ -21,7 +21,7 @@ Agents in this swarm should be designed to be **stateless**. The babysit loop pe
 Because conversation history is regularly wiped:
 - **Do NOT** rely on the agent's memory of past turns for project state.
 - **DO** maintain critical state in backlog tasks or project-specific memory files.
-- **DO** read relevant context files (like the `self-awareness.txt` note) whenever you start a new task.
+- **DO** re-read backlog / project memory and run `aiswarm this` when you need swarm paths.
 
 The babysit loop will re-issue the full project briefing (`long_prompt`) immediately after every `/clear` to restore the agent's awareness of its environment and mission.
 
@@ -76,10 +76,9 @@ Read workflow first:
 - `aiswarm` — common commands cheat sheet
 - `aiswarm instructions overview` — required agent briefing
 - `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
+- `aiswarm this` — this swarm's config + runtime.json path
 
-After start, live map (not git):
-- Runtime: `/tmp/nudge-swarm/nudge/runtime.json`
-- Self-awareness: `/tmp/nudge-swarm/nudge/self-awareness.txt`
+After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
 
 Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
 Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.

@@ -15,7 +15,7 @@ try:
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
     from . import instructions as swarm_instructions
-    from .common import load_config, looks_like_config_path
+    from .common import build_this_text, load_config, looks_like_config_path
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
@@ -23,7 +23,7 @@ except ImportError:
     import tasksctl as swarm_tasks
     import init as swarm_init
     import instructions as swarm_instructions
-    from common import load_config, looks_like_config_path
+    from common import build_this_text, load_config, looks_like_config_path
 
 CONFIG_ARG_HELP = (
     "YAML config path (optional). Default: $AISWARM_CONFIG or walk-up "
@@ -241,6 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Guide name (omit to list). overview | handoff | tasks",
     )
 
+    this_p = sub.add_parser(
+        "this",
+        help="Print resolved session identity and runtime.json path",
+    )
+    _add_optional_config(this_p)
+
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
@@ -445,6 +451,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "instructions":
             print(swarm_instructions.render(args.guide).rstrip())
+            return 0
+
+        if args.command == "this":
+            print(build_this_text(_cfg_from_args(args)).rstrip())
             return 0
 
         if args.command == "init":

@@ -65,11 +65,12 @@ aiswarm stop                 # workers + session teardown
 - Do **not** attach to another agent's pane and stream it; use send + backlog + done-ping
   (`aiswarm instructions handoff`).
 - Completion of assigned work is **backlog status Done**, not "pane went idle".
-- After start, runtime map: `/tmp/nudge-swarm/<session>/runtime.json`
-  and self-awareness: `/tmp/nudge-swarm/<session>/self-awareness.txt`.
+- Session identity / runtime map path: `aiswarm this` (resolves config; points at
+  `/tmp/nudge-swarm/<session>/runtime.json` written on start).
 
 ### Next guides
 
+- `aiswarm this` — which swarm / where is runtime.json
 - `aiswarm instructions handoff` — peer agent coordination
 - `aiswarm instructions tasks` — backlog dispatcher
 - `aiswarm <command> --help` — flags and options
@@ -176,6 +177,7 @@ def bare_help() -> str:
 Common workflow:
   aiswarm init <name>                 Create .aiswarm/config.yaml + AGENTS block
   aiswarm start                       Start session, monitors, comms workers
+  aiswarm this                        This swarm: config + runtime.json path
   aiswarm status --brief              Pane states
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
   aiswarm babysit start|stop          Optional idle prompt loops
@@ -204,6 +206,7 @@ def index() -> str:
         "",
         "Start here:",
         "  aiswarm instructions overview     Required first read for swarm workflow",
+        "  aiswarm this                      This swarm: config + runtime.json path",
         "  aiswarm <command> --help          Flags and options",
         "",
         "Guides:",
