@@ -75,7 +75,7 @@ class PaneSpec:
     monitor: bool
     babysit: BabysitSpec
     comms: bool = False
-    tasks_enabled: bool = False
+    tasks_enabled: bool = True
 
     @property
     def pane_index(self) -> int:
@@ -338,7 +338,7 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
                 raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
 
             tasks_raw = nudge.get("tasks") or {}
-            tasks_enabled = bool(tasks_raw.get("enabled", False))
+            tasks_enabled = bool(tasks_raw.get("enabled", True))
             if tasks_enabled and not monitor:
                 raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
 
