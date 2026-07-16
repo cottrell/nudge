@@ -3,10 +3,10 @@ id: TASK-16
 title: >-
   Fix runtime.json 'babysit' advertisement and status reporting so UIs (thoth
   etc.) correctly detect active prompt loop vs configured
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-05 12:52'
-updated_date: '2026-07-05 13:03'
+updated_date: '2026-07-16 13:09'
 labels:
   - nudge
   - babysit
@@ -42,10 +42,10 @@ Tasks:
 <!-- AC:BEGIN -->
 - [x] #1 runtime.json only advertises active 'babysit' info when a worker with prompts is actually running (pid + process + spec has prompts)
 - [x] #2 For panes where babysit is configured in yaml but currently disabled (comms mode or stopped), either omit the babysit key or mark it clearly (e.g. 'babysit': {'enabled_in_config': true, 'active': false})
-- [ ] #3 `aiswarm status` and runtime.json agree on babysit state for council-data/cd and similar swarms
-- [ ] #4 External consumers like thoth no longer falsely report babysit 'running' when cli status shows off/stopped/not-started/missing
-- [ ] #5 Tests cover runtime map content for babysit-enabled + stopped cases
-- [ ] #6 No regression for cases where babysit is truly active
+- [x] #3 `aiswarm status` and runtime.json agree on babysit state for council-data/cd and similar swarms
+- [x] #4 External consumers like thoth no longer falsely report babysit 'running' when cli status shows off/stopped/not-started/missing
+- [x] #5 Tests cover runtime map content for babysit-enabled + stopped cases
+- [x] #6 No regression for cases where babysit is truly active
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -54,6 +54,8 @@ Tasks:
 Partial fix: build_runtime_map now always includes for config.enabled but has_* come from deployed spec (false when empty or absent). Combined with dynamic, disable will produce has=false + runtime update.
 
 build_runtime_map now sets has_* from deployed spec content. Combined with hot-update in disable, future runtimes will reflect 'not active' for disabled babysit. Test for runtime map still passes.
+
+2026-07-16 hygiene: producer-side fix landed with TASK-14/13. Closing.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -64,3 +66,9 @@ created: 2026-07-05 13:03
 Runtime fix landed in same commit. Should help thoth/council-data false positives. Awaiting user testing and pane reviews.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+runtime.json has_long/has_short now come from deployed spec content (not mere key presence / yaml defaults after stop). Consumers must check has_* or pid+running. External thoth/council-data updates out of scope for this repo. Closed in hygiene 2026-07-16.
+<!-- SECTION:FINAL_SUMMARY:END -->

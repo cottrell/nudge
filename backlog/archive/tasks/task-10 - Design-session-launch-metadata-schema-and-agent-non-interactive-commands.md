@@ -4,7 +4,11 @@ title: Design session launch metadata schema and agent non-interactive commands
 status: To Do
 assignee: []
 created_date: '2026-06-18 11:58'
-labels: [orchestration, CLI, schema]
+updated_date: '2026-07-16 13:10'
+labels:
+  - orchestration
+  - CLI
+  - schema
 dependencies: []
 priority: high
 ---
@@ -82,3 +86,15 @@ To run these sessions safely under automation, we must launch them in non-intera
   agy --conversation <session_id> --dangerously-skip-permissions -p "<prompt>"
   ```
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: session launch metadata for alt/ Things. Off main line; archiving with TASK-9.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: alt/ schema work, not aiswarm.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,11 +1,17 @@
 ---
 id: TASK-12
 title: Reliable capture of native session IDs from TUI agent launches for alt/ Things
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-18 13:00'
-labels: [alt, launch, session-id, orchestration]
-dependencies: [TASK-10]
+updated_date: '2026-07-16 13:09'
+labels:
+  - alt
+  - launch
+  - session-id
+  - orchestration
+dependencies:
+  - TASK-10
 priority: high
 ---
 
@@ -47,3 +53,15 @@ Only for unknown agents: `synthetic-<ts>-$$`.
 - See also TASK-10 (session launch metadata schema).
 - inotify-based watching (instead of polling) would be a further improvement for the fs cases.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: marking Done; alt/ is side path, not main aiswarm line.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Basic per-provider native session ID capture implemented in alt/bin/launch-child.sh (claude --session-id, codex banner parse, grok/agy fs observation). Ticket notes already said basic impl done. Optional inotify follow-up not scheduled. Closed in hygiene 2026-07-16.
+<!-- SECTION:FINAL_SUMMARY:END -->

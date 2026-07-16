@@ -4,7 +4,11 @@ title: Design temporary tmux wrapper for one-off provider quota queries
 status: To Do
 assignee: []
 created_date: '2026-06-18 12:25'
-labels: [orchestration, CLI, quota]
+updated_date: '2026-07-16 13:10'
+labels:
+  - orchestration
+  - CLI
+  - quota
 dependencies: []
 priority: medium
 ---
@@ -53,3 +57,15 @@ Instead of modifying the active development window, spawn a temporary, hidden wi
 - **Pros:** Grabs the 100% accurate remote provider quota; does not touch or disrupt the developer's active chat session.
 - **Cons:** Spawning the CLI agent consumes a few seconds and a small start-up token footprint, so this should be run infrequently (e.g., polled every 5–10 minutes).
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: temporary tmux quota scrape superseded by swarm/usage scripts + cached provider usage. Archiving.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: quota probing exists via usage scripts/cache; dedicated tmux wrapper not needed.
+<!-- SECTION:FINAL_SUMMARY:END -->

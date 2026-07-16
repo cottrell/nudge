@@ -4,6 +4,7 @@ title: Use agentsview as dependency for global rate limit and quota tracking
 status: To Do
 assignee: []
 created_date: '2026-06-18 10:45'
+updated_date: '2026-07-16 13:10'
 labels: []
 dependencies: []
 priority: medium
@@ -26,3 +27,15 @@ Transition from fragile terminal screen-scraping (`monitor.c`) to structured, gl
    - **Daily / Budget Quota:** Sum of USD cost spent today (e.g. `SELECT SUM(cost_usd) FROM usage_events WHERE occurred_at >= date('now', 'start of day')`).
 3. **State Broadcast:** Write the computed proximities to a global JSON status file `/tmp/nudge-usage.json` (e.g. `{"claude": {"tpm_used_pct": 12, "daily_budget_pct": 54}}`) for consumption by other tools or the tmux status line.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: superseding. agentsview helpers + get_cached_provider_usage + swarm/usage/quota_tracker already cover rate/quota needs without a dedicated /tmp/nudge-usage.json poller. Archiving as out of scope for current aiswarm focus.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: intent largely met by existing agentsview integration and quota_tracker. Not pursuing original daemon design.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,7 +4,11 @@ title: Design DAG management revival and non-interactive session safety
 status: To Do
 assignee: []
 created_date: '2026-06-18 11:20'
-labels: [dag, execution-safety, orchestration]
+updated_date: '2026-07-16 13:10'
+labels:
+  - dag
+  - execution-safety
+  - orchestration
 dependencies: []
 priority: high
 ---
@@ -41,3 +45,15 @@ The Pulse orchestrator should enforce:
 #### C. Tmux as a Default Harness
 For interactive nodes (like primary planners or workers that need manual oversight), continue using `tmux` so that human operators can attach, inspect the terminal buffers, and recover state.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: alt/ DAG orchestration off main aiswarm line. Archiving until alt is active again.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: off-topic for swarm-first product; alt/ experimental.
+<!-- SECTION:FINAL_SUMMARY:END -->

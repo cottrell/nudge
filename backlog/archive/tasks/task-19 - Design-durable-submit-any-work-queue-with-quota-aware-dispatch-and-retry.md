@@ -4,6 +4,7 @@ title: Design durable submit-any work queue with quota-aware dispatch and retry
 status: To Do
 assignee: []
 created_date: '2026-07-11 10:43'
+updated_date: '2026-07-16 13:10'
 labels:
   - swarm
   - comms
@@ -37,4 +38,12 @@ Keep this separate from ordinary comms events: events deliver messages; jobs are
 
 <!-- SECTION:NOTES:BEGIN -->
 Prefer integrating with the existing SQLite comms database and worker loop while using separate jobs/attempts state. Do not introduce a competing-consumer __any__ event unless atomic claim semantics are implemented. Start with a persistent small swarm as the execution pool; a standalone nudge-any wrapper can remain a thin caller of the same CLI.
+
+2026-07-16 hygiene: durable submit-any queue is effectively the backlog + aiswarm tasks (or aiswarm send) path. Outside-world entry (custom MCP, voice, desktop) can create backlog tasks or send to a swarm without building a job queue inside nudge. Archiving.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: not needed in-nudge. External entry points use backlog and/or aiswarm send/tasks; no separate submit-any service.
+<!-- SECTION:FINAL_SUMMARY:END -->

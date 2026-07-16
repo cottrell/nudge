@@ -4,7 +4,10 @@ title: Figure out better ways to manage agent status detection
 status: To Do
 assignee: []
 created_date: '2026-06-18 11:15'
-labels: [status-detection, monitoring]
+updated_date: '2026-07-16 13:10'
+labels:
+  - status-detection
+  - monitoring
 dependencies: []
 priority: medium
 ---
@@ -35,3 +38,15 @@ Explore, design, and implement a robust agent status detection framework (idle v
    - If a file is being modified (updates to SQLite or JSONL), transition to `working`. 
    - Apply a cooldown window (e.g., no updates for 10 seconds -> transition back to `idle`).
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-07-16 hygiene: monitor is intentionally content-agnostic (any output=working, quiet=idle). Semantic idle/working redesign conflicts with that product decision. Archiving.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archived: conflicts with deliberate monitor design (activity-only, not agent-UI scraping).
+<!-- SECTION:FINAL_SUMMARY:END -->
