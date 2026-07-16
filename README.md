@@ -1,5 +1,9 @@
 # nudge
 
+<p align="center">
+  <img src="assets/favicon-mural-droid.jpg" alt="Kratos and Bia force an idle agent-droid back to work" width="220" />
+</p>
+
 Config-driven tmux orchestration for local AI coding-agent swarms, with activity
 monitoring, durable log comms, and quota-aware babysitting.
 
