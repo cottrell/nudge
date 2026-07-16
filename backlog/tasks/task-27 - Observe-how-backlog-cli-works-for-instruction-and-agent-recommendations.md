@@ -1,9 +1,10 @@
 ---
 id: TASK-27
 title: Observe how backlog cli works for instruction and agent recommendations
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-16 09:28'
+updated_date: '2026-07-16 10:13'
 labels: []
 dependencies: []
 ---
@@ -129,3 +130,15 @@ Backlog tracks committed work: what will be built, fixed, or changed. Use the CL
 
 Important: Do not edit Backlog task, draft, document, decision, or milestone markdown files directly. Use Backlog commands so automatic metadata stays complete.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Split into TASK-28 (instructions) and TASK-29 (.aiswarm default config). Both Done.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Observation spike: backlog-like aiswarm instructions (→ TASK-28) and default .aiswarm config discovery (→ TASK-29). Both implemented; no further work on TASK-27.
+<!-- SECTION:FINAL_SUMMARY:END -->

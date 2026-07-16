@@ -11,33 +11,19 @@ def agent_block_body(name: str) -> str:
     runtime_dir = Path("/tmp/nudge-swarm") / name
     return f"""## Swarm
 
-Swarm workflow: read first:
-- Runtime map: `{runtime_dir / "runtime.json"}`
-- Self-awareness note: `{runtime_dir / "self-awareness.txt"}`
+Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm` from the nudge repo).
 
-Use as source of truth for:
-- tmux pane targets
-- monitor sockets, live state
-- babysit pid/log/spec/state files
+Read workflow first:
+- `aiswarm` — common commands cheat sheet
+- `aiswarm instructions overview` — required agent briefing
+- `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
 
-Swarm CLI: `aiswarm`
-Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
+After start, live map (not git):
+- Runtime: `{runtime_dir / "runtime.json"}`
+- Self-awareness: `{runtime_dir / "self-awareness.txt"}`
 
-Config (default discovery):
-- Project harness: `.aiswarm/config.yaml` (walk-up from cwd), or `$AISWARM_CONFIG`, or explicit path.
-- Prefer: `aiswarm status` / `aiswarm send 0.2 "msg"` without typing the yaml path.
-
-Messaging (durable, preferred):
-- Use the comms log: `aiswarm send <pane> "msg"` or `aiswarm send <cfg> <pane> "msg"`.
-- Inspect: `aiswarm log [--pending] [--pane 0.2]`.
-- Direct/manual still works: `./tmux-send <target> "message"`.
-
-Worker loop:
-- `aiswarm start` starts the base comms worker for `monitor: true` panes.
-- The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit: `aiswarm babysit start|stop`. Tasks: `aiswarm tasks start|stop|status|once`.
-
-Do NOT use raw `tmux send-keys ... Enter`.
+Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
+Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
 """
 
 

@@ -14,6 +14,7 @@ try:
     from . import babysitctl as swarm_babysit
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
+    from . import instructions as swarm_instructions
     from .common import load_config, looks_like_config_path
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
@@ -21,6 +22,7 @@ except ImportError:
     import babysitctl as swarm_babysit
     import tasksctl as swarm_tasks
     import init as swarm_init
+    import instructions as swarm_instructions
     from common import load_config, looks_like_config_path
 
 CONFIG_ARG_HELP = (
@@ -222,8 +224,22 @@ def print_model_help() -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Unified CLI for config-driven tmux swarm workflows.")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        description="Unified CLI for config-driven tmux swarm workflows.",
+        epilog="Run bare `aiswarm` for a workflow cheat sheet; `aiswarm instructions` for agent guides.",
+    )
+    sub = parser.add_subparsers(dest="command", required=False)
+
+    inst_p = sub.add_parser(
+        "instructions",
+        help="Print agent-facing workflow guides (not flag help)",
+    )
+    inst_p.add_argument(
+        "guide",
+        nargs="?",
+        default=None,
+        help="Guide name (omit to list). overview | handoff | tasks",
+    )
 
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
@@ -423,6 +439,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if not args.command:
+            print(swarm_instructions.bare_help().rstrip())
+            return 0
+
+        if args.command == "instructions":
+            print(swarm_instructions.render(args.guide).rstrip())
+            return 0
+
         if args.command == "init":
             agents = [a.strip() for a in args.agents.split(",") if a.strip()]
             swarm_init.init(args.name, args.root, args.dry_run, agents, flavour=args.flavour)

@@ -12,6 +12,13 @@ Primary workflow is the installed `aiswarm` command. From a repo checkout,
 
 `aiswarm` must be on `PATH`; from this repo, run `make install-aiswarm`.
 
+```bash
+aiswarm                      # workflow cheat sheet
+aiswarm instructions         # agent guides index
+aiswarm instructions overview
+aiswarm <command> --help     # flags
+```
+
 Install `aiswarm` into your `uv` tool environment:
 
 ```bash
