@@ -177,7 +177,6 @@ def bare_help() -> str:
 Common workflow:
   aiswarm init <name>                 Create .aiswarm/config.yaml + AGENTS block
   aiswarm start                       Start session, monitors, comms workers
-  aiswarm this                        This swarm: config + runtime.json path
   aiswarm status --brief              Pane states
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
   aiswarm babysit start|stop          Optional idle prompt loops
@@ -188,6 +187,7 @@ Config (when path omitted):
   $AISWARM_CONFIG  or  walk-up .aiswarm/config.yaml  or  explicit path / -c
 
 Instructions (workflow for agents):
+  aiswarm this                        This swarm: config + runtime.json path
   aiswarm instructions                List guides
   aiswarm instructions overview       Start here
   aiswarm instructions handoff        Peer send + backlog + done-ping
