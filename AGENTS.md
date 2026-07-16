@@ -70,7 +70,7 @@ If unsure about a change, err on the side of making it — the test suite provid
 <!-- AISWARM/NUDGE GUIDELINES START -->
 ## Swarm
 
-Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm`).
+Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm` from the nudge repo).
 
 Read workflow first:
 - `aiswarm` — common commands cheat sheet
@@ -82,6 +82,5 @@ After start, live map (not git):
 - Self-awareness: `/tmp/nudge-swarm/nudge/self-awareness.txt`
 
 Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
-**This implementer repo:** package is `swarm/`; live harness is `nudgeswarm/nudge.yaml` (pass path or set `$AISWARM_CONFIG`).
-Messaging: `aiswarm send <pane> "msg"`. Do NOT raw `tmux send-keys`.
+Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
 <!-- AISWARM/NUDGE GUIDELINES END -->
