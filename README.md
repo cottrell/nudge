@@ -48,35 +48,36 @@ Note: in **this** repo, `./swarm/` is package **code**. Live harness is still
 
 States: `unknown` `working` `idle`
 
-## Basic operational flow
+## Workflow
 
 ```bash
-# 1. Turn on the swarm (tmux session + panes + per-pane monitors + worker loops)
-#    Note: this is mostly a "create" for the tmux grid. Changing pane counts later
-#    requires stopping and re-starting (see limitations below).
+# 1. Create a starter config and AGENTS note (once per project)
+aiswarm init <project>
+```
+
+```bash
+# 2. Turn on the swarm (tmux session + panes + per-pane monitors + worker loops)
+#    This is a "create" for the tmux grid, not a declarative update: if you change
+#    pane/window counts in the YAML after the swarm is running, `start` will refuse
+#    and tell you to recreate the session. Worker/monitor config is more forgiving
+#    on re-start.
 aiswarm start                   # uses .aiswarm/config.yaml when present
 # aiswarm start ./path/to.yaml  # explicit override
 ```
-# Architecture notes:
-# - One tmux *session* per YAML file (named by `session_name`)
-# - One *monitor* (activity detector via monitor-bin) per `monitor: true` pane
-#   (creates a Unix socket /tmp/<session>_<W.N>.sock per pane)
-# - Comms workers (log consumers that deliver on idle) are started for monitored panes
-# - **Babysit (automatic nudging / prompt loops) is NOT turned on yet**
-#
-# Important: `start` is **not** a full declarative "update" for the tmux grid.
-# If you change the number of panes/windows in the YAML after the swarm is running,
-# re-running `start` will refuse and tell you to recreate the session first.
-# Worker configuration (comms/babysit) and monitor setup are more forgiving on re-start.
-```
+
+Architecture notes: one tmux *session* per YAML file (`session_name`); one *monitor*
+(activity detector via monitor-bin) per `monitor: true` pane, each with its own Unix
+socket `/tmp/<session>_<W.N>.sock`; comms workers (log consumers that deliver on idle)
+start for monitored panes. Babysit is **not** turned on by `start`.
 
 ```bash
-# 2. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
+# 3. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
 aiswarm babysit start
+# aiswarm babysit stop    turns babysit back off; swarm/monitors/comms stay up
 ```
 
 ```bash
-# 2b. Optional: pull real work from backlog into free panes (separate from babysit)
+# 3b. Optional: pull real work from backlog into free panes (separate from babysit)
 #     Requires top-level `tasks:` and per-pane `nudge.tasks.enabled: true`
 aiswarm tasks start
 aiswarm tasks status
@@ -85,30 +86,9 @@ aiswarm tasks stop
 ```
 
 ```bash
-# 3. Turn off babysit only (swarm / monitors / comms stay up)
-aiswarm babysit stop
-```
-
-```bash
-# 4. Full teardown
-# - stops tasks dispatcher (if running)
-# - stops all workers (if running)
-# - kills per-pane monitors
-# - tears down the tmux session
+# 4. Full teardown: stops tasks dispatcher + workers, kills monitors, tears down tmux
 aiswarm stop
 ```
-
-## Swarm-first workflow
-
-Create a starter config and AGENTS note:
-
-```bash
-aiswarm init <project>
-```
-
-View/edit `.aiswarm/config.yaml` (or your explicit harness path).
-
-See the **Basic operational flow** section above for the recommended sequence (`start`, `babysit start`, `babysit stop`, `stop`).
 
 Other useful commands:
 
@@ -116,16 +96,17 @@ Other useful commands:
 aiswarm start --skip-grid
 aiswarm status --brief -w
 aiswarm broadcast "AGENTS.md updated; please re-read it."
-aiswarm broadcast --via-log "use durable log"
-aiswarm send 0.0 "hello via log"
+aiswarm broadcast --via-log "use durable log"    # write to event log instead of direct send
+aiswarm send 0.0 "hello via log"                 # durable, delivered on idle
 aiswarm log --pending
+aiswarm cursors
 aiswarm clear-comms -y
 aiswarm quota
 aiswarm av-usage
 # explicit path still ok: aiswarm status ./nudgeswarm/nudge.yaml
 ```
 
-Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged.
+Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged. Direct/manual sends still work with `tmux-send`; prefer it (or the log commands) over raw `tmux send-keys`.
 
 ### Agent-to-agent handoff (do not stream peer panes)
 
@@ -228,36 +209,6 @@ Claim happens **before** log delivery (`In Progress` + assignee). Completion is 
 from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
 state is cleared on the next poll when status is Done.
 
-## Internal plumbing
-
-These are low-level helpers used by swarm tooling and power users:
-
-- `attach.sh` (monitor attach to pane)
-- `tmux-send` (safe text+Enter send)
-
-## Messaging / durable comms
-
-Use the built-in log for reliable agent-to-agent messages (durable, replayable, with cursors):
-
-```bash
-# direct to pane via log (buffered until consumer delivers on idle)
-aiswarm send 0.2 "review this"
-
-# broadcast via log
-aiswarm broadcast --via-log "new plan"
-
-# inspect
-aiswarm log --pending
-aiswarm cursors
-aiswarm clear-comms -y
-```
-
-The worker loop (started automatically by `start` for `monitor: true` panes) consumes the log and delivers via `tmux-send` when the pane is idle. `babysit start` additionally enables the prompt-nudge logic on top for configured panes.
-
-Direct/manual still works with `tmux-send`.
-
-When messaging panes manually, prefer `tmux-send` (or the log commands) over raw `tmux send-keys`.
-
 ## Babysit quota pacing
 
 When `babysit.enabled: true` and `agent` is one of `claude`, `codex`, or `agy`, the
@@ -328,7 +279,9 @@ Practical cadence: re-capture on breakage or visible upstream CLI changes, not o
 
 ## Backend
 
-`monitor-bin` is the only monitor implementation.
+`monitor-bin` is the only monitor implementation. Low-level helpers used by the
+swarm tooling directly (rarely needed by hand): `attach.sh` (monitor attach to
+pane), `tmux-send` (safe text+Enter send).
 
 Debug helpers:
 
