@@ -41,7 +41,7 @@ still be an explicit path such as `nudgeswarm/nudge.yaml`.
 aiswarm init <name>          # once per project
 aiswarm start                # tmux grid + monitors + comms workers
 aiswarm babysit start        # optional idle prompt loops
-aiswarm tasks start          # optional backlog → free panes
+aiswarm tasks start          # poll backlog → free panes (idle if empty)
 aiswarm status --brief
 aiswarm send 0.2 "msg"       # durable poke via log
 aiswarm babysit stop
@@ -180,7 +180,7 @@ Common workflow:
   aiswarm status --brief              Pane states
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
   aiswarm babysit start|stop          Optional idle nudges (per-pane worker)
-  aiswarm tasks start|status|stop     Optional backlog → free panes (session loop)
+  aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (idle if empty)
   aiswarm stop                        Tear down workers + tmux session
 
 Config (when path omitted):
