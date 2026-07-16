@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+BLOCK_START = "<!-- AISWARM/NUDGE GUIDELINES START -->"
+BLOCK_END = "<!-- AISWARM/NUDGE GUIDELINES END -->"
 
-def agent_block(name: str) -> str:
+
+def agent_block_body(name: str) -> str:
     runtime_dir = Path("/tmp/nudge-swarm") / name
     return f"""## Swarm
 
@@ -34,6 +37,115 @@ Do NOT use raw `tmux send-keys ... Enter`.
 
 Swarm scripts: `swarm/`.
 """
+
+
+def agent_block(name: str) -> str:
+    body = agent_block_body(name).rstrip() + "\n"
+    return f"{BLOCK_START}\n{body}{BLOCK_END}\n"
+
+
+def _strip_legacy_swarm(text: str) -> str:
+    """Remove a trailing un-marked ## Swarm section (pre-marker layout)."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.strip() == "## Swarm":
+            return "".join(lines[:i]).rstrip() + ("\n" if lines[:i] else "")
+    return text
+
+
+def upsert_agents_text(text: str, block: str) -> tuple[str, str]:
+    """Return (new_text, action) where action is created|updated|unchanged."""
+    block = block if block.endswith("\n") else block + "\n"
+    had_content = bool(text.strip())
+    start = text.find(BLOCK_START)
+    end = text.find(BLOCK_END)
+    if start != -1 and end != -1 and end > start:
+        end_at = end + len(BLOCK_END)
+        if end_at < len(text) and text[end_at] == "\n":
+            end_at += 1
+        head = text[:start].rstrip()
+        tail = text[end_at:].lstrip("\n")
+        parts = [p for p in (head, block.rstrip("\n"), tail) if p]
+        new = "\n\n".join(parts) + "\n"
+        return new, "unchanged" if new == text else "updated"
+
+    cleaned = _strip_legacy_swarm(text) if "## Swarm" in text else text
+    cleaned = cleaned.rstrip()
+    new = (cleaned + "\n\n" + block) if cleaned else block
+    if not new.endswith("\n"):
+        new += "\n"
+    if not had_content:
+        return new, "created"
+    return new, "updated"
+
+
+def remove_agents_text(text: str) -> tuple[str, bool]:
+    """Remove marked AISWARM block. Returns (new_text, removed)."""
+    start = text.find(BLOCK_START)
+    end = text.find(BLOCK_END)
+    if start == -1 or end == -1 or end < start:
+        return text, False
+    end_at = end + len(BLOCK_END)
+    if end_at < len(text) and text[end_at] == "\n":
+        end_at += 1
+    head = text[:start].rstrip()
+    tail = text[end_at:].lstrip("\n")
+    if head and tail:
+        new = head + "\n\n" + tail
+    else:
+        new = head + ("\n" if head else "") + tail
+    if new and not new.endswith("\n"):
+        new += "\n"
+    return new, True
+
+
+def resolve_agents_md(start: Path) -> Path | None:
+    """Walk up from start (file or dir) looking for AGENTS.md."""
+    base = start if start.is_dir() else start.parent
+    for d in [base, *base.parents]:
+        candidate = d / "AGENTS.md"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def write_agents_block(agents_path: Path, name: str, dry_run: bool = False) -> str:
+    """Upsert managed block into AGENTS.md. Returns action string."""
+    block = agent_block(name)
+    if agents_path.exists():
+        old = agents_path.read_text()
+        new, action = upsert_agents_text(old, block)
+    else:
+        new, action = block, "created"
+    if dry_run:
+        print(f"would {action}: {agents_path}")
+        if action != "unchanged":
+            print()
+            print(block.rstrip())
+        return action
+    if action == "unchanged":
+        print(f"AGENTS.md unchanged: {agents_path}")
+        return action
+    agents_path.parent.mkdir(parents=True, exist_ok=True)
+    agents_path.write_text(new)
+    print(f"{action}: {agents_path}")
+    return action
+
+
+def remove_agents_block(agents_path: Path, dry_run: bool = False) -> bool:
+    """Remove managed block from AGENTS.md if present. Returns whether removed."""
+    if not agents_path.is_file():
+        return False
+    old = agents_path.read_text()
+    new, removed = remove_agents_text(old)
+    if not removed:
+        return False
+    if dry_run:
+        print(f"would remove AISWARM block: {agents_path}")
+        return True
+    agents_path.write_text(new)
+    print(f"removed AISWARM block: {agents_path}")
+    return True
 
 
 DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
@@ -144,22 +256,7 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
         path.write_text(content)
         print(f"created: {path}")
 
-    block = agent_block(name)
-    if agents_path.exists() and "## Swarm" in agents_path.read_text():
-        print(f"AGENTS.md already has ## Swarm: {agents_path}")
-    elif dry_run:
-        action = "append to" if agents_path.exists() else "create"
-        print(f"would {action}: {agents_path}")
-        print()
-        print(block.rstrip())
-    else:
-        prefix = ""
-        if agents_path.exists() and agents_path.read_text().strip():
-            prefix = "\n\n"
-        agents_path.parent.mkdir(parents=True, exist_ok=True)
-        with agents_path.open("a") as f:
-            f.write(prefix + block)
-        print(f"updated: {agents_path}")
+    write_agents_block(agents_path, name, dry_run=dry_run)
 
     print()
     print("Next:")

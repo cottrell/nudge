@@ -75,6 +75,8 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert (tmp_path / "swarm" / "prompts" / "worker_long.md").exists()
     assert (tmp_path / "swarm" / "prompts" / "worker_short.txt").exists()
     agents = (tmp_path / "AGENTS.md").read_text()
+    assert swarm_init.BLOCK_START in agents
+    assert swarm_init.BLOCK_END in agents
     assert "## Swarm" in agents
     assert "Runtime map: `/tmp/nudge-swarm/demo/runtime.json`" in agents
     assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
@@ -90,7 +92,31 @@ def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
     agents = tmp_path / "AGENTS.md"
     agents.write_text("# Existing\n\n## Swarm\n\ncustom\n")
     swarm_init.init("demo", tmp_path)
-    assert agents.read_text().count("## Swarm") == 1
+    text = agents.read_text()
+    assert text.count("## Swarm") == 1
+    assert text.count(swarm_init.BLOCK_START) == 1
+    assert "custom" not in text  # legacy section replaced by managed block
+    assert "# Existing" in text
+
+
+def test_agents_block_upsert_and_remove():
+    block_a = swarm_init.agent_block("alpha")
+    block_b = swarm_init.agent_block("beta")
+    text, action = swarm_init.upsert_agents_text("# Project\n", block_a)
+    assert action == "updated"
+    assert swarm_init.BLOCK_START in text
+    assert "/tmp/nudge-swarm/alpha/" in text
+    text2, action2 = swarm_init.upsert_agents_text(text, block_b)
+    assert action2 == "updated"
+    assert text2.count(swarm_init.BLOCK_START) == 1
+    assert "/tmp/nudge-swarm/beta/" in text2
+    assert "/tmp/nudge-swarm/alpha/" not in text2
+    text3, action3 = swarm_init.upsert_agents_text(text2, block_b)
+    assert action3 == "unchanged"
+    removed, ok = swarm_init.remove_agents_text(text2)
+    assert ok
+    assert swarm_init.BLOCK_START not in removed
+    assert "# Project" in removed
 
 
 def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):

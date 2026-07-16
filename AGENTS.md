@@ -67,6 +67,7 @@ Use Backlog.md as the source of truth for planned work:
 
 If unsure about a change, err on the side of making it — the test suite provides good coverage, and the codebase is small enough that mistakes are easy to spot and fix.
 
+<!-- AISWARM/NUDGE GUIDELINES START -->
 ## Swarm
 
 Swarm workflow: read first:
@@ -78,12 +79,20 @@ Use as source of truth for:
 - monitor sockets, live state
 - babysit pid/log/spec/state files
 
+Swarm CLI: `aiswarm`
+Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
+
 Messaging (durable, preferred):
-- Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
 - Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `aiswarm log <cfg> [--pending] [--pane X.Y]`, `aiswarm cursors <cfg>`.
+- Inspect: `aiswarm log <cfg> [--pending] [--pane 0.2]`, `aiswarm cursors <cfg>`.
 - Direct/manual still works: `./tmux-send <target> "message"`.
 
-Do NOT use raw `tmux send-keys ... Enter` (fails to submit reliably).
+Worker loop:
+- `aiswarm start <cfg>` starts the base comms worker for `monitor: true` panes.
+- The worker consumes the log and delivers via `tmux-send` when the pane is idle.
+- Babysit prompt nudges are independent; use `aiswarm babysit start|stop <cfg>`.
+
+Do NOT use raw `tmux send-keys ... Enter`.
 
 Swarm scripts: `swarm/`.
+<!-- AISWARM/NUDGE GUIDELINES END -->
