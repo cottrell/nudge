@@ -317,6 +317,13 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     except ImportError:
         import babysitctl
     babysitctl.ensure_workers(cfg, dry_run)
+    try:
+        from . import init as swarm_init
+    except ImportError:
+        import init as swarm_init
+    agents_md = swarm_init.resolve_agents_md(cfg.path)
+    if agents_md is not None:
+        swarm_init.write_agents_block(agents_md, cfg.session_name, dry_run=dry_run)
     if dry_run:
         print(f"wrote runtime map to {cfg.runtime_map_path}")
         print(f"wrote self-awareness note to {cfg.self_awareness_path}")
