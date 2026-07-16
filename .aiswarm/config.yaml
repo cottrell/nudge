@@ -21,6 +21,8 @@ windows:
           title: codex light
           agent: codex
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 1800
@@ -32,6 +34,8 @@ windows:
           title: claude heavy
           agent: claude
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 7200
@@ -43,6 +47,8 @@ windows:
           title: claude light
           agent: claude
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 1800
@@ -54,6 +60,8 @@ windows:
           title: antigravity
           agent: antigravity
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 7200
@@ -65,6 +73,8 @@ windows:
           title: grok
           agent: grok
           monitor: true
+          tasks:
+            # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
             enabled: false
             interval_secs: 7200
