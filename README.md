@@ -97,6 +97,12 @@ aiswarm av-usage ./swarm/<project>.yaml
 
 Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged.
 
+### Agent-to-agent handoff (do not stream peer panes)
+
+Prefer short `aiswarm send` pokes + durable results in backlog + a short done-ping, instead of attaching to another agent's tmux pane and waiting on its stream.
+
+See `backlog/docs/doc-2 - Agent-to-agent-handoff-via-send-backlog-and-ping.md` for the full example workflow and message templates.
+
 Status/usage reliability note:
 
 - monitor state is activity-based: any pane output means `working`; 10 seconds without output means `idle`
