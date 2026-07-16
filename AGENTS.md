@@ -59,23 +59,6 @@ When modifying state behavior:
 
 If unsure about a change, err on the side of making it — the test suite provides good coverage, and the codebase is small enough that mistakes are easy to spot and fix.
 
-<!-- AISWARM/NUDGE GUIDELINES START -->
-## Swarm
-
-Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm` from the nudge repo).
-
-Read workflow first:
-- `aiswarm` — common commands cheat sheet
-- `aiswarm instructions overview` — required agent briefing
-- `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
-- `aiswarm this` — this swarm's config + runtime.json path
-
-After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
-
-Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
-Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
-<!-- AISWARM/NUDGE GUIDELINES END -->
-
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.48.0 -->
 <CRITICAL_INSTRUCTION>
@@ -99,3 +82,20 @@ Do not edit Backlog task, draft, document, decision, or milestone markdown files
 
 </CRITICAL_INSTRUCTION>
 <!-- BACKLOG.MD GUIDELINES END -->
+
+<!-- AISWARM/NUDGE GUIDELINES START -->
+## Swarm
+
+Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm` from the nudge repo).
+
+Read workflow first:
+- `aiswarm` — common commands cheat sheet
+- `aiswarm instructions overview` — required agent briefing
+- `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
+- `aiswarm this` — this swarm's config + runtime.json path
+
+After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
+
+Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
+Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
+<!-- AISWARM/NUDGE GUIDELINES END -->
