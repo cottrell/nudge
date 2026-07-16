@@ -82,17 +82,20 @@ Use as source of truth for:
 Swarm CLI: `aiswarm`
 Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`.
 
+Config: consumer default is `.aiswarm/config.yaml` (cwd walk-up) or `$AISWARM_CONFIG`.
+**This implementer repo** still uses explicit `nudgeswarm/nudge.yaml` (do not put harness under package `swarm/`).
+
 Messaging (durable, preferred):
-- Use the comms log for reliability between agents: `aiswarm send <cfg> <pane> "msg"` or `log_broadcast`.
-- Inspect: `aiswarm log <cfg> [--pending] [--pane 0.2]`, `aiswarm cursors <cfg>`.
+- `aiswarm send <pane> "msg"` (or `aiswarm send <cfg> <pane> "msg"` / `log_broadcast`).
+- Inspect: `aiswarm log [--pending] [--pane 0.2]`.
 - Direct/manual still works: `./tmux-send <target> "message"`.
 
 Worker loop:
-- `aiswarm start <cfg>` starts the base comms worker for `monitor: true` panes.
+- `aiswarm start [cfg]` starts the base comms worker for `monitor: true` panes.
 - The worker consumes the log and delivers via `tmux-send` when the pane is idle.
-- Babysit prompt nudges are independent; use `aiswarm babysit start|stop <cfg>`.
+- Babysit: `aiswarm babysit start|stop [cfg]`.
 
 Do NOT use raw `tmux send-keys ... Enter`.
 
-Swarm scripts: `swarm/`.
+Package code: `swarm/`. Harness for this repo: `nudgeswarm/`.
 <!-- AISWARM/NUDGE GUIDELINES END -->

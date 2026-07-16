@@ -17,7 +17,16 @@ import babysit as babysit_worker
 import babysitctl
 import cli as swarm_cli
 import init as swarm_init
-from common import ROOT_DIR, SWARM_CLI, build_runtime_map, build_self_awareness_text, load_config
+from common import (
+    ROOT_DIR,
+    SWARM_CLI,
+    build_runtime_map,
+    build_self_awareness_text,
+    find_aiswarm_config,
+    load_config,
+    looks_like_config_path,
+    resolve_config_path,
+)
 import tasksctl
 
 
@@ -71,9 +80,10 @@ def test_swarm_init_default_3x2_layout():
 
 def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     swarm_init.init("demo", tmp_path)
-    assert (tmp_path / "swarm" / "demo.yaml").exists()
-    assert (tmp_path / "swarm" / "prompts" / "worker_long.md").exists()
-    assert (tmp_path / "swarm" / "prompts" / "worker_short.txt").exists()
+    assert (tmp_path / ".aiswarm" / "config.yaml").exists()
+    assert (tmp_path / ".aiswarm" / "prompts" / "worker_long.md").exists()
+    assert (tmp_path / ".aiswarm" / "prompts" / "worker_short.txt").exists()
+    assert (tmp_path / ".gitignore").read_text().strip() == ".aiswarm/"
     agents = (tmp_path / "AGENTS.md").read_text()
     assert swarm_init.BLOCK_START in agents
     assert swarm_init.BLOCK_END in agents
@@ -82,10 +92,50 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "Self-awareness note: `/tmp/nudge-swarm/demo/self-awareness.txt`" in agents
     assert "Swarm CLI: `aiswarm`" in agents
     assert "Prereq: `aiswarm` must be on `PATH`; install it with `make install-aiswarm`." in agents
-    assert "aiswarm send <cfg> <pane> \"msg\"" in agents
+    assert ".aiswarm/config.yaml" in agents
     assert "The worker consumes the log and delivers via `tmux-send`" in agents
     assert "Direct/manual still works: `./tmux-send <target> \"message\"`." in agents
     assert "Do NOT use raw `tmux send-keys ... Enter`" in agents
+    # default discovery finds the inited config
+    found = resolve_config_path(None, start=tmp_path)
+    assert found == (tmp_path / ".aiswarm" / "config.yaml").resolve()
+    assert load_config(found).session_name == "demo"
+
+
+def test_resolve_config_walk_up_env_and_explicit(tmp_path: Path):
+    root = tmp_path / "proj"
+    nested = root / "a" / "b"
+    nested.mkdir(parents=True)
+    cfg = root / ".aiswarm" / "config.yaml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("session_name: t\nwindows:\n  - window_name: g\n    panes: []\n")
+    assert find_aiswarm_config(nested) == cfg.resolve()
+    assert resolve_config_path(None, start=nested) == cfg.resolve()
+
+    other = tmp_path / "other.yaml"
+    other.write_text("x: 1\n")
+    assert resolve_config_path(other) == other.resolve()
+
+    assert resolve_config_path(None, start=tmp_path / "nowhere", env={"AISWARM_CONFIG": str(other)}) == other.resolve()
+    # explicit wins over env
+    assert resolve_config_path(cfg, env={"AISWARM_CONFIG": str(other)}) == cfg.resolve()
+
+    assert looks_like_config_path("foo.yaml")
+    assert looks_like_config_path(other)
+    assert not looks_like_config_path("0.2")
+
+    with pytest.raises(FileNotFoundError):
+        resolve_config_path(None, start=tmp_path / "empty", env={})
+
+
+def test_cli_send_token_split():
+    assert swarm_cli._split_send_tokens(["0.2", "hi"], None) == (None, "0.2", ["hi"])
+    assert swarm_cli._split_send_tokens(["cfg.yaml", "0.2", "hi", "there"], None) == (
+        "cfg.yaml",
+        "0.2",
+        ["hi", "there"],
+    )
+    assert swarm_cli._split_send_tokens(["0.2", "hi"], "x.yaml") == ("x.yaml", "0.2", ["hi"])
 
 
 def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):

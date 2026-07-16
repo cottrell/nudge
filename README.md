@@ -18,6 +18,26 @@ Install `aiswarm` into your `uv` tool environment:
 make install-aiswarm
 ```
 
+### Default config (`.aiswarm/config.yaml`)
+
+Consumer projects: harness lives under **`.aiswarm/`** (not the Python package).
+
+Resolution order for commands that need a config:
+
+1. Explicit path (`aiswarm status path/to.yaml` or `-c path/to.yaml`)
+2. `$AISWARM_CONFIG`
+3. Walk up from cwd for **`.aiswarm/config.yaml`**
+
+```bash
+aiswarm init myproject          # writes .aiswarm/config.yaml + prompts; gitignores .aiswarm/
+aiswarm start                   # no path needed inside the project
+aiswarm send 0.0 "hello"        # same
+aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)
+```
+
+Note: in **this** repo, `./swarm/` is package **code**. Live harness is still
+`nudgeswarm/` until you migrate; use an explicit path or `$AISWARM_CONFIG` here.
+
 States: `unknown` `working` `idle`
 
 ## Basic operational flow
@@ -26,8 +46,9 @@ States: `unknown` `working` `idle`
 # 1. Turn on the swarm (tmux session + panes + per-pane monitors + worker loops)
 #    Note: this is mostly a "create" for the tmux grid. Changing pane counts later
 #    requires stopping and re-starting (see limitations below).
-aiswarm start ./swarm/<project>.yaml
-
+aiswarm start                   # uses .aiswarm/config.yaml when present
+# aiswarm start ./path/to.yaml  # explicit override
+```
 # Architecture notes:
 # - One tmux *session* per YAML file (named by `session_name`)
 # - One *monitor* (activity detector via monitor-bin) per `monitor: true` pane
@@ -43,21 +64,21 @@ aiswarm start ./swarm/<project>.yaml
 
 ```bash
 # 2. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
-aiswarm babysit start ./swarm/<project>.yaml
+aiswarm babysit start
 ```
 
 ```bash
 # 2b. Optional: pull real work from backlog into free panes (separate from babysit)
 #     Requires top-level `tasks:` and per-pane `nudge.tasks.enabled: true`
-aiswarm tasks start ./swarm/<project>.yaml
-aiswarm tasks status ./swarm/<project>.yaml
-aiswarm tasks once ./swarm/<project>.yaml -D   # dry-run single pass
-aiswarm tasks stop ./swarm/<project>.yaml
+aiswarm tasks start
+aiswarm tasks status
+aiswarm tasks once -D   # dry-run single pass
+aiswarm tasks stop
 ```
 
 ```bash
 # 3. Turn off babysit only (swarm / monitors / comms stay up)
-aiswarm babysit stop ./swarm/<project>.yaml
+aiswarm babysit stop
 ```
 
 ```bash
@@ -66,7 +87,7 @@ aiswarm babysit stop ./swarm/<project>.yaml
 # - stops all workers (if running)
 # - kills per-pane monitors
 # - tears down the tmux session
-aiswarm stop ./swarm/<project>.yaml
+aiswarm stop
 ```
 
 ## Swarm-first workflow
@@ -77,22 +98,23 @@ Create a starter config and AGENTS note:
 aiswarm init <project>
 ```
 
-View/edit `./swarm/<project>.yaml`.
+View/edit `.aiswarm/config.yaml` (or your explicit harness path).
 
 See the **Basic operational flow** section above for the recommended sequence (`start`, `babysit start`, `babysit stop`, `stop`).
 
 Other useful commands:
 
 ```bash
-aiswarm start --skip-grid ./swarm/<project>.yaml
-aiswarm status ./swarm/<project>.yaml --brief -w
-aiswarm broadcast ./swarm/<project>.yaml "AGENTS.md updated; please re-read it."
-aiswarm broadcast --via-log ./swarm/<project>.yaml "use durable log"
-aiswarm send ./swarm/<project>.yaml 0.0 "hello via log"
-aiswarm log ./swarm/<project>.yaml --pending
-aiswarm clear-comms ./swarm/<project>.yaml -y
-aiswarm quota ./swarm/<project>.yaml
-aiswarm av-usage ./swarm/<project>.yaml
+aiswarm start --skip-grid
+aiswarm status --brief -w
+aiswarm broadcast "AGENTS.md updated; please re-read it."
+aiswarm broadcast --via-log "use durable log"
+aiswarm send 0.0 "hello via log"
+aiswarm log --pending
+aiswarm clear-comms -y
+aiswarm quota
+aiswarm av-usage
+# explicit path still ok: aiswarm status ./nudgeswarm/nudge.yaml
 ```
 
 Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged.
@@ -113,14 +135,14 @@ Status/usage reliability note:
 Attach after start if needed:
 
 ```bash
-aiswarm start ./swarm/<project>.yaml --attach
+aiswarm start --attach
 ```
 
 tmuxp-first flow:
 
 ```bash
-tmuxp load ./swarm/<project>.yaml
-aiswarm start --skip-grid ./swarm/<project>.yaml
+tmuxp load .aiswarm/config.yaml
+aiswarm start --skip-grid
 ```
 
 Built-in examples:
@@ -189,10 +211,10 @@ windows:
 ```
 
 ```bash
-aiswarm tasks start ./swarm/<project>.yaml
-aiswarm tasks status ./swarm/<project>.yaml
-aiswarm tasks once ./swarm/<project>.yaml
-aiswarm tasks stop ./swarm/<project>.yaml
+aiswarm tasks start
+aiswarm tasks status
+aiswarm tasks once
+aiswarm tasks stop
 ```
 
 Claim happens **before** log delivery (`In Progress` + assignee). Completion is **not** inferred
@@ -212,15 +234,15 @@ Use the built-in log for reliable agent-to-agent messages (durable, replayable, 
 
 ```bash
 # direct to pane via log (buffered until consumer delivers on idle)
-aiswarm send ./swarm/<project>.yaml 0.2 "review this"
+aiswarm send 0.2 "review this"
 
 # broadcast via log
-aiswarm broadcast --via-log ./swarm/<project>.yaml "new plan"
+aiswarm broadcast --via-log "new plan"
 
 # inspect
-aiswarm log ./swarm/<project>.yaml --pending
-aiswarm cursors ./swarm/<project>.yaml
-aiswarm clear-comms ./swarm/<project>.yaml -y
+aiswarm log --pending
+aiswarm cursors
+aiswarm clear-comms -y
 ```
 
 The worker loop (started automatically by `start` for `monitor: true` panes) consumes the log and delivers via `tmux-send` when the pane is idle. `babysit start` additionally enables the prompt-nudge logic on top for configured panes.

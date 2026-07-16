@@ -230,8 +230,78 @@ def _parse_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec | None:
     )
 
 
-def load_config(path: str | Path) -> SwarmConfig:
-    cfg_path = Path(path).resolve()
+# Default harness location for consumer projects (not package code).
+# Resolve order for load_config(None) / CLI: explicit path > AISWARM_CONFIG > walk-up.
+AISWARM_DIRNAME = ".aiswarm"
+AISWARM_CONFIG_NAME = "config.yaml"
+AISWARM_CONFIG_ENV = "AISWARM_CONFIG"
+
+
+def looks_like_config_path(value: str | Path) -> bool:
+    """True if value is an existing file or a *.yaml/*.yml path token."""
+    s = str(value).strip()
+    if not s:
+        return False
+    p = Path(s)
+    if p.is_file():
+        return True
+    return s.endswith((".yaml", ".yml"))
+
+
+def find_aiswarm_config(start: str | Path | None = None) -> Path | None:
+    """Walk up from start (default: cwd) for `.aiswarm/config.yaml`."""
+    base = Path(start or Path.cwd()).resolve()
+    if base.is_file():
+        base = base.parent
+    for d in [base, *base.parents]:
+        candidate = d / AISWARM_DIRNAME / AISWARM_CONFIG_NAME
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def resolve_config_path(
+    explicit: str | Path | None = None,
+    *,
+    start: str | Path | None = None,
+    env: dict | None = None,
+) -> Path:
+    """Resolve swarm YAML path.
+
+    Order:
+      1. explicit path (CLI positional or -c)
+      2. AISWARM_CONFIG env
+      3. walk-up `.aiswarm/config.yaml` from start/cwd
+    """
+    if explicit is not None and str(explicit).strip():
+        path = Path(str(explicit).strip()).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"config not found: {path}")
+        return path.resolve()
+
+    environ = env if env is not None else os.environ
+    env_val = (environ.get(AISWARM_CONFIG_ENV) or "").strip()
+    if env_val:
+        path = Path(env_val).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{AISWARM_CONFIG_ENV}={env_val!r} but file not found"
+            )
+        return path.resolve()
+
+    found = find_aiswarm_config(start)
+    if found is not None:
+        return found
+
+    raise FileNotFoundError(
+        "no aiswarm config: pass a path, set "
+        f"{AISWARM_CONFIG_ENV}, or create {AISWARM_DIRNAME}/{AISWARM_CONFIG_NAME} "
+        "(aiswarm init <name>)"
+    )
+
+
+def load_config(path: str | Path | None = None) -> SwarmConfig:
+    cfg_path = resolve_config_path(path)
     data = yaml.safe_load(cfg_path.read_text()) or {}
 
     session_name = str(data.get("session_name") or "").strip()
