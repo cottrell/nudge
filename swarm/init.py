@@ -241,8 +241,6 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
     prompts_dir = aiswarm_dir / "prompts"
     config_path = aiswarm_dir / "config.yaml"
     agents_path = root_path / "AGENTS.md"
-    gitignore_path = root_path / ".gitignore"
-    gitignore_line = ".aiswarm/"
 
     files = {
         config_path: config_text(name, agents, flavour=flavour),
@@ -260,24 +258,6 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         print(f"created: {path}")
-
-    # Default: treat harness as personal/tooling (gitignore). Opt out by committing .aiswarm/ yourself.
-    if gitignore_path.is_file():
-        gi = gitignore_path.read_text()
-        if gitignore_line not in gi.splitlines() and gitignore_line.rstrip("/") not in gi.splitlines():
-            if dry_run:
-                print(f"would append {gitignore_line!r} to {gitignore_path}")
-            else:
-                with gitignore_path.open("a") as f:
-                    if gi and not gi.endswith("\n"):
-                        f.write("\n")
-                    f.write(f"{gitignore_line}\n")
-                print(f"appended {gitignore_line!r} to {gitignore_path}")
-    elif not dry_run:
-        gitignore_path.write_text(f"{gitignore_line}\n")
-        print(f"created: {gitignore_path} ({gitignore_line})")
-    else:
-        print(f"would create: {gitignore_path} ({gitignore_line})")
 
     write_agents_block(agents_path, name, dry_run=dry_run)
 

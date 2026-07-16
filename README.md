@@ -29,7 +29,7 @@ Resolution order for commands that need a config:
 3. Walk up from cwd for **`.aiswarm/config.yaml`**
 
 ```bash
-aiswarm init myproject          # writes .aiswarm/config.yaml + prompts; gitignores .aiswarm/
+aiswarm init myproject          # writes .aiswarm/config.yaml + prompts (commit if team-shared)
 aiswarm start                   # no path needed inside the project
 aiswarm send 0.0 "hello"        # same
 aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)

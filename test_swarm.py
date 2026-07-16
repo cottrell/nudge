@@ -83,7 +83,7 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert (tmp_path / ".aiswarm" / "config.yaml").exists()
     assert (tmp_path / ".aiswarm" / "prompts" / "worker_long.md").exists()
     assert (tmp_path / ".aiswarm" / "prompts" / "worker_short.txt").exists()
-    assert (tmp_path / ".gitignore").read_text().strip() == ".aiswarm/"
+    assert not (tmp_path / ".gitignore").exists()  # init does not gitignore harness
     agents = (tmp_path / "AGENTS.md").read_text()
     assert swarm_init.BLOCK_START in agents
     assert swarm_init.BLOCK_END in agents
