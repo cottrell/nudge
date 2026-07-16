@@ -230,7 +230,10 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
 
     files = {
         config_path: config_text(name, agents, flavour=flavour),
-        prompts_dir / "worker_long.md": "Continue the assigned work. Read AGENTS.md and follow the project workflow.\n",
+        prompts_dir / "worker_long.md": (
+            "Continue the assigned work. Read AGENTS.md; for swarm ops run "
+            "`aiswarm instructions overview` (and handoff/tasks as needed).\n"
+        ),
         prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
     }
 
