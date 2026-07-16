@@ -457,43 +457,47 @@ def write_runtime_map(cfg: SwarmConfig) -> None:
 
 
 def build_self_awareness_text(cfg: SwarmConfig) -> str:
+    """Live session note written under /tmp on start (not a full workflow manual).
+
+    Workflow procedure lives in `aiswarm instructions`; this file is the
+    session-specific map (paths, config, how to poke the CLI for *this* swarm).
+    """
     config_path = str(cfg.path)
+    task_panes = [p.pane for p in cfg.panes if p.tasks_enabled]
     lines = [
         f"Swarm session: {cfg.session_name}",
+        f"Config: {config_path}",
         f"Windows: {', '.join(w.window_name for w in cfg.windows)}",
         f"Runtime map: {cfg.runtime_map_path}",
-        f"Swarm CLI: python {SWARM_CLI}",
-        f"Status: python {SWARM_CLI} status {config_path} --brief",
-        f"Watch: python {SWARM_CLI} status {config_path} --brief -w",
+        f"Self-awareness: {cfg.self_awareness_path}",
         "",
-        "If you need to coordinate with other panes, inspect the runtime map for:",
-        "- tmux pane targets",
-        "- monitor socket paths",
-        "- babysit pid/log/spec paths",
+        "Workflow (read these; do not reinvent from this file):",
+        "  aiswarm",
+        "  aiswarm instructions overview",
+        "  aiswarm instructions handoff",
+        "  aiswarm instructions tasks",
+        "  aiswarm <command> --help",
         "",
-        "Messaging: prefer log_send(session, pane, msg) for durability (log is source of truth).",
-        f"CLI: python {SWARM_CLI} send <cfg> 0.2 \"msg here\"   (via log)",
-        f"CLI: python {SWARM_CLI} log <cfg> [--pane 0.2] [--pending]   (shows events + cursors)",
-        "Worker loop (comms consumer / message delivery) defaults to on for monitor: true panes.",
-        "  `start` ensures the base worker loop for monitored panes (comms group always active).",
-        "  Babysit prompt group is independent and optional.",
-        "Set nudge.comms.enabled: false to disable the worker loop explicitly.",
-        "Babysit: enabled: true means the pane can have the prompt-nudge group (idle nudges, EMA, clears).",
-        "  Use `babysit start` to enable the babysit group on configured panes.",
-        "  Use `babysit stop` to disable the babysit group (worker loop stays for comms).",
-        "Babysit nudges go via the log by default. Set babysit.via_log: false to send direct.",
-        "Tasks dispatcher (separate from babysit): pulls work from a task source (v1: backlog).",
-        "  Per-pane: nudge.tasks.enabled: true",
-        "  Session: tasks.backlog_dir / tasks.ingest (default [To Do]) / tasks.poll_secs",
-        "  CLI: aiswarm tasks start|stop|status|once <cfg>",
-        "  Claims task (In Progress + assignee) before log delivery; agent marks Done in backlog.",
-        "Consumer delivers via tmux-send when pane is idle.",
-        "Direct tmux-send still available.",
-        "Clear with clear_comms(session, confirm=True) after y/confirm.",
+        "This session (prefer aiswarm on PATH; checkout fallback below):",
+        f"  aiswarm status -c {config_path} --brief",
+        f"  aiswarm send -c {config_path} 0.2 \"msg\"",
+        f"  aiswarm log -c {config_path} --pending",
+        f"  aiswarm babysit start|stop -c {config_path}",
+        f"  aiswarm tasks start|stop|status|once -c {config_path}",
+        f"  # fallback: python {SWARM_CLI} … same subcommands …",
         "",
-        "Do NOT use raw tmux send-keys. Raw send-keys often fails to submit Enter reliably.",
+        "Runtime map has: tmux targets, monitor sockets, babysit/tasks paths.",
+        "Messaging: durable log via aiswarm send (delivered on idle). Do NOT raw tmux send-keys.",
     ]
-    return "\n".join(lines) + "\n"
+    if task_panes:
+        lines.append(
+            f"Tasks dispatcher: panes with tasks.enabled: {', '.join(task_panes)} "
+            "(claims backlog before log delivery; agent marks Done)."
+        )
+    else:
+        lines.append("Tasks dispatcher: no panes with nudge.tasks.enabled in this config.")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def write_self_awareness_text(cfg: SwarmConfig) -> None:

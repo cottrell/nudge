@@ -769,11 +769,11 @@ windows:
 """))
     text = build_self_awareness_text(cfg)
     assert "Runtime map: /tmp/nudge-swarm/demo/runtime.json" in text
-    assert f"Swarm CLI: python {SWARM_CLI}" in text
-    assert f"Status: python {SWARM_CLI} status {cfg.path} --brief" in text
-    assert f"Watch: python {SWARM_CLI} status {cfg.path} --brief -w" in text
-    assert "log_send" in text or "tmux-send" in text
-    assert "Do NOT use raw tmux send-keys" in text
+    assert "aiswarm instructions overview" in text
+    assert f"aiswarm status -c {cfg.path} --brief" in text
+    assert f"aiswarm send -c {cfg.path}" in text
+    assert f"python {SWARM_CLI}" in text  # checkout fallback mentioned
+    assert "Do NOT raw tmux send-keys" in text
 
 
 def test_comms_defaults_to_monitor(tmp_path: Path):
