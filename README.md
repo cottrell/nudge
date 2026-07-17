@@ -4,16 +4,16 @@
   <img src="assets/favicon-mural-droid.jpg" alt="Kratos and Bia force an idle agent-droid back to work" width="220" />
 </p>
 
+Yet another multi-agent-in-tmux setup — kept small on purpose: **comms**
+(tmux-send + durable log, deliver on idle), **loops** (babysit nudges + backlog
+→ free panes), and **best-effort quota** pacing. Config-driven YAML/tmuxp grids
+and a tiny activity monitor (`working` / `idle`). Not a full control plane.
+
 <p align="center">
   <img src="assets/demo.gif" alt="aiswarm demo: init, start, shell-pane sends and backlog task dispatch" width="720" />
   <br />
   <sub>Demo (3× speed): <code>aiswarm init --flavour demo</code> → start → shell-pane ops / backlog tasks · <a href="assets/demo.mp4">mp4</a></sub>
 </p>
-
-Yet another multi-agent-in-tmux setup — kept small on purpose: **comms**
-(tmux-send + durable log, deliver on idle), **loops** (babysit nudges + backlog
-→ free panes), and **best-effort quota** pacing. Config-driven YAML/tmuxp grids
-and a tiny activity monitor (`working` / `idle`). Not a full control plane.
 
 Daily driver **and** loop harness: the same panes are where you sit and work
 with agents by hand (Claude, Codex, Grok, …), and where idle-gated comms /
