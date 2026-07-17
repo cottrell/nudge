@@ -15,9 +15,10 @@ Yet another multi-agent-in-tmux setup — kept small on purpose: **comms**
 → free panes), and **best-effort quota** pacing. Config-driven YAML/tmuxp grids
 and a tiny activity monitor (`working` / `idle`). Not a full control plane.
 
-Primary use: keep multiple LLM agents (Claude, Codex, Grok, etc.) productive in
-tmux panes without constant manual intervention — and without interrupting them
-mid-turn. Designed for personal multi-agent workflows; works standalone.
+Daily driver **and** loop harness: the same panes are where you sit and work
+with agents by hand (Claude, Codex, Grok, …), and where idle-gated comms /
+babysit / tasks keep things moving when you step back. Personal multi-agent
+workflows; works standalone.
 
 Primary workflow is the installed `aiswarm` command. From a repo checkout,
 `python -m swarm.cli` or `python swarm/cli.py` also works.
