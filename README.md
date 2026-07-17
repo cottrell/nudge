@@ -336,6 +336,33 @@ What is usually *not* the product center here (and may be elsewhere): big TUI
 control planes, git-worktree isolation as the main feature, desktop/Electron
 fleet UIs, or vendor-native agent teams.
 
+### On git worktrees (why they are not the default story)
+
+Many close peers (dmux, Claude Squad, thurbox, …) treat **one agent = one
+worktree/branch** as the main isolation model. That fits well for small,
+code-only tasks where the whole universe is the checkout: parallel PRs, no
+shared side effects, merge when done.
+
+A lot of real work is not like that. Large datasets, local DBs, caches,
+scratch dirs, model weights, experiment outputs, or other **out-of-tree state**
+do not duplicate cleanly with `git worktree add`. You either:
+
+- share one data plane across worktrees (and then “isolation” is mostly git, not
+  reality), or
+- copy/symlink huge trees (expensive, easy to desync), or
+- invent a second coordination story for data that the worktree model never
+  owned.
+
+Mentally compartmentalizing “this agent is on branch B” is easy when state is
+the branch. It is hard when agents must reason about **shared** data that all
+live under one tree (or one machine path) and must not stomp each other with
+`git` alone.
+
+nudge defaults to a **shared project cwd** swarm: coordinate with idle-gated
+messaging, backlog claims, and human process — not by forking the filesystem
+per pane. You can still use worktrees *outside* nudge when a task is truly
+checkout-scoped; the harness does not force that as the unit of parallelism.
+
 ### At a glance
 
 | Project | Substrate | Summary | vs nudge |
