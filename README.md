@@ -5,11 +5,9 @@
 </p>
 
 <p align="center">
-  <video src="assets/demo.mp4" width="720" controls playsinline muted loop poster="assets/demo-poster.jpg">
-    <a href="assets/demo.mp4">aiswarm demo (mp4)</a>
-  </video>
+  <img src="assets/demo.gif" alt="aiswarm demo: init, start, shell-pane sends and backlog task dispatch" width="720" />
   <br />
-  <sub>Demo: <code>aiswarm init --flavour demo</code> → start → shell-pane sends / backlog task dispatch (<a href="assets/demo.mp4">download</a>)</sub>
+  <sub>Demo (3× speed): <code>aiswarm init --flavour demo</code> → start → shell-pane ops / backlog tasks · <a href="assets/demo.mp4">mp4</a></sub>
 </p>
 
 Config-driven tmux orchestration for local AI coding-agent swarms: YAML/tmuxp
