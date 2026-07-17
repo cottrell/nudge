@@ -251,7 +251,12 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
     init_p.add_argument("--agents", default="codex,claude,antigravity,grok", help="Comma-separated list of agents (repeats allowed), default codex,claude,antigravity,grok")
-    init_p.add_argument("--flavour", default="3x2", choices=["2x2", "3x2"], help="Pane flavour: NxM where N=agents, M=instances (heavy+light). Default: 1 pane per agent")
+    init_p.add_argument(
+        "--flavour",
+        default="3x2",
+        choices=["2x2", "3x2", "demo"],
+        help="Pane layout: 3x2 (default heavy/light grid), 2x2, or demo (agents + log -w + shell; no gemini)",
+    )
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     start_p = sub.add_parser("start", help="Start the swarm (tmux session, monitors, titles, commands, and comms workers)")

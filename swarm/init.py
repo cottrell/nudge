@@ -158,10 +158,15 @@ AGENT_LIGHT_COMMANDS: dict[str, str] = {
 FLAVOUR_AGENTS: dict[str, list[str]] = {
     "3x2": ["codex", "claude", "antigravity", "grok"],
     "2x2": ["codex", "claude"],
+    # Usual multi-provider grid + log/shell (gemini kept in AGENT_COMMANDS only;
+    # Google-side in demos is antigravity/agy).
+    "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
 }
 
+FLAVOURS = ("2x2", "3x2", "demo")
 
-def _pane_entry(agent: str, weight: str = "heavy") -> str:
+
+def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False) -> str:
     if weight == "light":
         cmd = AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
         title = f"{agent} light"
@@ -172,6 +177,7 @@ def _pane_entry(agent: str, weight: str = "heavy") -> str:
         title = f"{agent} heavy" if weight == "heavy" else agent
         interval = 7200
         clear_every = "\n            clear_every: 1"
+    tasks_block = "\n          tasks:\n            enabled: true" if tasks else ""
     return f"""      - shell_command: "{cmd}"
         nudge:
           title: {title}
@@ -181,20 +187,27 @@ def _pane_entry(agent: str, weight: str = "heavy") -> str:
             enabled: false
             interval_secs: {interval}{clear_every}
             long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+            short_prompt_file: prompts/worker_short.txt{tasks_block}
 """
 
 
-SHELL_PANE = """      - shell_command: "bash"
+def _operator_pane(title: str, cmd: str) -> str:
+    return f"""      - shell_command: "{cmd}"
         nudge:
-          title: shell
+          title: {title}
           monitor: false
 """
 
 
+SHELL_PANE = _operator_pane("shell", "bash")
+# Demo shell: no profile/rc (avoids cottrell@host PS1) + plain prompt.
+DEMO_SHELL_PANE = _operator_pane("shell", "env PS1='$ ' bash --norc --noprofile")
+# Discover config via cwd walk-up from the swarm start_directory.
+LOG_PANE = _operator_pane("log", "aiswarm log -w")
+
+
 def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None) -> str:
     if flavour == "3x2":
-        flavour_agents = FLAVOUR_AGENTS["3x2"]
         # codex+claude: heavy+light; antigravity+grok: solo
         panes_block = (
             "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
@@ -207,11 +220,35 @@ def config_text(name: str, agents: list[str] | None = None, flavour: str | None 
             "".join(_pane_entry(a, w) for a in flavour_agents for w in ("heavy", "light"))
             + SHELL_PANE
         )
+    elif flavour == "demo":
+        # ~4×2 tiled: agent CLIs (tasks-enabled) + log watch + shell
+        panes_block = (
+            "".join(_pane_entry(a, "solo", tasks=True) for a in FLAVOUR_AGENTS["demo"])
+            + LOG_PANE
+            + DEMO_SHELL_PANE
+        )
+        # backlog_dir is relative to .aiswarm/config.yaml → ../backlog = project root
+        return f"""session_name: {name}
+start_directory: ./
+tasks:
+  source: backlog
+  backlog_dir: ../backlog
+  ingest: [To Do]
+  poll_secs: 30
+  unassigned_only: true
+  require_idle: true
+  via_log: true
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+{panes_block}"""
     else:
         if agents is None:
             agents = DEFAULT_AGENTS
         panes_block = "".join(_pane_entry(a, "solo") for a in agents)
     return f"""session_name: {name}
+start_directory: ./
 windows:
   - window_name: grid
     layout: tiled

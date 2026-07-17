@@ -78,6 +78,10 @@ def _ensure_window(
     existing_windows = run("tmux", "list-windows", "-t", session_name, "-F", "#{window_name}", check=False).stdout
     win_exists = win.window_name in existing_windows.splitlines()
 
+    # Plain interactive bash: no .bashrc PS1 (user@host) before agent CLI takes over.
+    # Single argv for tmux [shell-command].
+    pane_shell = "env PS1='$ ' bash --norc --noprofile"
+
     if not win_exists:
         if dry_run:
             print(f"would create window {target}")
@@ -86,7 +90,7 @@ def _ensure_window(
                 # first window was already created with the session
                 run("tmux", "rename-window", "-t", f"{session_name}:0", win.window_name)
             else:
-                run("tmux", "new-window", "-t", session_name, "-n", win.window_name, "bash")
+                run("tmux", "new-window", "-t", session_name, "-n", win.window_name, pane_shell)
         count = 1
     else:
         count = _window_pane_count(session_name, win.window_name)
@@ -105,7 +109,7 @@ def _ensure_window(
             print(f"would split {target} to add pane {win.window_name}.{count}")
             count += 1
             continue
-        run("tmux", "split-window", "-t", f"{target}.0", "bash")
+        run("tmux", "split-window", "-t", f"{target}.0", pane_shell)
         run("tmux", "select-layout", "-t", target, win.layout)
         count = _window_pane_count(session_name, win.window_name)
 
@@ -123,7 +127,16 @@ def setup_grid(cfg: SwarmConfig, dry_run: bool) -> None:
         if dry_run:
             print(f"would create session {cfg.session_name}")
         else:
-            run("tmux", "new-session", "-d", "-s", cfg.session_name, "-n", cfg.windows[0].window_name, "bash")
+            run(
+                "tmux",
+                "new-session",
+                "-d",
+                "-s",
+                cfg.session_name,
+                "-n",
+                cfg.windows[0].window_name,
+                "env PS1='$ ' bash --norc --noprofile",
+            )
         created_session = True
     for i, win in enumerate(cfg.windows):
         _ensure_window(
