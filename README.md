@@ -333,8 +333,14 @@ when idle**, optional **idle babysit**, and optional **backlog → free-pane** t
 dispatch.
 
 What is usually *not* the product center here (and may be elsewhere): big TUI
-control planes, git-worktree isolation as the main feature, desktop/Electron
+control planes, **one worktree per agent as the swarm model**, desktop/Electron
 fleet UIs, or vendor-native agent teams.
+
+Git worktrees are fine when an agent (or human) chooses them for a task; nudge
+does not invent or require them. The default swarm is a **shared project cwd** —
+coordinate via idle-gated messaging and backlog, not by forking the checkout per
+pane. Peers that *do* center worktree isolation (dmux, Claude Squad, thurbox, …)
+are solving a related but different problem.
 
 ### At a glance
 
