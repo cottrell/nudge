@@ -4,6 +4,14 @@
   <img src="assets/favicon-mural-droid.jpg" alt="Kratos and Bia force an idle agent-droid back to work" width="220" />
 </p>
 
+<p align="center">
+  <video src="assets/demo.mp4" width="720" controls playsinline muted loop poster="assets/demo-poster.jpg">
+    <a href="assets/demo.mp4">aiswarm demo (mp4)</a>
+  </video>
+  <br />
+  <sub>Demo: <code>aiswarm init --flavour demo</code> → start → shell-pane sends / backlog task dispatch (<a href="assets/demo.mp4">download</a>)</sub>
+</p>
+
 Config-driven tmux orchestration for local AI coding-agent swarms: YAML/tmuxp
 grids, per-pane activity monitors (`working` / `idle`), durable log messaging
 delivered only when a pane is idle, optional idle babysit, and optional backlog

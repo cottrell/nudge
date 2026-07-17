@@ -65,3 +65,21 @@ tmux-test:
 tmux-clean:
 	tmux kill-session -t monitor-test 2>/dev/null || true
 	rm -f /tmp/test-monitor.sock
+
+# Demo typealong in *this* terminal (record it). See scripts/demo-session.sh -h
+#
+#   1. Open a large terminal, Ctrl+Alt+Shift+R (start screencast)
+#   2. make demo
+#   3. Same window: init → start → tmux grid; detach Ctrl-b d
+#   4. make demo-teardown
+demo:
+	./scripts/demo-session.sh
+
+demo-manual:
+	./scripts/demo-session.sh --manual
+
+demo-record:
+	./scripts/demo-session.sh --record
+
+demo-teardown:
+	./scripts/demo-session.sh --teardown latest

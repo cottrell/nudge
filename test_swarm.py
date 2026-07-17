@@ -78,6 +78,25 @@ def test_swarm_init_default_3x2_layout():
     assert 'shell_command: "bash"' not in text
 
 
+def test_swarm_init_demo_flavour_layout():
+    text = swarm_init.config_text("aiswarm-demo", flavour="demo")
+    assert "session_name: aiswarm-demo" in text
+    assert "start_directory: ./" in text
+    for agent in ("codex", "claude", "antigravity", "grok", "vibe", "copilot"):
+        assert f"agent: {agent}" in text
+    assert "agent: gemini" not in text
+    assert text.count("agent:") == 6
+    assert "tasks:" in text
+    assert "source: backlog" in text
+    assert "backlog_dir: ../backlog" in text  # relative to .aiswarm/config.yaml
+    assert text.count("tasks:\n            enabled: true") == 6
+    assert 'title: log' in text
+    assert 'aiswarm log -w' in text
+    assert 'title: shell' in text
+    assert "bash --norc --noprofile" in text
+    assert "PS1=" in text
+
+
 def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     swarm_init.init("demo", tmp_path)
     assert (tmp_path / ".aiswarm" / "config.yaml").exists()
