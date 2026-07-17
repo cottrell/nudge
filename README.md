@@ -4,12 +4,14 @@
   <img src="assets/favicon-mural-droid.jpg" alt="Kratos and Bia force an idle agent-droid back to work" width="220" />
 </p>
 
-Config-driven tmux orchestration for local AI coding-agent swarms, with activity
-monitoring, durable log comms, and quota-aware babysitting.
+Config-driven tmux orchestration for local AI coding-agent swarms: YAML/tmuxp
+grids, per-pane activity monitors (`working` / `idle`), durable log messaging
+delivered only when a pane is idle, optional idle babysit, and optional backlog
+→ free-pane task dispatch.
 
 Primary use: keep multiple LLM agents (Claude, Codex, Grok, etc.) productive in
-tmux panes without constant manual intervention. Designed for personal multi-agent
-workflows; works standalone.
+tmux panes without constant manual intervention — and without interrupting them
+mid-turn. Designed for personal multi-agent workflows; works standalone.
 
 Primary workflow is the installed `aiswarm` command. From a repo checkout,
 `python -m swarm.cli` or `python swarm/cli.py` also works.
@@ -324,8 +326,38 @@ See `backlog/tasks/` for planned work. Contributions welcome via issues or PRs
 ## Similar projects
 
 Many of these are status indicators, session launchers, or general tmux managers.
-nudge's focus is swarm lifecycle (YAML start/stop), durable log-based pane comms,
-and quota-paced babysitting on top of activity monitors.
+nudge's focus is swarm lifecycle (YAML start/stop), idle-gated durable pane comms,
+optional babysit when idle, and optional backlog → free-pane task dispatch — on a
+small activity monitor (`working` / `idle`).
+
+### Closest peer: [NTM](https://github.com/Dicklesworthstone/ntm)
+
+[NTM (Named Tmux Manager)](https://github.com/Dicklesworthstone/ntm) is the closest
+full-stack cousin: local-first, tmux-centric multi-agent orchestration for Claude /
+Codex / AGY / Grok. Both spawn labeled agent panes, send work across them, and aim
+to make parallel coding agents manageable.
+
+They diverge on scope and center of gravity:
+
+| | **nudge (`aiswarm`)** | **NTM** |
+| --- | --- | --- |
+| **Shape** | Small Python package + C `monitor-bin`; YAML/tmuxp grids | Large Go binary; TUI dashboard/palette, REST/SSE/WS, robot CLI |
+| **Core job** | Keep panes productive: activity gate → durable log delivery → optional babysit / task claim | Full local control plane: spawn, triage, mail, safety, checkpoints, pipelines |
+| **Work queue** | [Backlog.md](https://github.com/Dan-Maor/backlog.md) via `aiswarm tasks` (claim To Do → free pane) | Beads / `br` / `bv` graph triage, assign, queue-dry ideation |
+| **Comms** | Per-session durable log; workers deliver only when pane is idle | Agent Mail + locks/reservations; human overseer mail surfaces |
+| **Idle / activity** | Explicit per-pane C monitor (`working`/`idle`); idle gates send | Activity/health/watch; less central to the product story |
+| **Babysit** | Optional idle re-prompt loop (separate from `start` / tasks) | Not a first-class idle babysit loop; focus is operator/automation surfaces |
+| **Safety** | Thin (safe `tmux-send`; no policy engine) | Policy, guards, approvals, destructive-command protection |
+| **Durability** | Runtime under `/tmp/nudge-swarm/…`; log cursors; task claim in backlog | Checkpoints, timelines, audit, pipeline resume under `.ntm/` |
+| **Config** | Project `.aiswarm/config.yaml` (tmuxp-compatible + `nudge.*`) | `~/.config/ntm/` + project `.ntm/` recipes/workflows/pipelines |
+| **Deps** | `tmux`, agent CLIs; optional backlog | Intentionally integration-heavy (`br`, `bv`, Agent Mail, …) |
+| **When to prefer** | Lean swarm harness, idle-gated messaging, backlog dispatch | Operator dashboard, work-graph intelligence, safety/audit, APIs |
+
+Overlap in one line: both treat tmux as the runtime for multi-agent coding.
+nudge optimizes for a small, config-driven “keep the swarm moving” loop;
+NTM optimizes for a broad operator control plane around that same idea.
+
+### Other related tools
 
 - [ccmanager](https://github.com/kbwo/ccmanager)
 - [tallr](https://github.com/kaihochak/tallr)
