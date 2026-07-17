@@ -10,10 +10,10 @@
   <sub>Demo (3× speed): <code>aiswarm init --flavour demo</code> → start → shell-pane ops / backlog tasks · <a href="assets/demo.mp4">mp4</a></sub>
 </p>
 
-Config-driven tmux orchestration for local AI coding-agent swarms: YAML/tmuxp
-grids, per-pane activity monitors (`working` / `idle`), durable log messaging
-delivered only when a pane is idle, optional idle babysit, and optional backlog
-→ free-pane task dispatch.
+Yet another multi-agent-in-tmux setup — kept small on purpose: **comms**
+(tmux-send + durable log, deliver on idle), **loops** (babysit nudges + backlog
+→ free panes), and **best-effort quota** pacing. Config-driven YAML/tmuxp grids
+and a tiny activity monitor (`working` / `idle`). Not a full control plane.
 
 Primary use: keep multiple LLM agents (Claude, Codex, Grok, etc.) productive in
 tmux panes without constant manual intervention — and without interrupting them
