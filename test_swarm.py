@@ -1337,6 +1337,102 @@ windows:
     assert "would claim TASK-42" in out
 
 
+def test_require_idle_rejects_unknown_monitor_state(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "unknown")
+    assert tasksctl.pane_ready_for_prompt(cfg, "0.0") is False
+    assert tasksctl.is_pane_free(cfg, "0.0", {"assignments": {}}) is False
+
+
+def test_dispatch_skips_claim_and_chase_when_monitor_socket_missing(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    monkeypatch.setattr(
+        tasksctl,
+        "list_candidate_tasks",
+        lambda c: [tasksctl.BacklogTask(id="TASK-7", title="Example", status="To Do", priority="HIGH")],
+    )
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    actions = tasksctl.dispatch_once(cfg, dry_run=True)
+    assert actions == []
+
+
+def test_chase_skips_when_monitor_socket_missing(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    state = {
+        "assignments": {
+            "0.0": {
+                "task_id": "TASK-7",
+                "title": "Example",
+                "assignee": "aiswarm:demo:0.0",
+            }
+        }
+    }
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(
+        tasksctl,
+        "view_assignment",
+        lambda cfg, pane, task_id: tasksctl.AssignmentView(
+            "open",
+            task={"id": task_id, "title": "Example", "status": "To Do"},
+        ),
+    )
+    actions = tasksctl.chase_assigned(cfg, state, dry_run=True)
+    assert actions == []
+
+
 def test_save_state_atomic_rename_no_partial_writes(tmp_path: Path, monkeypatch):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
@@ -1404,3 +1500,157 @@ windows:
     assert "Session: demo" in out
     assert "runtime.json" in out
     assert "0.0" in out
+
+
+def test_recover_assignments_from_backlog_empty_state_finds_existing_claims(tmp_path: Path, monkeypatch):
+    """AC #1: restart with empty state.json recovers aiswarm:session:pane claims from backlog."""
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+
+    # Mock backlog CLI: task list returns a task assigned to our pane
+    def mock_run_backlog(cfg, args, timeout=30.0):
+        result = subprocess.CompletedProcess(args, returncode=0, stdout="", stderr="")
+        if "task" in args and "list" in args:
+            result.stdout = """{
+                "schemaVersion": 1,
+                "kind": "task-list",
+                "tasks": [{
+                    "id": "TASK-99",
+                    "title": "Recovered task",
+                    "status": "In Progress",
+                    "priority": "high",
+                    "assignees": ["aiswarm:demo:0.0"]
+                }]
+            }"""
+        return result
+
+    def mock_view_task_json(cfg, task_id):
+        if task_id == "TASK-99":
+            return {
+                "id": "TASK-99",
+                "title": "Recovered task",
+                "status": "In Progress",
+                "priority": "high",
+                "assignees": ["aiswarm:demo:0.0"],
+            }
+        return {}
+
+    monkeypatch.setattr(tasksctl, "_run_backlog", mock_run_backlog)
+    monkeypatch.setattr(tasksctl, "view_task_json", mock_view_task_json)
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
+
+    # Start with empty state (simulating lost state.json)
+    state = tasksctl.load_state(cfg)
+    assert state.get("assignments") in ({}, None) or not state.get("assignments")
+
+    # Recovery should rebuild assignments from backlog
+    state = tasksctl.recover_assignments_from_backlog(cfg, state)
+
+    assert state["assignments"]["0.0"]["task_id"] == "TASK-99"
+    assert state["assignments"]["0.0"]["assignee"] == "aiswarm:demo:0.0"
+    assert "recovered_at" in state["assignments"]["0.0"]
+
+
+def test_recover_assignments_does_not_override_existing_local_assignments(tmp_path: Path, monkeypatch):
+    """AC #2: does not double-claim free To Do already owned by a pane."""
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+
+    # Mock backlog CLI to return a different task
+    def mock_run_backlog(cfg, args, timeout=30.0):
+        result = subprocess.CompletedProcess(args, returncode=0, stdout="", stderr="")
+        if "task" in args and "list" in args:
+            result.stdout = """{
+                "schemaVersion": 1,
+                "kind": "task-list",
+                "tasks": [{
+                    "id": "TASK-99",
+                    "title": "Different task",
+                    "status": "In Progress",
+                    "priority": "high",
+                    "assignees": ["aiswarm:demo:0.0"]
+                }]
+            }"""
+        return result
+
+    def mock_view_task_json(cfg, task_id):
+        if task_id == "TASK-99":
+            return {
+                "id": "TASK-99",
+                "title": "Different task",
+                "status": "In Progress",
+                "priority": "high",
+                "assignees": ["aiswarm:demo:0.0"],
+            }
+        if task_id == "TASK-88":
+            return {
+                "id": "TASK-88",
+                "title": "Local task",
+                "status": "In Progress",
+                "priority": "high",
+                "assignees": ["aiswarm:demo:0.0"],
+            }
+        return {}
+
+    monkeypatch.setattr(tasksctl, "_run_backlog", mock_run_backlog)
+    monkeypatch.setattr(tasksctl, "view_task_json", mock_view_task_json)
+
+    # Start with existing local assignment
+    state = {
+        "assignments": {
+            "0.0": {
+                "task_id": "TASK-88",
+                "title": "Local task",
+                "assignee": "aiswarm:demo:0.0",
+                "claimed_at": "2026-07-22T10:00:00",
+            }
+        },
+        "history": []
+    }
+
+    # Recovery should NOT override existing assignments
+    state = tasksctl.recover_assignments_from_backlog(cfg, state)
+
+    # Local assignment should be preserved
+    assert state["assignments"]["0.0"]["task_id"] == "TASK-88"
+    assert "claimed_at" in state["assignments"]["0.0"]
+    assert "recovered_at" not in state["assignments"]["0.0"]
