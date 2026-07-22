@@ -1337,6 +1337,33 @@ windows:
     assert "would claim TASK-42" in out
 
 
+def test_save_state_atomic_rename_no_partial_writes(tmp_path: Path, monkeypatch):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    tasksctl.save_state(cfg, {"assignments": {"0.0": {"task_id": "TASK-1"}}, "history": []})
+    path = tasksctl.state_path(cfg)
+    assert path.exists()
+    assert tasksctl.load_state(cfg)["assignments"]["0.0"]["task_id"] == "TASK-1"
+    # no leftover temp files after a successful save
+    leftovers = list(path.parent.glob("state.json.tmp.*"))
+    assert leftovers == []
+    # second save replaces atomically; readers never see a truncated/partial file
+    tasksctl.save_state(cfg, {"assignments": {}, "history": ["done"]})
+    state = tasksctl.load_state(cfg)
+    assert state["assignments"] == {}
+    assert state["history"] == ["done"]
+
+
 def test_cli_tasks_once_and_status_dispatch(monkeypatch):
     calls: list[tuple] = []
     monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")

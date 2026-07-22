@@ -102,8 +102,12 @@ def load_state(cfg: SwarmConfig) -> dict:
 
 
 def save_state(cfg: SwarmConfig, state: dict) -> None:
+    """Atomic write (temp file + rename) so a crash mid-write can't truncate state.json."""
     tasks_runtime_dir(cfg).mkdir(parents=True, exist_ok=True)
-    state_path(cfg).write_text(json.dumps(state, indent=2) + "\n")
+    path = state_path(cfg)
+    tmp = path.with_suffix(f".json.tmp.{os.getpid()}")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    os.replace(tmp, path)
 
 
 def claim_assignee(cfg: SwarmConfig, pane: str) -> str:
@@ -333,8 +337,7 @@ def pane_ready_for_prompt(cfg: SwarmConfig, pane: str) -> bool:
         return False
     if cfg.tasks.require_idle:
         mon = query_monitor_state(cfg.session_name, pane)
-        # NOTE: unknown==ready is intentional today (offline dry-run); see TASK-33.
-        if mon not in ("idle", "unknown"):
+        if mon != "idle":
             return False
     return True
 
@@ -537,6 +540,73 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
     return actions
 
 
+def recover_assignments_from_backlog(cfg: SwarmConfig, state: dict) -> dict:
+    """Rebuild local state from backlog for pane assignments matching this session/pane.
+
+    Risk: local state.json is sole memory of pane↔task. If dispatcher restarts with
+    empty state.json, backlog still has aiswarm:session:pane assignees but chase/claim
+    won't pick them up (unassigned_only filters; chase only reads state).
+
+    Fix: scan backlog for In Progress (or ingest) tasks assigned to our session's panes,
+    rehydrate local state. Do NOT override existing local assignments (they take precedence).
+    """
+    assignments = dict(state.get("assignments") or {})
+    changed = False
+
+    # For each pane, search backlog for tasks assigned to this pane via claim_assignee prefix
+    for pane_spec in cfg.task_panes:
+        pane = pane_spec.pane
+        if pane in assignments:
+            continue  # Local assignment exists; do not override
+
+        want_assignee = claim_assignee(cfg, pane)
+
+        # Search all ingest statuses for tasks with matching assignee
+        found_task: BacklogTask | None = None
+        for status in cfg.tasks.ingest:
+            args = ["task", "list", "-s", status, "--json", "--limit", "200"]
+            if cfg.tasks.require_label:
+                args.extend(["-l", cfg.tasks.require_label])
+            try:
+                proc = _run_backlog(cfg, args)
+                data = _json_or_raise(proc, f"backlog recovery task list status={status!r}")
+                tasks = parse_task_list_json(data)
+
+                # Find first task assigned to this pane
+                for task in tasks:
+                    try:
+                        full_task = view_task_json(cfg, task.id)
+                        assignees = full_task.get("assignees") or []
+                        if isinstance(assignees, str):
+                            assignees = [assignees]
+                        if want_assignee in assignees:
+                            found_task = task
+                            break
+                    except Exception:
+                        continue
+
+                if found_task:
+                    break
+            except Exception:
+                continue
+
+        if found_task:
+            assignments[pane] = {
+                "task_id": found_task.id,
+                "title": found_task.title,
+                "assignee": want_assignee,
+                "recovered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "event_id": None,
+            }
+            changed = True
+
+    if changed:
+        state["assignments"] = assignments
+        save_state(cfg, state)
+
+    return state
+
+
 def _claim_new_onto_free(
     cfg: SwarmConfig, state: dict, dry_run: bool
 ) -> list[dict]:
@@ -607,12 +677,13 @@ def _claim_new_onto_free(
 
 
 def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
-    """One pass: reconcile → chase open work → claim new unassigned work."""
+    """One pass: recover lost assignments → reconcile → chase open work → claim new unassigned work."""
     validate_tasks_config(cfg)
     assert cfg.tasks is not None
     if dry_run:
         print_effective_tasks(cfg)
-    state = reconcile_assignments(cfg, load_state(cfg))
+    state = recover_assignments_from_backlog(cfg, load_state(cfg))
+    state = reconcile_assignments(cfg, state)
     actions = chase_assigned(cfg, state, dry_run=dry_run)
     state = load_state(cfg)
     actions.extend(_claim_new_onto_free(cfg, state, dry_run))
