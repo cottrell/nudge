@@ -304,7 +304,22 @@ def build_parser() -> argparse.ArgumentParser:
     log_p.add_argument("-w", "--watch", action="store_true", help="Refresh the log in place until interrupted")
     log_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds (default: 1)")
 
-    send_p = sub.add_parser("send", help="Send a message to a single target via the event log (instead of direct tmux-send)", description="Send a message to a single target via the event log (instead of direct tmux-send)")
+    send_p = sub.add_parser(
+        "send",
+        help="Send a message to one pane via the event log (delivered on idle)",
+        description=(
+            "Send a message to a single pane via the event log (instead of direct "
+            "tmux-send). Message is delivered when the pane is idle."
+        ),
+        epilog=(
+            "examples:\n"
+            "  aiswarm send 0.0 hello\n"
+            '  aiswarm send 0.2 "do the thing"\n'
+            "  aiswarm send -c .aiswarm/config.yaml 0.1 hi there\n"
+            "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     send_p.add_argument(
         "-c",
         "--config-file",
@@ -315,7 +330,11 @@ def build_parser() -> argparse.ArgumentParser:
     send_p.add_argument(
         "tokens",
         nargs="+",
-        help="target message... or legacy: config target message...",
+        metavar=("PANE", "MESSAGE"),
+        help=(
+            "PANE id (e.g. 0.2) then MESSAGE words. "
+            "Legacy: optional leading CONFIG path before PANE"
+        ),
     )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
 
