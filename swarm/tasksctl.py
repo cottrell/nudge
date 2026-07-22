@@ -64,6 +64,24 @@ class BacklogTask:
     priority: str = ""
 
 
+@dataclass
+class DependencyGate:
+    ready: bool
+    blocked: bool
+    reason: str = ""
+    blocked_on: list[str] = None
+    missing: list[str] = None
+    cycle: list[str] = None
+
+    def __post_init__(self) -> None:
+        if self.blocked_on is None:
+            self.blocked_on = []
+        if self.missing is None:
+            self.missing = []
+        if self.cycle is None:
+            self.cycle = []
+
+
 def tasks_runtime_dir(cfg: SwarmConfig) -> Path:
     return cfg.runtime_dir / "tasks"
 
@@ -226,6 +244,120 @@ def view_task_json(cfg: SwarmConfig, task_id: str) -> dict:
     return task
 
 
+def _complete_statuses(cfg: SwarmConfig) -> set[str]:
+    raw = getattr(cfg.tasks, "complete_statuses", None)
+    if not raw:
+        return {"done"}
+    if isinstance(raw, str):
+        raw = [raw]
+    return {
+        str(status).strip().lower()
+        for status in raw
+        if str(status).strip()
+    } or {"done"}
+
+
+def _task_status(task: dict) -> str:
+    return str(task.get("status") or "").strip().lower()
+
+
+def _dependency_ids(task: dict) -> list[str]:
+    raw = task.get("dependencies")
+    if raw is None:
+        raw = task.get("dependencyIds") or task.get("dependsOn") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    ids: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            dep_id = (
+                item.get("id")
+                or item.get("taskId")
+                or item.get("task_id")
+                or item.get("dependencyId")
+            )
+        else:
+            dep_id = item
+        dep = str(dep_id or "").strip()
+        if dep and dep not in ids:
+            ids.append(dep)
+    return ids
+
+
+def _task_or_none(cfg: SwarmConfig, task_id: str, cache: dict[str, dict | None]) -> dict | None:
+    if task_id in cache:
+        return cache[task_id]
+    try:
+        task = view_task_json(cfg, task_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            cache[task_id] = None
+            return None
+        raise
+    cache[task_id] = task
+    return task
+
+
+def _dependency_graph_issue(
+    cfg: SwarmConfig,
+    task_id: str,
+    cache: dict[str, dict | None],
+    stack: list[str],
+) -> DependencyGate:
+    if task_id in stack:
+        cycle = stack[stack.index(task_id):] + [task_id]
+        return DependencyGate(False, True, reason="cycle", cycle=cycle)
+    task = _task_or_none(cfg, task_id, cache)
+    if task is None:
+        return DependencyGate(False, True, reason="missing", missing=[task_id])
+    deps = _dependency_ids(task)
+    if task_id in deps:
+        return DependencyGate(False, True, reason="self-dependency", blocked_on=[task_id], cycle=[task_id, task_id])
+    next_stack = stack + [task_id]
+    for dep_id in deps:
+        issue = _dependency_graph_issue(cfg, dep_id, cache, next_stack)
+        if issue.blocked:
+            return issue
+    return DependencyGate(True, False)
+
+
+def dependency_gate(
+    cfg: SwarmConfig,
+    task_id: str,
+    *,
+    cache: dict[str, dict | None] | None = None,
+) -> DependencyGate:
+    cache = cache if cache is not None else {}
+    task = _task_or_none(cfg, task_id, cache)
+    if task is None:
+        return DependencyGate(False, True, reason="missing", missing=[task_id])
+
+    graph_issue = _dependency_graph_issue(cfg, task_id, cache, [])
+    if graph_issue.blocked:
+        return graph_issue
+
+    deps = _dependency_ids(task)
+    if not deps:
+        return DependencyGate(True, False)
+
+    complete = _complete_statuses(cfg)
+    blocked_on: list[str] = []
+    missing: list[str] = []
+    for dep_id in deps:
+        dep = _task_or_none(cfg, dep_id, cache)
+        if dep is None:
+            missing.append(dep_id)
+            continue
+        if _task_status(dep) not in complete:
+            blocked_on.append(dep_id)
+
+    if missing:
+        return DependencyGate(False, True, reason="missing", blocked_on=blocked_on, missing=missing)
+    if blocked_on:
+        return DependencyGate(False, True, reason="waiting", blocked_on=blocked_on)
+    return DependencyGate(True, False)
+
+
 def format_task_snapshot(task: dict) -> str:
     """Human-readable snapshot for the agent prompt (from JSON task object)."""
     lines = [
@@ -307,6 +439,8 @@ def build_task_prompt(
         "2. Implement the work; update the task with notes / AC checks via the backlog CLI.\n"
         f"3. When done: backlog task complete {task.id} (or status Done).\n"
         "4. If you cannot do this now (blocked, wrong priority, or deferred):\n"
+        "   - If blocked on another backlog item, add it as a dependency with "
+        f"`backlog task edit {task.id} --depends-on <blocker-task-id>` (or create a review/blocker task and depend on it)\n"
         f"   - Unassign yourself: backlog task edit {task.id} -a '' (or use backlog UI)\n"
         f"   - Optionally move to To Do: backlog task edit {task.id} -s 'To Do'\n"
         f"   - Task returns to dispatch pool for another pane\n"
@@ -316,6 +450,32 @@ def build_task_prompt(
         f"{body}\n"
         "--- end snapshot ---\n"
     )
+
+
+def _blocked_signature(gate: DependencyGate) -> dict:
+    return {
+        "reason": gate.reason,
+        "blocked_on": list(gate.blocked_on),
+        "missing": list(gate.missing),
+        "cycle": list(gate.cycle),
+    }
+
+
+def _blocked_prompt(gate: DependencyGate) -> str:
+    parts: list[str] = []
+    if gate.reason == "cycle":
+        parts.append(f"dependency cycle: {' -> '.join(gate.cycle)}")
+    elif gate.reason == "missing":
+        if gate.missing:
+            parts.append(f"missing dependency ids: {', '.join(gate.missing)}")
+        if gate.blocked_on:
+            parts.append(f"waiting on: {', '.join(gate.blocked_on)}")
+    else:
+        if gate.blocked_on:
+            parts.append(f"waiting on: {', '.join(gate.blocked_on)}")
+        if gate.missing:
+            parts.append(f"missing dependency ids: {', '.join(gate.missing)}")
+    return "; ".join(parts) or gate.reason or "blocked"
 
 
 def _parse_assignment_ts(raw: str | None) -> float | None:
@@ -615,6 +775,7 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
     changed = False
     min_chase = cfg.tasks.min_chase_secs
     now = time.time()
+    cache: dict[str, dict | None] = {}
     for pane, info in list((state.get("assignments") or {}).items()):
         tid = (info or {}).get("task_id")
         view = view_assignment(cfg, pane, tid)
@@ -624,8 +785,42 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
             continue
         if view.kind != "open" or not view.task or not tid:
             continue
+        gate = dependency_gate(cfg, tid, cache=cache)
+        if gate.blocked:
+            assignments = dict(state.get("assignments") or {})
+            cur = dict(assignments.get(pane) or info or {})
+            sig = _blocked_signature(gate)
+            prev = {
+                "reason": cur.get("blocked_reason") or "",
+                "blocked_on": list(cur.get("blocked_on") or []),
+                "missing": list(cur.get("blocked_missing") or []),
+                "cycle": list(cur.get("blocked_cycle") or []),
+            }
+            if prev != sig:
+                cur["blocked_reason"] = sig["reason"]
+                cur["blocked_on"] = sig["blocked_on"]
+                cur["blocked_missing"] = sig["missing"]
+                cur["blocked_cycle"] = sig["cycle"]
+                cur["blocked_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                assignments[pane] = cur
+                state["assignments"] = assignments
+                changed = True
+                print(
+                    f"blocked {tid} -> {cfg.session_name}:{pane} ({_blocked_prompt(gate)})",
+                    file=sys.stderr,
+                )
+            continue
         assignments = dict(state.get("assignments") or {})
         cur = dict(assignments.get(pane) or info or {})
+        if any(cur.get(key) for key in ("blocked_reason", "blocked_on", "blocked_missing", "blocked_cycle")):
+            cur.pop("blocked_reason", None)
+            cur.pop("blocked_on", None)
+            cur.pop("blocked_missing", None)
+            cur.pop("blocked_cycle", None)
+            cur.pop("blocked_at", None)
+            assignments[pane] = cur
+            state["assignments"] = assignments
+            changed = True
         health = cur.get("healthcheck") if isinstance(cur.get("healthcheck"), dict) else None
         if health and health.get("nonce"):
             nonce = str(health["nonce"])
@@ -809,12 +1004,20 @@ def _claim_new_onto_free(
     candidates = [t for t in candidates if t.id not in assigned_ids]
     max_n = cfg.tasks.max_inflight
     inflight = len(state.get("assignments") or {})
+    cache: dict[str, dict | None] = {}
     for pane in free:
         if max_n and inflight >= max_n:
             break
-        if not candidates:
+        task: BacklogTask | None = None
+        while candidates:
+            candidate = candidates.pop(0)
+            gate = dependency_gate(cfg, candidate.id, cache=cache)
+            if gate.blocked:
+                continue
+            task = candidate
             break
-        task = candidates.pop(0)
+        if task is None:
+            break
         try:
             body = (
                 view_task_plain(cfg, task.id)
