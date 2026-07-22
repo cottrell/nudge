@@ -38,7 +38,7 @@ except ImportError:
     )
 
 TASK_LINE_RE = re.compile(
-    r"^\s*(?:\[(?P<pri>HIGH|MEDIUM|LOW)\]\s+)?(?P<id>TASK-\d+)\s+-\s+(?P<title>.+?)\s*$",
+    r"^\s*(?:\[(?P<pri>HIGH|MEDIUM|LOW)\]\s+)?(?:\[[^\]]+\]\s+)?(?P<id>TASK-\d+(?:\.\d+)?)\s+-\s+(?P<title>.+?)\s*$",
     re.IGNORECASE,
 )
 PRI_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "": 3}
@@ -307,8 +307,13 @@ def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
         proc = _run_backlog(cfg, ["task", tid, "--plain"])
         if proc.returncode != 0:
             continue
-        text = proc.stdout.lower()
+        text = (proc.stdout or "").lower() + (proc.stderr or "").lower()
+        is_done = False
         if "status:" in text and "done" in text.split("status:", 1)[1].splitlines()[0]:
+            is_done = True
+        elif "not found" in text:
+            is_done = True
+        if is_done:
             history = list(state.get("history") or [])
             history.append(
                 {
