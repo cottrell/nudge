@@ -285,13 +285,16 @@ def build_task_prompt(
     cfg: SwarmConfig, task: BacklogTask, pane: str, body: str, *, chase: bool = False
 ) -> str:
     assignee = claim_assignee(cfg, pane)
-    head = (
-        f"Reminder: backlog task {task.id} is still assigned to you (pane {pane}). Keep going or Done/unassign.\n"
-        if chase
-        else f"You have been assigned backlog task {task.id} via aiswarm tasks dispatch.\n"
-    )
+    if chase:
+        # Short: avoid re-spamming full snapshot every throttle window (and vs babysit).
+        return (
+            f"Reminder: backlog task {task.id} is still assigned to you "
+            f"(pane {pane}, claim {assignee}). Keep going, or Done/unassign if finished/wrong.\n"
+            f"Title: {task.title}\n"
+            f"Re-read if needed: backlog task {task.id} --plain\n"
+        )
     return (
-        f"{head}"
+        f"You have been assigned backlog task {task.id} via aiswarm tasks dispatch.\n"
         f"Session: {cfg.session_name}  Pane: {pane}  Assignee claim: {assignee}\n"
         f"Title: {task.title}\n"
         "\n"
@@ -306,6 +309,41 @@ def build_task_prompt(
         f"{body}\n"
         "--- end snapshot ---\n"
     )
+
+
+def _parse_assignment_ts(raw: str | None) -> float | None:
+    """Parse state timestamps (claimed_at / last_chased_at / recovered_at) → epoch seconds."""
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return time.mktime(time.strptime(s[:19], fmt))
+        except ValueError:
+            continue
+    return None
+
+
+def chase_due(info: dict | None, min_chase_secs: int, now: float | None = None) -> bool:
+    """True if this assignment may be chased (min interval elapsed or no prior stamp)."""
+    if min_chase_secs <= 0:
+        return True
+    now = time.time() if now is None else now
+    info = info or {}
+    last = (
+        _parse_assignment_ts(info.get("last_chased_at"))
+        or _parse_assignment_ts(info.get("claimed_at"))
+        or _parse_assignment_ts(info.get("recovered_at"))
+    )
+    if last is None:
+        return True
+    return (now - last) >= min_chase_secs
 
 
 def deliver_task_prompt(
@@ -462,6 +500,7 @@ def desired_spec(cfg: SwarmConfig) -> dict:
         "via_log": t.via_log,
         "max_inflight": t.max_inflight,
         "require_idle": t.require_idle,
+        "min_chase_secs": t.min_chase_secs,
         "panes": [p.pane for p in cfg.task_panes],
     }
 
@@ -502,9 +541,16 @@ def yaml_dump_tasks(eff: dict) -> str:
 
 
 def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list[dict]:
-    """Re-prompt idle panes that still own an open assignment (until Done/unassign/gone)."""
+    """Re-prompt idle panes that still own an open assignment (until Done/unassign/gone).
+
+    Throttled by tasks.min_chase_secs per assignment (default 300s) so poll_secs can
+    stay short for claims without re-spamming full/reminder prompts every minute.
+    Prefer not enabling babysit on the same pane (see validate_tasks_config warning).
+    """
     actions: list[dict] = []
     changed = False
+    min_chase = cfg.tasks.min_chase_secs
+    now = time.time()
     for pane, info in list((state.get("assignments") or {}).items()):
         tid = (info or {}).get("task_id")
         view = view_assignment(cfg, pane, tid)
@@ -514,15 +560,16 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
             continue
         if view.kind != "open" or not view.task or not tid:
             continue
+        if not chase_due(info, min_chase, now=now):
+            continue
         if not pane_ready_for_prompt(cfg, pane):
             continue
         title = str(view.task.get("title") or (info or {}).get("title") or "")
         task = BacklogTask(
             id=tid, title=title, status=str(view.task.get("status") or ""), priority=""
         )
-        prompt = build_task_prompt(
-            cfg, task, pane, format_task_snapshot(view.task), chase=True
-        )
+        # Chase uses short prompt (body unused); pass empty to avoid snapshot bloat.
+        prompt = build_task_prompt(cfg, task, pane, "", chase=True)
         if dry_run:
             print(f"would chase {tid} -> pane {pane} (still assigned, pane idle)")
             event_id = None
@@ -531,6 +578,14 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
                 cfg, pane, prompt, dry_run=False,
                 meta={"task_id": tid, "pane": pane, "chase": True},
             )
+            assignments = dict(state.get("assignments") or {})
+            cur = dict(assignments.get(pane) or info or {})
+            cur["last_chased_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            if event_id is not None:
+                cur["last_chase_event_id"] = event_id
+            assignments[pane] = cur
+            state["assignments"] = assignments
+            changed = True
             print(f"chased {tid} -> {cfg.session_name}:{pane} event_id={event_id}")
         actions.append(
             {"task_id": tid, "pane": pane, "event_id": event_id, "dry_run": dry_run, "chase": True}
@@ -778,8 +833,11 @@ def status(cfg: SwarmConfig) -> None:
         bdir = f"(unresolved: {e})"
     print(f"backlog: {bdir}")
     print(f"ingest:  {t.ingest}")
-    print(f"poll:    {t.poll_secs}s  unassigned_only={t.unassigned_only} "
-          f"require_label={t.require_label!r} require_idle={t.require_idle}")
+    print(
+        f"poll:    {t.poll_secs}s  min_chase={t.min_chase_secs}s  "
+        f"unassigned_only={t.unassigned_only} "
+        f"require_label={t.require_label!r} require_idle={t.require_idle}"
+    )
     panes = cfg.task_panes
     print(f"task panes ({len(panes)}): " + (
         ", ".join(f"{p.pane}({p.title})" for p in panes) if panes else "(none)"
@@ -800,7 +858,8 @@ def status(cfg: SwarmConfig) -> None:
         for pane, info in sorted(assignments.items()):
             print(
                 f"  {pane}: {info.get('task_id')} "
-                f"assignee={info.get('assignee')} claimed_at={info.get('claimed_at')}"
+                f"assignee={info.get('assignee')} claimed_at={info.get('claimed_at')} "
+                f"last_chased_at={info.get('last_chased_at')}"
             )
     else:
         print("assignments: (none)")

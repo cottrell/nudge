@@ -1206,6 +1206,7 @@ windows:
     assert cfg.tasks.backlog_dir == bdir.resolve()
     assert cfg.tasks.ingest == ["To Do"]
     assert cfg.tasks.unassigned_only is True
+    assert cfg.tasks.min_chase_secs == 300
     assert cfg.panes[0].tasks_enabled is True   # monitor default on
     assert cfg.panes[1].tasks_enabled is True   # monitor default on (no tasks: key)
     assert cfg.panes[2].tasks_enabled is False  # shell / monitor=false
@@ -1213,6 +1214,7 @@ windows:
     assert [p.pane for p in cfg.task_panes] == ["0.0", "0.1"]
     eff = effective_config_dict(cfg)
     assert eff["tasks"]["enabled_panes"] == ["0.0", "0.1"]
+    assert eff["tasks"]["min_chase_secs"] == 300
 
 
 def test_load_config_tasks_ingest_in_progress_opt_in(tmp_path: Path):
@@ -1294,6 +1296,119 @@ windows:
     assert "aiswarm:demo:0.0" in prompt
     assert "backlog task complete TASK-9" in prompt
     assert "body here" in prompt
+    chase = tasksctl.build_task_prompt(cfg, task, "0.0", "full snapshot body", chase=True)
+    assert "Reminder:" in chase
+    assert "TASK-9" in chase
+    assert "full snapshot body" not in chase
+    assert "backlog task complete" not in chase
+
+
+def test_load_config_min_chase_secs_override(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  min_chase_secs: 90
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg.tasks.min_chase_secs == 90
+
+
+def test_chase_due_respects_min_interval():
+    now = 1_700_000_000.0
+    # no stamps → due
+    assert tasksctl.chase_due({}, 300, now=now) is True
+    # recent claim → not due
+    claimed = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now - 60))
+    assert tasksctl.chase_due({"claimed_at": claimed}, 300, now=now) is False
+    # old claim → due
+    old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now - 400))
+    assert tasksctl.chase_due({"claimed_at": old}, 300, now=now) is True
+    # last_chased_at wins over older claimed_at
+    recent_chase = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now - 10))
+    assert tasksctl.chase_due(
+        {"claimed_at": old, "last_chased_at": recent_chase}, 300, now=now
+    ) is False
+    # min_chase_secs 0 → always due
+    assert tasksctl.chase_due({"last_chased_at": recent_chase}, 0, now=now) is True
+
+
+def test_chase_assigned_skips_when_throttled(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  min_chase_secs: 300
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    recent = time.strftime("%Y-%m-%dT%H:%M:%S")
+    tasksctl.save_state(
+        cfg,
+        {
+            "assignments": {
+                "0.0": {
+                    "task_id": "TASK-99",
+                    "title": "Stay busy",
+                    "assignee": "aiswarm:demo:0.0",
+                    "claimed_at": recent,
+                }
+            },
+            "history": [],
+        },
+    )
+    monkeypatch.setattr(
+        tasksctl,
+        "view_assignment",
+        lambda c, p, tid: tasksctl.AssignmentView(
+            "open",
+            task={"id": tid, "title": "Stay busy", "status": "In Progress", "assignees": ["aiswarm:demo:0.0"]},
+        ),
+    )
+    monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda c, p: True)
+    delivered: list = []
+    monkeypatch.setattr(
+        tasksctl,
+        "deliver_task_prompt",
+        lambda *a, **k: delivered.append(1) or 42,
+    )
+    actions = tasksctl.chase_assigned(cfg, tasksctl.load_state(cfg), dry_run=False)
+    assert actions == []
+    assert delivered == []
+    # Force due: last_chased_at far in the past
+    old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 9999))
+    state = tasksctl.load_state(cfg)
+    state["assignments"]["0.0"]["last_chased_at"] = old
+    state["assignments"]["0.0"].pop("claimed_at", None)
+    actions = tasksctl.chase_assigned(cfg, state, dry_run=False)
+    assert len(actions) == 1
+    assert actions[0]["chase"] is True
+    assert delivered == [1]
+    saved = tasksctl.load_state(cfg)
+    assert saved["assignments"]["0.0"].get("last_chased_at")
+    out = capsys.readouterr().out
+    assert "chased TASK-99" in out
 
 
 def test_dispatch_once_dry_run_claims_without_side_effects(tmp_path: Path, monkeypatch, capsys):

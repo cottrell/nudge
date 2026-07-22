@@ -147,12 +147,13 @@ Pulls real work from backlog onto free panes. Separate from babysit continue-nud
 # optional overrides only:
 tasks:
   poll_secs: 30
+  min_chase_secs: 300   # throttle chase re-prompts per assignment (0 = every poll)
   max_inflight: 2       # 0 = unlimited; still one task per free pane
 nudge:
   tasks:
     enabled: false   # opt this pane out
   babysit:
-    enabled: false   # prefer not both on same pane
+    enabled: false   # prefer not both on same pane (fights tasks chase)
 ```
 
 ### CLI
@@ -176,7 +177,11 @@ aiswarm tasks stop
 - The dispatcher never dumps the whole To Do list onto one pane or queues another task on a pane
   while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
   `aiswarm start` alone does not start dispatching.
-- **Chase:** if pane still has that assignment and is idle → re-prompt every poll until Done / agent unassigns / gone.
+- **Chase:** if pane still has that assignment and is idle → short re-prompt, throttled by
+  `min_chase_secs` (default 300; not every `poll_secs`), until Done / agent unassigns / gone.
+  Uses `last_chased_at` (or `claimed_at`) in tasks state.
+- **Babysit interaction:** do not run babysit + tasks on the same pane. Both fire when idle and
+  compete for the agent. Prefer tasks alone for backlog work; babysit for pure continue-nudges.
 - Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
 - Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).
 """,

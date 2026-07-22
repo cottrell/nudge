@@ -71,6 +71,9 @@ class TasksSpec:
     via_log: bool = True
     max_inflight: int = 0  # 0 = unlimited (one task per free pane still)
     require_idle: bool = True
+    # Min seconds between chase re-prompts per assignment (0 = every poll).
+    # Default 300 so poll can stay ~60s without spamming idle panes / fighting babysit.
+    min_chase_secs: int = 300
 
 
 @dataclass
@@ -244,6 +247,7 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         via_log=bool(raw.get("via_log", d.via_log)),
         max_inflight=max(0, int(raw.get("max_inflight", d.max_inflight))),
         require_idle=bool(raw.get("require_idle", d.require_idle)),
+        min_chase_secs=max(0, int(raw.get("min_chase_secs", d.min_chase_secs))),
     )
 
 
@@ -304,6 +308,7 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "require_idle": t.require_idle,
             "via_log": t.via_log,
             "max_inflight": t.max_inflight,
+            "min_chase_secs": t.min_chase_secs,
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },
@@ -494,6 +499,7 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
         "backlog_dir": str(t.backlog_dir) if t.backlog_dir else None,
         "ingest": list(t.ingest),
         "poll_secs": t.poll_secs,
+        "min_chase_secs": t.min_chase_secs,
         "pid": str(tdir / "dispatcher.pid"),
         "log": str(tdir / "dispatcher.log"),
         "state": str(tdir / "state.json"),
