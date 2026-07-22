@@ -174,7 +174,7 @@ Notes:
 - `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
   It does not affect the base comms worker loop.
 - `tasks start` runs a **session-level** dispatcher (not folded into babysit) that lists backlog
-  tasks matching `tasks.ingest` (default: `To Do` only), claims them, and delivers a prompt via
+  tasks matching `tasks.ingest` (default: `To Do` + `In Progress`), claims them, and delivers a prompt via
   the durable log to free monitored panes (tasks enabled by default; opt out with
   `nudge.tasks.enabled: false`).
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
@@ -193,7 +193,7 @@ Uses `backlog task list|view --json` only (Backlog.md BACK-545; git/main until t
 tasks:
   source: backlog                 # v1 only; name stays generic for future sources
   backlog_dir: ../backlog         # optional; walks up for backlog/config.yml if omitted
-  ingest: [To Do]                 # add "In Progress" to also reclaim; default is To Do only
+  ingest: [To Do, In Progress]    # default; In Progress lets a restarted dispatcher recover claims
   poll_secs: 60
   min_chase_secs: 300             # min seconds between chase re-prompts per assignment (0 = every poll)
   unassigned_only: true

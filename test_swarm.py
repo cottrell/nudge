@@ -1217,13 +1217,34 @@ windows:
     assert eff["tasks"]["min_chase_secs"] == 300
 
 
-def test_load_config_tasks_ingest_in_progress_opt_in(tmp_path: Path):
+def test_load_config_tasks_ingest_in_progress_explicit(tmp_path: Path):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
 session_name: demo
 tasks:
   backlog_dir: "{bdir}"
   ingest: ["To Do", "In Progress"]
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    assert cfg.tasks.ingest == ["To Do", "In Progress"]
+
+
+def test_load_config_tasks_ingest_defaults_to_to_do_and_in_progress(tmp_path: Path):
+    """Default must include In Progress or a restarted dispatcher can't recover
+    existing claims via recover_assignments_from_backlog (TASK-37/TASK-41)."""
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
 windows:
   - window_name: grid
     panes:
@@ -1450,6 +1471,69 @@ windows:
     assert tasksctl.load_state(cfg).get("assignments") in ({}, None) or not tasksctl.load_state(cfg).get("assignments")
     out = capsys.readouterr().out
     assert "would claim TASK-42" in out
+
+
+def test_claim_failure_does_not_save_assignment(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(type(cfg), "runtime_dir", property(lambda self: tmp_path / "rt" / self.session_name))
+    monkeypatch.setattr(
+        tasksctl,
+        "list_candidate_tasks",
+        lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
+    )
+    monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
+
+    assert tasksctl._claim_new_onto_free(cfg, {"assignments": {}}, dry_run=False) == []
+    assert tasksctl.load_state(cfg).get("assignments", {}) == {}
+    assert "warning: claim TASK-42 -> demo:0.0 failed: nope" in capsys.readouterr().err
+
+
+def test_delivery_failure_keeps_assignment_for_chase(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(type(cfg), "runtime_dir", property(lambda self: tmp_path / "rt" / self.session_name))
+    monkeypatch.setattr(
+        tasksctl,
+        "list_candidate_tasks",
+        lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
+    )
+    monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: "aiswarm:demo:0.0")
+    monkeypatch.setattr(
+        tasksctl,
+        "deliver_task_prompt",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("log unavailable")),
+    )
+
+    assert tasksctl._claim_new_onto_free(cfg, {"assignments": {}}, dry_run=False) == []
+    assignment = tasksctl.load_state(cfg)["assignments"]["0.0"]
+    assert assignment["task_id"] == "TASK-42"
+    assert assignment["assignee"] == "aiswarm:demo:0.0"
+    assert "assignment retained for chase: log unavailable" in capsys.readouterr().err
 
 
 def test_require_idle_rejects_unknown_monitor_state(tmp_path: Path, monkeypatch):

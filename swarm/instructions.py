@@ -138,7 +138,7 @@ Pulls real work from backlog onto free panes. Separate from babysit continue-nud
 - Monitored panes: **tasks enabled** (dispatcher still off until you start it)
 - Shell panes (`monitor: false`): off
 - Opt out: `nudge.tasks.enabled: false`
-- Top-level `tasks:` optional; defaults filled on load (ingest To Do, poll 60s, …)
+- Top-level `tasks:` optional; defaults filled on load (ingest To Do + In Progress, poll 60s, …)
 - Source (v1: backlog) is an implementation detail — discovered when dispatch runs
 - Needs `backlog task list|view --json` (Backlog.md BACK-545; git/main until next release)
 - Dry-run prints the full resolved form: `aiswarm tasks once -D` / `start -D`
