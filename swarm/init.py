@@ -235,6 +235,7 @@ tasks:
   backlog_dir: ../backlog
   ingest: [To Do]
   poll_secs: 30
+  min_chase_secs: 300
   unassigned_only: true
   require_idle: true
   via_log: true

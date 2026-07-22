@@ -195,6 +195,7 @@ tasks:
   backlog_dir: ../backlog         # optional; walks up for backlog/config.yml if omitted
   ingest: [To Do]                 # add "In Progress" to also reclaim; default is To Do only
   poll_secs: 60
+  min_chase_secs: 300             # min seconds between chase re-prompts per assignment (0 = every poll)
   unassigned_only: true
   require_label: null             # e.g. auto — only tasks with this label
   claim_assignee_prefix: aiswarm  # assignee becomes aiswarm:<session>:<pane>
@@ -210,7 +211,7 @@ windows:
           agent: claude
           monitor: true
           babysit:
-            enabled: false        # prefer not both on same pane
+            enabled: false        # prefer not both on same pane (fights tasks chase)
           tasks:
             enabled: true
 ```
@@ -225,6 +226,12 @@ aiswarm tasks stop
 Claim happens **before** log delivery (`In Progress` + assignee). Completion is **not** inferred
 from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
 state is cleared on the next poll when status is Done.
+
+**Chase vs poll:** each poll can claim new work, but re-prompting an idle pane that still owns an
+open assignment (**chase**) is throttled by `min_chase_secs` (default 300). Chase prompts are short
+reminders (not a full task snapshot). Prefer **not** enabling `babysit` on the same pane as tasks:
+both inject prompts when the pane is idle and will fight over the agent’s context. The dispatcher
+prints a warning if both are enabled.
 
 Each `tasks once` pass (and each poll from `tasks start`) assigns **at most one task to each free
 pane**. A pane is free when it has no local assignment or pending comms-log event and, by default,
