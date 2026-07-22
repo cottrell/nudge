@@ -30,9 +30,16 @@ AGENT_STATS_CMD: dict[str, str | None] = {
 PANE_RE = re.compile(r"^(\d+)\.(\d+)$")
 
 
+# ---------------------------------------------------------------------------
+# Default values live ONLY on these dataclasses.
+# load_config() is the ONLY place that merges YAML + defaults → complete objects.
+# Downstream code must use SwarmConfig fields; never re-apply defaults.
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class BabysitSpec:
-    enabled: bool
+    enabled: bool = False
     interval_secs: int = 600
     clear_every: int = 0
     long_prompt: str = ""
@@ -74,8 +81,8 @@ class PaneSpec:
     title: str
     monitor: bool
     babysit: BabysitSpec
-    comms: bool = False
-    tasks_enabled: bool = True
+    comms: bool
+    tasks_enabled: bool
 
     @property
     def pane_index(self) -> int:
@@ -101,7 +108,7 @@ class SwarmConfig:
     path: Path
     session_name: str
     windows: list[WindowSpec]
-    tasks: TasksSpec | None = None
+    tasks: TasksSpec  # always filled by load_config
 
     @property
     def window_name(self) -> str:
@@ -128,46 +135,6 @@ class SwarmConfig:
         return [p for p in self.panes if p.tasks_enabled]
 
 
-def _parse_babysit(raw: dict, pane_id: str, cfg_path: Path) -> BabysitSpec:
-    long_prompt_file = raw.get("long_prompt_file") or raw.get("prompt_file")
-    short_prompt_file = raw.get("short_prompt_file")
-    long_prompt = str(raw.get("long_prompt") or raw.get("prompt") or "")
-    short_prompt = str(raw.get("short_prompt") or "")
-    long_prompt_path = None
-    short_prompt_path = None
-    if long_prompt_file:
-        long_prompt_path = (cfg_path.parent / str(long_prompt_file)).resolve()
-        if not long_prompt_path.exists():
-            raise ValueError(f"pane {pane_id} long_prompt_file not found: {long_prompt_file}")
-        if not long_prompt:
-            long_prompt = long_prompt_path.read_text()
-    if short_prompt_file:
-        short_prompt_path = (cfg_path.parent / str(short_prompt_file)).resolve()
-        if not short_prompt_path.exists():
-            raise ValueError(f"pane {pane_id} short_prompt_file not found: {short_prompt_file}")
-        if not short_prompt:
-            short_prompt = short_prompt_path.read_text()
-    if not short_prompt:
-        short_prompt = long_prompt
-    return BabysitSpec(
-        enabled=bool(raw.get("enabled", False)),
-        interval_secs=int(raw.get("interval_secs", 600)),
-        clear_every=int(raw.get("clear_every", 0)),
-        long_prompt=long_prompt,
-        long_prompt_file=long_prompt_path,
-        short_prompt=short_prompt,
-        short_prompt_file=short_prompt_path,
-        via_log=bool(raw.get("via_log", True)),
-        quota_probe_secs=int(raw.get("quota_probe_secs", 300)),
-        ema_alpha=float(raw.get("ema_alpha", 0.30)),
-        ema_safety=float(raw.get("ema_safety", 0.92)),
-        ema_k_var=float(raw.get("ema_k_var", 0.0)),
-        ema_warmup=int(raw.get("ema_warmup", 3)),
-        ema_min_wait=int(raw.get("ema_min_wait", 30)),
-        ema_max_wait=int(raw.get("ema_max_wait", 1200)),
-    )
-
-
 def resolve_backlog_dir(cfg_path: Path, explicit: str | None) -> Path:
     """Resolve backlog directory: explicit path, else walk up for backlog/config.yml."""
     if explicit:
@@ -191,39 +158,174 @@ def resolve_backlog_dir(cfg_path: Path, explicit: str | None) -> Path:
     )
 
 
-def _parse_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec | None:
-    if not raw:
-        return None
+def _fill_babysit(raw: dict | None, pane_id: str, cfg_path: Path) -> BabysitSpec:
+    """Merge raw babysit YAML onto BabysitSpec() defaults. Called only from load_config."""
+    d = BabysitSpec()
+    raw = raw or {}
+    long_prompt_file = raw.get("long_prompt_file") or raw.get("prompt_file")
+    short_prompt_file = raw.get("short_prompt_file")
+    long_prompt = str(raw.get("long_prompt") or raw.get("prompt") or d.long_prompt)
+    short_prompt = str(raw.get("short_prompt") or d.short_prompt)
+    long_prompt_path = d.long_prompt_file
+    short_prompt_path = d.short_prompt_file
+    if long_prompt_file:
+        long_prompt_path = (cfg_path.parent / str(long_prompt_file)).resolve()
+        if not long_prompt_path.exists():
+            raise ValueError(f"pane {pane_id} long_prompt_file not found: {long_prompt_file}")
+        if not long_prompt:
+            long_prompt = long_prompt_path.read_text()
+    if short_prompt_file:
+        short_prompt_path = (cfg_path.parent / str(short_prompt_file)).resolve()
+        if not short_prompt_path.exists():
+            raise ValueError(f"pane {pane_id} short_prompt_file not found: {short_prompt_file}")
+        if not short_prompt:
+            short_prompt = short_prompt_path.read_text()
+    if not short_prompt:
+        short_prompt = long_prompt
+    return BabysitSpec(
+        enabled=bool(raw.get("enabled", d.enabled)),
+        interval_secs=int(raw.get("interval_secs", d.interval_secs)),
+        clear_every=int(raw.get("clear_every", d.clear_every)),
+        long_prompt=long_prompt,
+        long_prompt_file=long_prompt_path,
+        short_prompt=short_prompt,
+        short_prompt_file=short_prompt_path,
+        via_log=bool(raw.get("via_log", d.via_log)),
+        quota_probe_secs=int(raw.get("quota_probe_secs", d.quota_probe_secs)),
+        ema_alpha=float(raw.get("ema_alpha", d.ema_alpha)),
+        ema_safety=float(raw.get("ema_safety", d.ema_safety)),
+        ema_k_var=float(raw.get("ema_k_var", d.ema_k_var)),
+        ema_warmup=int(raw.get("ema_warmup", d.ema_warmup)),
+        ema_min_wait=int(raw.get("ema_min_wait", d.ema_min_wait)),
+        ema_max_wait=int(raw.get("ema_max_wait", d.ema_max_wait)),
+    )
+
+
+def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
+    """Merge raw tasks YAML onto TasksSpec() defaults. Called only from load_config."""
+    d = TasksSpec()
+    if raw is None:
+        raw = {}
     if not isinstance(raw, dict):
         raise ValueError("tasks must be a mapping")
-    source = str(raw.get("source") or "backlog").strip().lower()
+    source = str(raw.get("source") or d.source).strip().lower()
     if source != "backlog":
         raise ValueError(f"tasks.source={source!r} not supported yet (v1: backlog only)")
-    ingest_raw = raw.get("ingest", ["To Do"])
-    if isinstance(ingest_raw, str):
-        ingest = [s.strip() for s in ingest_raw.split(",") if s.strip()]
+    if "ingest" in raw:
+        ingest_raw = raw.get("ingest")
+        if isinstance(ingest_raw, str):
+            ingest = [s.strip() for s in ingest_raw.split(",") if s.strip()]
+        else:
+            ingest = [str(s).strip() for s in (ingest_raw or []) if str(s).strip()]
     else:
-        ingest = [str(s).strip() for s in (ingest_raw or []) if str(s).strip()]
+        ingest = list(d.ingest)
     if not ingest:
         raise ValueError("tasks.ingest must list at least one status")
-    require_label = raw.get("require_label")
+    require_label = raw.get("require_label", d.require_label)
     require_label = str(require_label).strip() if require_label else None
+    # backlog_dir is a source-adapter detail (v1: backlog). Only store explicit YAML;
+    # walk-up discovery happens when the backlog source actually runs.
     explicit_dir = raw.get("backlog_dir")
-    backlog_dir = resolve_backlog_dir(
-        cfg_path, str(explicit_dir).strip() if explicit_dir else None
+    backlog_dir = (
+        resolve_backlog_dir(cfg_path, str(explicit_dir).strip())
+        if explicit_dir
+        else d.backlog_dir
     )
     return TasksSpec(
         source=source,
         backlog_dir=backlog_dir,
         ingest=ingest,
-        poll_secs=max(5, int(raw.get("poll_secs", 60))),
+        poll_secs=max(5, int(raw.get("poll_secs", d.poll_secs))),
         require_label=require_label,
-        unassigned_only=bool(raw.get("unassigned_only", True)),
-        claim_assignee_prefix=str(raw.get("claim_assignee_prefix") or "aiswarm").strip(),
-        via_log=bool(raw.get("via_log", True)),
-        max_inflight=max(0, int(raw.get("max_inflight", 0))),
-        require_idle=bool(raw.get("require_idle", True)),
+        unassigned_only=bool(raw.get("unassigned_only", d.unassigned_only)),
+        claim_assignee_prefix=str(
+            raw.get("claim_assignee_prefix") or d.claim_assignee_prefix
+        ).strip(),
+        via_log=bool(raw.get("via_log", d.via_log)),
+        max_inflight=max(0, int(raw.get("max_inflight", d.max_inflight))),
+        require_idle=bool(raw.get("require_idle", d.require_idle)),
     )
+
+
+def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
+    """Merge one pane YAML onto complete PaneSpec. Called only from load_config."""
+    praw = praw or {}
+    nudge = praw.get("nudge") or {}
+
+    agent = str(nudge.get("agent") or "").strip() or None
+    monitor = bool(nudge.get("monitor", bool(agent)))
+    if monitor and not agent:
+        raise ValueError(f"pane {pane_id} requires nudge.agent when nudge.monitor=true")
+    if agent and agent not in VALID_AGENTS:
+        raise ValueError(f"unknown agent: {agent}")
+
+    command = str(praw.get("shell_command") or "").strip() or "bash"
+    title = str(nudge.get("title") or agent or pane_id).strip()
+
+    babysit = _fill_babysit(nudge.get("babysit"), pane_id, cfg_path)
+    if babysit.enabled and not monitor:
+        raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
+
+    # tasks_enabled default = monitor (on for agent panes; off for shell)
+    tasks_raw = nudge.get("tasks") if isinstance(nudge.get("tasks"), dict) else {}
+    tasks_enabled = bool(tasks_raw.get("enabled", monitor))
+    if tasks_enabled and not monitor:
+        raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
+
+    # comms default = monitor
+    comms_raw = nudge.get("comms") if isinstance(nudge.get("comms"), dict) else {}
+    comms = bool(comms_raw.get("enabled", monitor))
+
+    return PaneSpec(
+        pane=pane_id,
+        agent=agent,
+        command=command,
+        title=title,
+        monitor=monitor,
+        babysit=babysit,
+        comms=comms,
+        tasks_enabled=tasks_enabled,
+    )
+
+
+def effective_config_dict(cfg: SwarmConfig) -> dict:
+    """Serialize already-filled SwarmConfig. Does not apply defaults."""
+    t = cfg.tasks
+    return {
+        "session_name": cfg.session_name,
+        "path": str(cfg.path),
+        "tasks": {
+            "source": t.source,
+            "backlog_dir": str(t.backlog_dir) if t.backlog_dir else None,
+            "ingest": list(t.ingest),
+            "poll_secs": t.poll_secs,
+            "unassigned_only": t.unassigned_only,
+            "require_label": t.require_label,
+            "require_idle": t.require_idle,
+            "via_log": t.via_log,
+            "max_inflight": t.max_inflight,
+            "claim_assignee_prefix": t.claim_assignee_prefix,
+            "enabled_panes": [p.pane for p in cfg.task_panes],
+        },
+        "panes": [
+            {
+                "pane": p.pane,
+                "title": p.title,
+                "agent": p.agent,
+                "command": p.command,
+                "monitor": p.monitor,
+                "comms": p.comms,
+                "tasks_enabled": p.tasks_enabled,
+                "babysit": {
+                    "enabled": p.babysit.enabled,
+                    "interval_secs": p.babysit.interval_secs,
+                    "clear_every": p.babysit.clear_every,
+                    "via_log": p.babysit.via_log,
+                },
+            }
+            for p in cfg.panes
+        ],
+    }
 
 
 # Default harness location for consumer projects (not package code).
@@ -297,6 +399,11 @@ def resolve_config_path(
 
 
 def load_config(path: str | Path | None = None) -> SwarmConfig:
+    """Load YAML and return a fully filled SwarmConfig.
+
+    This is the ONLY entry point that applies defaults. All CLI/workers must use
+    the returned objects; do not re-default fields elsewhere.
+    """
     cfg_path = resolve_config_path(path)
     data = yaml.safe_load(cfg_path.read_text()) or {}
 
@@ -317,62 +424,17 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
             raise ValueError(f"windows[{win_idx}] missing window_name")
         layout = str(wraw.get("layout") or "tiled").strip()
 
-        panes: list[PaneSpec] = []
-        for pane_idx, praw in enumerate(wraw.get("panes") or []):
-            pane_id = f"{win_idx}.{pane_idx}"
-            praw = praw or {}
-            nudge = praw.get("nudge") or {}
-
-            agent = str(nudge.get("agent") or "").strip() or None
-            monitor = bool(nudge.get("monitor", bool(agent)))
-            if monitor and not agent:
-                raise ValueError(f"pane {pane_id} requires nudge.agent when nudge.monitor=true")
-            if agent and agent not in VALID_AGENTS:
-                raise ValueError(f"unknown agent: {agent}")
-
-            command = str(praw.get("shell_command") or "").strip() or "bash"
-            title = str(nudge.get("title") or agent or pane_id).strip()
-
-            babysit_raw = nudge.get("babysit") or {}
-            if bool(babysit_raw.get("enabled", False)) and not monitor:
-                raise ValueError(f"pane {pane_id} cannot enable babysit when monitor=false")
-
-            # Tasks are enabled by default if a tasks: section exists (even if empty).
-            # Absence of tasks: section entirely means disabled (for backward compat).
-            has_tasks_section = "tasks" in nudge
-            tasks_raw = nudge.get("tasks") or {}
-            tasks_enabled = bool(has_tasks_section and tasks_raw.get("enabled", True))
-            if tasks_enabled and not monitor:
-                raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
-
-            comms_raw = nudge.get("comms") or {}
-            # default to monitor (gives state awareness) but can be toggled independently
-            comms_enabled = bool(comms_raw.get("enabled", monitor))
-
-            panes.append(PaneSpec(
-                pane=pane_id,
-                agent=agent,
-                command=command,
-                title=title,
-                monitor=monitor,
-                babysit=_parse_babysit(babysit_raw, pane_id, cfg_path),
-                comms=comms_enabled,
-                tasks_enabled=tasks_enabled,
-            ))
-
+        panes = [
+            _fill_pane(praw, f"{win_idx}.{pane_idx}", cfg_path)
+            for pane_idx, praw in enumerate(wraw.get("panes") or [])
+        ]
         windows.append(WindowSpec(window_name=window_name, layout=layout, panes=panes))
-
-    tasks_spec = _parse_tasks(data.get("tasks"), cfg_path)
-    task_panes = [p for w in windows for p in w.panes if p.tasks_enabled]
-    if task_panes and tasks_spec is None:
-        # Auto-discover backlog so pane-only enable works without a full tasks block.
-        tasks_spec = _parse_tasks({"source": "backlog"}, cfg_path)
 
     return SwarmConfig(
         path=cfg_path,
         session_name=session_name,
         windows=windows,
-        tasks=tasks_spec,
+        tasks=_fill_tasks(data.get("tasks"), cfg_path),
     )
 
 
@@ -423,22 +485,20 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                 "has_long_prompt": has_long,
                 "has_short_prompt": has_short,
             }
-        if pane.tasks_enabled:
-            entry["tasks"] = {"enabled": True}
+        entry["tasks"] = {"enabled": pane.tasks_enabled}
         panes_map[pane.pane] = entry
-    tasks_info = None
-    if cfg.tasks:
-        tdir = cfg.runtime_dir / "tasks"
-        tasks_info = {
-            "source": cfg.tasks.source,
-            "backlog_dir": str(cfg.tasks.backlog_dir) if cfg.tasks.backlog_dir else None,
-            "ingest": list(cfg.tasks.ingest),
-            "poll_secs": cfg.tasks.poll_secs,
-            "pid": str(tdir / "dispatcher.pid"),
-            "log": str(tdir / "dispatcher.log"),
-            "state": str(tdir / "state.json"),
-            "panes": [p.pane for p in cfg.task_panes],
-        }
+    tdir = cfg.runtime_dir / "tasks"
+    t = cfg.tasks
+    tasks_info = {
+        "source": t.source,
+        "backlog_dir": str(t.backlog_dir) if t.backlog_dir else None,
+        "ingest": list(t.ingest),
+        "poll_secs": t.poll_secs,
+        "pid": str(tdir / "dispatcher.pid"),
+        "log": str(tdir / "dispatcher.log"),
+        "state": str(tdir / "state.json"),
+        "panes": [p.pane for p in cfg.task_panes],
+    }
     return {
         "session_name": cfg.session_name,
         "windows": [w.window_name for w in cfg.windows],

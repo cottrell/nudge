@@ -91,10 +91,11 @@ aiswarm babysit start
 
 ```bash
 # 3b. Optional: pull real work from backlog into free panes (separate from babysit)
-#     Requires top-level `tasks:` and per-pane `nudge.tasks.enabled: true`
+#     Monitored panes: tasks enabled by default (opt out: nudge.tasks.enabled: false)
+#     Dispatcher is off until you start it; -D prints fully resolved defaults
 aiswarm tasks start
 aiswarm tasks status
-aiswarm tasks once -D   # dry-run single pass
+aiswarm tasks once -D   # dry-run: resolved config + planned claims
 aiswarm tasks stop
 ```
 
@@ -174,7 +175,8 @@ Notes:
   It does not affect the base comms worker loop.
 - `tasks start` runs a **session-level** dispatcher (not folded into babysit) that lists backlog
   tasks matching `tasks.ingest` (default: `To Do` only), claims them, and delivers a prompt via
-  the durable log to free panes with `nudge.tasks.enabled: true`.
+  the durable log to free monitored panes (tasks enabled by default; opt out with
+  `nudge.tasks.enabled: false`).
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json` (path via `aiswarm this`)
 - tasks dispatcher state: `/tmp/nudge-swarm/<session>/tasks/`

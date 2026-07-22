@@ -133,23 +133,24 @@ _reg(
 
 Pulls real work from backlog onto free panes. Separate from babysit continue-nudges.
 
-### Enable
+### Defaults (no YAML required)
 
-YAML:
+- Monitored panes: **tasks enabled** (dispatcher still off until you start it)
+- Shell panes (`monitor: false`): off
+- Opt out: `nudge.tasks.enabled: false`
+- Top-level `tasks:` optional; defaults filled on load (ingest To Do, poll 60s, …)
+- Source (v1: backlog) is an implementation detail — discovered when dispatch runs
+- Dry-run prints the full resolved form: `aiswarm tasks once -D` / `start -D`
 
 ```yaml
+# optional overrides only:
 tasks:
-  source: backlog
-  ingest: [To Do]          # default
-  poll_secs: 60
-  unassigned_only: true
-
-# per pane:
+  poll_secs: 30
 nudge:
   tasks:
-    enabled: true
+    enabled: false   # opt this pane out
   babysit:
-    enabled: false         # prefer not both on same pane
+    enabled: false   # prefer not both on same pane
 ```
 
 ### CLI
@@ -157,7 +158,7 @@ nudge:
 ```bash
 aiswarm tasks start
 aiswarm tasks status
-aiswarm tasks once -D      # dry-run one pass
+aiswarm tasks once -D      # dry-run: resolved config + planned claims
 aiswarm tasks stop
 ```
 
