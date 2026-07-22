@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Control plane for the session-level tasks dispatcher (not babysit)."""
+"""Control plane for the session-level tasks dispatcher (not babysit).
+
+Backlog source adapter uses structured CLI JSON only:
+  backlog task list … --json
+  backlog task <id> --json
+
+Requires Backlog.md with BACK-545 (main / post-1.48.0 release). Do not scrape --plain.
+"""
 from __future__ import annotations
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -37,11 +43,14 @@ except ImportError:
         write_runtime_map,
     )
 
-TASK_LINE_RE = re.compile(
-    r"^\s*(?:\[(?P<pri>HIGH|MEDIUM|LOW)\]\s+)?(?:\[[^\]]+\]\s+)?(?P<id>TASK-\d+(?:\.\d+)?)\s+-\s+(?P<title>.+?)\s*$",
-    re.IGNORECASE,
-)
+# Priority order for dispatch (matches backlog high/medium/low).
 PRI_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "": 3}
+
+# Expected envelope from backlog --json (schemaVersion may bump; we only require kind/tasks).
+BACKLOG_JSON_NOTE = (
+    "aiswarm tasks requires backlog CLI --json (Backlog.md BACK-545; main / next release after 1.48.0). "
+    "Install from git until published: see Backlog.md Makefile install-dev."
+)
 
 
 @dataclass
@@ -131,34 +140,48 @@ def _run_backlog(
     )
 
 
-def parse_task_list_plain(text: str, default_status: str = "") -> list[BacklogTask]:
-    """Parse `backlog task list --plain` output into tasks."""
-    status = default_status
+def _json_or_raise(proc: subprocess.CompletedProcess[str], what: str) -> dict:
+    """Parse backlog --json stdout. Clear error if CLI lacks --json."""
+    out = (proc.stdout or "").strip()
+    err = (proc.stderr or "").strip()
+    combined = f"{out}\n{err}".lower()
+    if "unknown option" in combined and "json" in combined:
+        raise RuntimeError(f"{what}: {BACKLOG_JSON_NOTE} stderr={err or out}")
+    if proc.returncode != 0 and not out:
+        raise RuntimeError(f"{what}: {(err or out or 'backlog failed').strip()}")
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"{what}: expected JSON ({BACKLOG_JSON_NOTE}); parse error: {e}; "
+            f"stdout[:200]={out[:200]!r}"
+        ) from e
+    if not isinstance(data, dict):
+        raise RuntimeError(f"{what}: JSON root must be object, got {type(data).__name__}")
+    return data
+
+
+def parse_task_list_json(data: dict) -> list[BacklogTask]:
+    """Parse `backlog task list --json` envelope into BacklogTask list."""
+    tasks_raw = data.get("tasks")
+    if tasks_raw is None:
+        raise ValueError(f"task-list JSON missing 'tasks' (kind={data.get('kind')!r})")
     out: list[BacklogTask] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
+    for row in tasks_raw:
+        if not isinstance(row, dict):
             continue
-        if stripped.endswith(":") and not stripped.startswith("["):
-            # Status headers like "To Do:" / "In Progress:"
-            status = stripped[:-1].strip()
+        tid = str(row.get("id") or "").strip()
+        if not tid:
             continue
-        m = TASK_LINE_RE.match(line)
-        if not m:
-            continue
+        pri = str(row.get("priority") or "").strip().upper()
         out.append(
             BacklogTask(
-                id=m.group("id").upper().replace("TASK", "TASK"),
-                title=m.group("title").strip(),
-                status=status,
-                priority=(m.group("pri") or "").upper(),
+                id=tid,
+                title=str(row.get("title") or "").strip(),
+                status=str(row.get("status") or "").strip(),
+                priority=pri,
             )
         )
-    # Normalize TASK- id casing
-    for t in out:
-        tid = t.id
-        if tid.lower().startswith("task-"):
-            t.id = "TASK-" + tid.split("-", 1)[1]
     out.sort(key=lambda t: (PRI_RANK.get(t.priority, 3), t.id))
     return out
 
@@ -168,16 +191,14 @@ def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
     found: list[BacklogTask] = []
     seen: set[str] = set()
     for status in tasks.ingest:
-        args = ["task", "list", "-s", status, "--plain", "--limit", "200"]
+        args = ["task", "list", "-s", status, "--json", "--limit", "200"]
         if tasks.unassigned_only:
             args.append("--unassigned")
         if tasks.require_label:
             args.extend(["-l", tasks.require_label])
         proc = _run_backlog(cfg, args)
-        if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or "backlog list failed").strip()
-            raise RuntimeError(f"backlog task list failed for status={status!r}: {err}")
-        for t in parse_task_list_plain(proc.stdout, default_status=status):
+        data = _json_or_raise(proc, f"backlog task list status={status!r}")
+        for t in parse_task_list_json(data):
             if t.id not in seen:
                 seen.add(t.id)
                 found.append(t)
@@ -185,12 +206,48 @@ def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
     return found
 
 
-def view_task_plain(cfg: SwarmConfig, task_id: str) -> str:
-    proc = _run_backlog(cfg, ["task", task_id, "--plain"])
+def view_task_json(cfg: SwarmConfig, task_id: str) -> dict:
+    """Return task object from `backlog task <id> --json`."""
+    proc = _run_backlog(cfg, ["task", task_id, "--json"])
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "view failed").strip()
-        raise RuntimeError(f"backlog task {task_id} failed: {err}")
-    return proc.stdout.strip()
+        raise RuntimeError(f"backlog task {task_id}: {err}")
+    data = _json_or_raise(proc, f"backlog task {task_id} --json")
+    task = data.get("task")
+    if not isinstance(task, dict):
+        raise RuntimeError(f"backlog task {task_id}: JSON missing 'task' object")
+    return task
+
+
+def format_task_snapshot(task: dict) -> str:
+    """Human-readable snapshot for the agent prompt (from JSON task object)."""
+    lines = [
+        f"id: {task.get('id')}",
+        f"title: {task.get('title')}",
+        f"status: {task.get('status')}",
+        f"priority: {task.get('priority')}",
+        f"type: {task.get('type')}",
+        f"assignees: {task.get('assignees')}",
+        f"labels: {task.get('labels')}",
+    ]
+    if task.get("description"):
+        lines.extend(["", "## description", str(task["description"])])
+    ac = task.get("acceptanceCriteria") or []
+    if ac:
+        lines.extend(["", "## acceptance criteria"])
+        for item in ac:
+            mark = "x" if item.get("checked") else " "
+            lines.append(f"- [{mark}] {item.get('text', '')}")
+    if task.get("implementationPlan"):
+        lines.extend(["", "## plan", str(task["implementationPlan"])])
+    if task.get("implementationNotes"):
+        lines.extend(["", "## notes", str(task["implementationNotes"])])
+    return "\n".join(lines).strip()
+
+
+def view_task_plain(cfg: SwarmConfig, task_id: str) -> str:
+    """Snapshot text for dispatch prompt (backed by --json, not --plain scrape)."""
+    return format_task_snapshot(view_task_json(cfg, task_id))
 
 
 def claim_task(cfg: SwarmConfig, task_id: str, pane: str, dry_run: bool = False) -> str:
@@ -304,15 +361,21 @@ def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
             del assignments[pane]
             changed = True
             continue
-        proc = _run_backlog(cfg, ["task", tid, "--plain"])
-        if proc.returncode != 0:
-            continue
-        text = (proc.stdout or "").lower() + (proc.stderr or "").lower()
+        proc = _run_backlog(cfg, ["task", tid, "--json"])
+        text = f"{proc.stdout or ''}\n{proc.stderr or ''}".lower()
         is_done = False
-        if "status:" in text and "done" in text.split("status:", 1)[1].splitlines()[0]:
+        reason = "done"
+        if proc.returncode != 0 and "not found" in text:
             is_done = True
-        elif "not found" in text:
-            is_done = True
+            reason = "not_found"
+        elif proc.returncode == 0:
+            try:
+                data = json.loads((proc.stdout or "").strip() or "{}")
+                st = str((data.get("task") or {}).get("status") or "").strip().lower()
+                if st == "done":
+                    is_done = True
+            except json.JSONDecodeError:
+                pass
         if is_done:
             history = list(state.get("history") or [])
             history.append(
@@ -320,7 +383,7 @@ def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
                     "task_id": tid,
                     "pane": pane,
                     "cleared_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "reason": "done",
+                    "reason": reason,
                 }
             )
             state["history"] = history[-50:]
