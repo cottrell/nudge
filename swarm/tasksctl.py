@@ -547,9 +547,7 @@ def yaml_dump_tasks(eff: dict) -> str:
 def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list[dict]:
     """Re-prompt idle panes that still own an open assignment (until Done/unassign/gone).
 
-    Throttled by tasks.min_chase_secs per assignment (default 300s) so poll_secs can
-    stay short for claims without re-spamming full/reminder prompts every minute.
-    Prefer not enabling babysit on the same pane (see validate_tasks_config warning).
+    Throttled by tasks.min_chase_secs (default = poll_secs: one chase opportunity per pass).
     """
     actions: list[dict] = []
     changed = False

@@ -71,9 +71,9 @@ class TasksSpec:
     via_log: bool = True
     max_inflight: int = 0  # 0 = unlimited (one task per free pane still)
     require_idle: bool = True
-    # Min seconds between chase re-prompts per assignment (0 = every poll).
-    # Default 300 so poll can stay ~60s without spamming idle panes / fighting babysit.
-    min_chase_secs: int = 300
+    # Min seconds between chase re-prompts per assignment (0 = always due).
+    # Default tracks poll_secs so idle-assigned panes get poked each pass.
+    min_chase_secs: int = 60
 
 
 @dataclass
@@ -234,11 +234,16 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         if explicit_dir
         else d.backlog_dir
     )
+    poll_secs = max(5, int(raw.get("poll_secs", d.poll_secs)))
+    # Default chase interval = poll so each dispatcher pass may re-nudge idle assigned work.
+    min_chase_secs = max(
+        0, int(raw["min_chase_secs"]) if "min_chase_secs" in raw else poll_secs
+    )
     return TasksSpec(
         source=source,
         backlog_dir=backlog_dir,
         ingest=ingest,
-        poll_secs=max(5, int(raw.get("poll_secs", d.poll_secs))),
+        poll_secs=poll_secs,
         require_label=require_label,
         unassigned_only=bool(raw.get("unassigned_only", d.unassigned_only)),
         claim_assignee_prefix=str(
@@ -247,7 +252,7 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         via_log=bool(raw.get("via_log", d.via_log)),
         max_inflight=max(0, int(raw.get("max_inflight", d.max_inflight))),
         require_idle=bool(raw.get("require_idle", d.require_idle)),
-        min_chase_secs=max(0, int(raw.get("min_chase_secs", d.min_chase_secs))),
+        min_chase_secs=min_chase_secs,
     )
 
 

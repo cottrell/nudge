@@ -1206,7 +1206,7 @@ windows:
     assert cfg.tasks.backlog_dir == bdir.resolve()
     assert cfg.tasks.ingest == ["To Do"]
     assert cfg.tasks.unassigned_only is True
-    assert cfg.tasks.min_chase_secs == 300
+    assert cfg.tasks.min_chase_secs == cfg.tasks.poll_secs  # default tracks poll
     assert cfg.panes[0].tasks_enabled is True   # monitor default on
     assert cfg.panes[1].tasks_enabled is True   # monitor default on (no tasks: key)
     assert cfg.panes[2].tasks_enabled is False  # shell / monitor=false
@@ -1214,7 +1214,7 @@ windows:
     assert [p.pane for p in cfg.task_panes] == ["0.0", "0.1"]
     eff = effective_config_dict(cfg)
     assert eff["tasks"]["enabled_panes"] == ["0.0", "0.1"]
-    assert eff["tasks"]["min_chase_secs"] == 300
+    assert eff["tasks"]["min_chase_secs"] == eff["tasks"]["poll_secs"]
 
 
 def test_load_config_tasks_ingest_in_progress_explicit(tmp_path: Path):
@@ -1330,6 +1330,7 @@ def test_load_config_min_chase_secs_override(tmp_path: Path):
 session_name: demo
 tasks:
   backlog_dir: "{bdir}"
+  poll_secs: 30
   min_chase_secs: 90
 windows:
   - window_name: grid
@@ -1339,7 +1340,25 @@ windows:
           agent: claude
           monitor: true
 """))
+    assert cfg.tasks.poll_secs == 30
     assert cfg.tasks.min_chase_secs == 90
+    # omitted min_chase_secs → equals poll_secs
+    p2 = tmp_path / "p2"
+    p2.mkdir()
+    cfg2 = load_config(write_config(p2, f"""
+session_name: demo2
+tasks:
+  backlog_dir: "{bdir}"
+  poll_secs: 45
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg2.tasks.min_chase_secs == 45
 
 
 def test_chase_due_respects_min_interval():
@@ -1367,7 +1386,7 @@ def test_chase_assigned_skips_when_throttled(tmp_path: Path, monkeypatch, capsys
 session_name: demo
 tasks:
   backlog_dir: "{bdir}"
-  min_chase_secs: 300
+  min_chase_secs: 60
   require_idle: false
 windows:
   - window_name: grid
