@@ -200,6 +200,7 @@ tasks:
   claim_assignee_prefix: aiswarm  # assignee becomes aiswarm:<session>:<pane>
   require_idle: true
   via_log: true
+  max_inflight: 0                 # 0 = unlimited; still one task per free pane
 
 windows:
   - window_name: grid
@@ -224,6 +225,17 @@ aiswarm tasks stop
 Claim happens **before** log delivery (`In Progress` + assignee). Completion is **not** inferred
 from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
 state is cleared on the next poll when status is Done.
+
+Each `tasks once` pass (and each poll from `tasks start`) assigns **at most one task to each free
+pane**. A pane is free when it has no local assignment or pending comms-log event and, by default,
+is idle (`require_idle: true`; monitor-unknown panes are also eligible). With N free panes and M
+candidate tasks, the pass claims `min(N, M)` tasks, further limited by `max_inflight` when it is
+greater than zero. For example, 3 free panes and 10 To Dos claims 3 tasks this pass; the other 7
+wait until a later poll finds a newly free slot.
+
+The dispatcher does not dump the whole To Do list onto one pane and does not queue multiple tasks
+on a pane while it has an assignment. `aiswarm start` does not start this dispatcher; run
+`aiswarm tasks start` (or a single `aiswarm tasks once`) explicitly.
 
 ## Babysit quota pacing
 
