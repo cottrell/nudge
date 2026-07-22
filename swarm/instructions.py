@@ -165,10 +165,10 @@ aiswarm tasks stop
 
 ### Behaviour
 
-- Claims task (**In Progress** + assignee `aiswarm:<session>:<pane>`) **before** log delivery.
-- Delivers a prompt via the durable log; worker injects when pane is **idle**.
-- Agent marks **Done** via backlog CLI; idle alone does **not** complete the task.
-- vs peer handoff: dispatcher assigns free panes; handoff is A→B ad-hoc (`instructions handoff`).
+- **New work:** unassigned ingest (default To Do) → free idle pane: claim once + prompt.
+- **Chase:** if pane still has that assignment and is idle → re-prompt every poll until Done / agent unassigns / gone.
+- Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
+- Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).
 """,
 )
 
