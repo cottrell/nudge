@@ -289,7 +289,8 @@ def build_task_prompt(
         # Short: avoid re-spamming full snapshot every throttle window (and vs babysit).
         return (
             f"Reminder: backlog task {task.id} is still assigned to you "
-            f"(pane {pane}, claim {assignee}). Keep going, or Done/unassign if finished/wrong.\n"
+            f"(pane {pane}). Keep going or Done. Blocked/deferred? Unassign with: "
+            f"backlog task edit {task.id} -a ''\n"
             f"Title: {task.title}\n"
             f"Re-read if needed: backlog task {task.id} --plain\n"
         )
@@ -302,7 +303,10 @@ def build_task_prompt(
         f"1. Read the full task with: backlog task {task.id} --plain\n"
         "2. Implement the work; update the task with notes / AC checks via the backlog CLI.\n"
         f"3. When done: backlog task complete {task.id} (or status Done).\n"
-        "4. If this should not be yours: unassign yourself in backlog (clear assignee).\n"
+        "4. If you cannot do this now (blocked, wrong priority, or deferred):\n"
+        f"   - Unassign yourself: backlog task edit {task.id} -a '' (or use backlog UI)\n"
+        f"   - Optionally move to To Do: backlog task edit {task.id} -s 'To Do'\n"
+        f"   - Task returns to dispatch pool for another pane\n"
         "5. Prefer durable aiswarm log messaging if you need help from other panes.\n"
         "\n"
         "--- task snapshot ---\n"
@@ -693,7 +697,11 @@ def _claim_new_onto_free(
         except Exception as e:
             body = f"(could not load task body: {e})"
         prompt = build_task_prompt(cfg, task, pane, body, chase=False)
-        assignee = claim_task(cfg, task.id, pane, dry_run=dry_run)
+        try:
+            assignee = claim_task(cfg, task.id, pane, dry_run=dry_run)
+        except Exception as e:
+            print(f"warning: claim {task.id} -> {cfg.session_name}:{pane} failed: {e}", file=sys.stderr)
+            continue
         if dry_run:
             print(
                 f"would claim {task.id} -> pane {pane} assignee={assignee} "
@@ -701,22 +709,32 @@ def _claim_new_onto_free(
             )
             event_id = None
         else:
-            event_id = deliver_task_prompt(
-                cfg, pane, prompt, dry_run=False,
-                meta={"task_id": task.id, "pane": pane, "assignee": assignee},
-            )
             assignments = dict(state.get("assignments") or {})
             assignments[pane] = {
                 "task_id": task.id,
                 "title": task.title,
                 "assignee": assignee,
                 "claimed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "event_id": event_id,
             }
             state["assignments"] = assignments
             state["last_dispatch"] = time.strftime("%Y-%m-%dT%H:%M:%S")
             save_state(cfg, state)
             inflight = len(assignments)
+            try:
+                event_id = deliver_task_prompt(
+                    cfg, pane, prompt, dry_run=False,
+                    meta={"task_id": task.id, "pane": pane, "assignee": assignee},
+                )
+            except Exception as e:
+                print(
+                    f"warning: delivery {task.id} -> {cfg.session_name}:{pane} failed after claim; "
+                    f"assignment retained for chase: {e}",
+                    file=sys.stderr,
+                )
+                continue
+            if event_id is not None:
+                assignments[pane]["event_id"] = event_id
+                save_state(cfg, state)
             print(f"dispatched {task.id} -> {cfg.session_name}:{pane} event_id={event_id}")
         actions.append(
             {
