@@ -22,6 +22,7 @@ from common import (
     SWARM_CLI,
     build_runtime_map,
     build_this_text,
+    effective_config_dict,
     find_aiswarm_config,
     load_config,
     looks_like_config_path,
@@ -503,7 +504,13 @@ windows:
     monkeypatch.setattr(swarm_apply, "run", fake_run)
     swarm_start.setup_grid(cfg, dry_run=False)
 
-    assert ("tmux", "split-window", "-t", "demo:grid.0", "bash") in tmux_calls
+    assert (
+        "tmux",
+        "split-window",
+        "-t",
+        "demo:grid.0",
+        "env PS1='$ ' bash --norc --noprofile",
+    ) in tmux_calls
     assert ("tmux", "select-layout", "-t", "demo:grid", "tiled") in tmux_calls
 
 
@@ -1177,14 +1184,21 @@ windows:
         nudge:
           agent: claude
           monitor: true
-          tasks:
-            enabled: true
       - shell_command: codex
         nudge:
           agent: codex
           monitor: true
           babysit:
             enabled: true
+      - shell_command: bash
+        nudge:
+          monitor: false
+      - shell_command: gemini
+        nudge:
+          agent: gemini
+          monitor: true
+          tasks:
+            enabled: false
 """)
     cfg = load_config(cfg_path)
     assert cfg.tasks is not None
@@ -1192,9 +1206,13 @@ windows:
     assert cfg.tasks.backlog_dir == bdir.resolve()
     assert cfg.tasks.ingest == ["To Do"]
     assert cfg.tasks.unassigned_only is True
-    assert cfg.panes[0].tasks_enabled is True
-    assert cfg.panes[1].tasks_enabled is False  # no tasks: section means disabled
-    assert [p.pane for p in cfg.task_panes] == ["0.0"]
+    assert cfg.panes[0].tasks_enabled is True   # monitor default on
+    assert cfg.panes[1].tasks_enabled is True   # monitor default on (no tasks: key)
+    assert cfg.panes[2].tasks_enabled is False  # shell / monitor=false
+    assert cfg.panes[3].tasks_enabled is False  # explicit opt-out
+    assert [p.pane for p in cfg.task_panes] == ["0.0", "0.1"]
+    eff = effective_config_dict(cfg)
+    assert eff["tasks"]["enabled_panes"] == ["0.0", "0.1"]
 
 
 def test_load_config_tasks_ingest_in_progress_opt_in(tmp_path: Path):

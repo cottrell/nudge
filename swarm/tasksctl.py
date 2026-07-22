@@ -17,9 +17,11 @@ try:
         ROOT_DIR,
         SwarmConfig,
         TasksSpec,
+        effective_config_dict,
         get_pending_events,
         log_send,
         monitor_socket_path,
+        resolve_backlog_dir,
         write_runtime_map,
     )
 except ImportError:
@@ -27,9 +29,11 @@ except ImportError:
         ROOT_DIR,
         SwarmConfig,
         TasksSpec,
+        effective_config_dict,
         get_pending_events,
         log_send,
         monitor_socket_path,
+        resolve_backlog_dir,
         write_runtime_map,
     )
 
@@ -94,22 +98,31 @@ def save_state(cfg: SwarmConfig, state: dict) -> None:
 
 
 def claim_assignee(cfg: SwarmConfig, pane: str) -> str:
-    prefix = (cfg.tasks.claim_assignee_prefix if cfg.tasks else "aiswarm") or "aiswarm"
-    return f"{prefix}:{cfg.session_name}:{pane}"
+    return f"{cfg.tasks.claim_assignee_prefix}:{cfg.session_name}:{pane}"
 
 
-def project_root_for_backlog(tasks: TasksSpec) -> Path:
-    if not tasks.backlog_dir:
-        raise ValueError("tasks.backlog_dir is not set")
-    return tasks.backlog_dir.parent
+def ensure_backlog_dir(cfg: SwarmConfig) -> Path:
+    """Backlog source adapter: explicit tasks.backlog_dir or walk-up. Fails if absent."""
+    t = cfg.tasks
+    if t.source != "backlog":
+        raise ValueError(f"ensure_backlog_dir only for source=backlog, got {t.source!r}")
+    if t.backlog_dir is not None:
+        return t.backlog_dir
+    found = resolve_backlog_dir(cfg.path, None)
+    t.backlog_dir = found  # cache on filled config
+    return found
+
+
+def project_root_for_backlog(cfg: SwarmConfig) -> Path:
+    return ensure_backlog_dir(cfg).parent
 
 
 def _run_backlog(
-    tasks: TasksSpec, args: list[str], timeout: float = 30.0
+    cfg: SwarmConfig, args: list[str], timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["backlog", *args],
-        cwd=str(project_root_for_backlog(tasks)),
+        cwd=str(project_root_for_backlog(cfg)),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -152,8 +165,6 @@ def parse_task_list_plain(text: str, default_status: str = "") -> list[BacklogTa
 
 def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
     tasks = cfg.tasks
-    if not tasks:
-        return []
     found: list[BacklogTask] = []
     seen: set[str] = set()
     for status in tasks.ingest:
@@ -162,7 +173,7 @@ def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
             args.append("--unassigned")
         if tasks.require_label:
             args.extend(["-l", tasks.require_label])
-        proc = _run_backlog(tasks, args)
+        proc = _run_backlog(cfg, args)
         if proc.returncode != 0:
             err = (proc.stderr or proc.stdout or "backlog list failed").strip()
             raise RuntimeError(f"backlog task list failed for status={status!r}: {err}")
@@ -175,10 +186,7 @@ def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
 
 
 def view_task_plain(cfg: SwarmConfig, task_id: str) -> str:
-    tasks = cfg.tasks
-    if not tasks:
-        raise ValueError("no tasks config")
-    proc = _run_backlog(tasks, ["task", task_id, "--plain"])
+    proc = _run_backlog(cfg, ["task", task_id, "--plain"])
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "view failed").strip()
         raise RuntimeError(f"backlog task {task_id} failed: {err}")
@@ -187,15 +195,12 @@ def view_task_plain(cfg: SwarmConfig, task_id: str) -> str:
 
 def claim_task(cfg: SwarmConfig, task_id: str, pane: str, dry_run: bool = False) -> str:
     """Claim task via backlog CLI. Returns assignee string used."""
-    tasks = cfg.tasks
-    if not tasks:
-        raise ValueError("no tasks config")
     assignee = claim_assignee(cfg, pane)
     note = f"Claimed by aiswarm tasks dispatcher for pane {pane} (session {cfg.session_name})."
     if dry_run:
         return assignee
     proc = _run_backlog(
-        tasks,
+        cfg,
         [
             "task",
             "edit",
@@ -272,7 +277,7 @@ def is_pane_free(cfg: SwarmConfig, pane: str, state: dict) -> bool:
         return False
     if pane_has_pending(cfg, pane):
         return False
-    if cfg.tasks and cfg.tasks.require_idle:
+    if cfg.tasks.require_idle:
         mon = query_monitor_state(cfg.session_name, pane)
         # idle: ok. unknown (no socket / probe fail): allow so once/dry-run works offline.
         # working/rate_limited/etc: not free.
@@ -291,9 +296,6 @@ def free_task_panes(cfg: SwarmConfig, state: dict) -> list[str]:
 
 def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
     """Drop assignments whose backlog tasks are Done / missing."""
-    tasks = cfg.tasks
-    if not tasks:
-        return state
     assignments = dict(state.get("assignments") or {})
     changed = False
     for pane, info in list(assignments.items()):
@@ -302,7 +304,7 @@ def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
             del assignments[pane]
             changed = True
             continue
-        proc = _run_backlog(tasks, ["task", tid, "--plain"])
+        proc = _run_backlog(cfg, ["task", tid, "--plain"])
         if proc.returncode != 0:
             continue
         text = proc.stdout.lower()
@@ -326,20 +328,21 @@ def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
 
 
 def desired_spec(cfg: SwarmConfig) -> dict:
+    """Runtime dispatcher fingerprint from already-filled cfg (no defaults)."""
     t = cfg.tasks
     return {
         "session": cfg.session_name,
         "config": str(cfg.path),
-        "source": t.source if t else None,
-        "backlog_dir": str(t.backlog_dir) if t and t.backlog_dir else None,
-        "ingest": list(t.ingest) if t else [],
-        "poll_secs": t.poll_secs if t else 60,
-        "require_label": t.require_label if t else None,
-        "unassigned_only": t.unassigned_only if t else True,
-        "claim_assignee_prefix": t.claim_assignee_prefix if t else "aiswarm",
-        "via_log": t.via_log if t else True,
-        "max_inflight": t.max_inflight if t else 0,
-        "require_idle": t.require_idle if t else True,
+        "source": t.source,
+        "backlog_dir": str(t.backlog_dir) if t.backlog_dir else None,
+        "ingest": list(t.ingest),
+        "poll_secs": t.poll_secs,
+        "require_label": t.require_label,
+        "unassigned_only": t.unassigned_only,
+        "claim_assignee_prefix": t.claim_assignee_prefix,
+        "via_log": t.via_log,
+        "max_inflight": t.max_inflight,
+        "require_idle": t.require_idle,
         "panes": [p.pane for p in cfg.task_panes],
     }
 
@@ -347,12 +350,13 @@ def desired_spec(cfg: SwarmConfig) -> dict:
 def validate_tasks_config(cfg: SwarmConfig) -> None:
     if not cfg.task_panes:
         raise ValueError(
-            "no panes with nudge.tasks.enabled: true; enable at least one pane for tasks dispatch"
+            "no task-enabled panes (monitored panes default on; "
+            "opt out with nudge.tasks.enabled: false)"
         )
-    if not cfg.tasks:
-        raise ValueError("tasks config missing (set top-level tasks: or enable pane tasks near a backlog/)")
     if cfg.tasks.source != "backlog":
         raise ValueError(f"unsupported tasks.source: {cfg.tasks.source}")
+    # Source adapter detail: resolve/discover only when actually running tasks.
+    ensure_backlog_dir(cfg)
     for p in cfg.task_panes:
         if p.babysit.enabled:
             print(
@@ -362,10 +366,28 @@ def validate_tasks_config(cfg: SwarmConfig) -> None:
             )
 
 
+def print_effective_tasks(cfg: SwarmConfig) -> None:
+    """Print resolved tasks defaults (used by dry-run)."""
+    eff = effective_config_dict(cfg)
+    print("effective config (defaults filled):")
+    print(yaml_dump_tasks(eff))
+
+
+def yaml_dump_tasks(eff: dict) -> str:
+    try:
+        import yaml
+
+        return yaml.safe_dump(eff, default_flow_style=False, sort_keys=False).rstrip()
+    except Exception:
+        return json.dumps(eff, indent=2)
+
+
 def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
     """Claim+dispatch at most one task per free pane. Returns list of actions taken."""
     validate_tasks_config(cfg)
     assert cfg.tasks is not None
+    if dry_run:
+        print_effective_tasks(cfg)
     state = reconcile_assignments(cfg, load_state(cfg))
     free = free_task_panes(cfg, state)
     if not free:
@@ -469,9 +491,10 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
         print(
             f"would start tasks dispatcher session={cfg.session_name} "
             f"panes={[p.pane for p in cfg.task_panes]} "
-            f"backlog_dir={cfg.tasks.backlog_dir if cfg.tasks else None} "
-            f"ingest={cfg.tasks.ingest if cfg.tasks else None}"
+            f"backlog_dir={cfg.tasks.backlog_dir} "
+            f"ingest={cfg.tasks.ingest}"
         )
+        print_effective_tasks(cfg)
         spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
         write_runtime_map(cfg)
         return
@@ -524,14 +547,11 @@ def status(cfg: SwarmConfig) -> None:
     t = cfg.tasks
     print(f"session: {cfg.session_name}")
     print(f"config:  {cfg.path}")
-    if not t:
-        print("tasks:   (no session tasks config)")
-    else:
-        print(f"source:  {t.source}")
-        print(f"backlog: {t.backlog_dir}")
-        print(f"ingest:  {t.ingest}")
-        print(f"poll:    {t.poll_secs}s  unassigned_only={t.unassigned_only} "
-              f"require_label={t.require_label!r} require_idle={t.require_idle}")
+    print(f"source:  {t.source}")
+    print(f"backlog: {t.backlog_dir}")
+    print(f"ingest:  {t.ingest}")
+    print(f"poll:    {t.poll_secs}s  unassigned_only={t.unassigned_only} "
+          f"require_label={t.require_label!r} require_idle={t.require_idle}")
     panes = cfg.task_panes
     print(f"task panes ({len(panes)}): " + (
         ", ".join(f"{p.pane}({p.title})" for p in panes) if panes else "(none)"

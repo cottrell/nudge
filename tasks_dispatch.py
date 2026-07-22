@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             cfg = load_config(cfg_path)
             tasksctl.validate_tasks_config(cfg)
-            poll = cfg.tasks.poll_secs if cfg.tasks else 60
+            poll = cfg.tasks.poll_secs
             actions = tasksctl.dispatch_once(cfg, dry_run=dry)
             if actions:
                 print(
