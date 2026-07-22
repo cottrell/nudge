@@ -74,6 +74,9 @@ class TasksSpec:
     # Min seconds between chase re-prompts per assignment (0 = always due).
     # Default tracks poll_secs so idle-assigned panes get poked each pass.
     min_chase_secs: int = 60
+    healthcheck_chases: int = 3
+    healthcheck_timeout_secs: int = 300
+    healthcheck_max_restarts: int = 1
 
 
 @dataclass
@@ -253,6 +256,9 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         max_inflight=max(0, int(raw.get("max_inflight", d.max_inflight))),
         require_idle=bool(raw.get("require_idle", d.require_idle)),
         min_chase_secs=min_chase_secs,
+        healthcheck_chases=max(1, int(raw.get("healthcheck_chases", d.healthcheck_chases))),
+        healthcheck_timeout_secs=max(5, int(raw.get("healthcheck_timeout_secs", d.healthcheck_timeout_secs))),
+        healthcheck_max_restarts=max(0, int(raw.get("healthcheck_max_restarts", d.healthcheck_max_restarts))),
     )
 
 
@@ -314,6 +320,9 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "via_log": t.via_log,
             "max_inflight": t.max_inflight,
             "min_chase_secs": t.min_chase_secs,
+            "healthcheck_chases": t.healthcheck_chases,
+            "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
+            "healthcheck_max_restarts": t.healthcheck_max_restarts,
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },
