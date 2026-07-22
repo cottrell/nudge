@@ -1254,16 +1254,18 @@ windows:
         load_config(cfg_path)
 
 
-def test_parse_task_list_plain_priority_and_status():
-    text = """
-To Do:
-  [HIGH] TASK-9 - Design DAG management
-  [MEDIUM] TASK-10 - Session launch metadata
-  TASK-19 - Low-ish thing
-In Progress:
-  [LOW] TASK-3 - Capture fixture
-"""
-    tasks = tasksctl.parse_task_list_plain(text)
+def test_parse_task_list_json_priority_and_status():
+    data = {
+        "schemaVersion": 1,
+        "kind": "task-list",
+        "tasks": [
+            {"id": "TASK-9", "title": "Design DAG", "status": "To Do", "priority": "high"},
+            {"id": "TASK-10", "title": "Session meta", "status": "To Do", "priority": "medium"},
+            {"id": "TASK-19", "title": "Low-ish", "status": "To Do", "priority": None},
+            {"id": "TASK-3", "title": "Capture", "status": "In Progress", "priority": "low"},
+        ],
+    }
+    tasks = tasksctl.parse_task_list_json(data)
     assert [t.id for t in tasks] == ["TASK-9", "TASK-10", "TASK-3", "TASK-19"]
     assert tasks[0].priority == "HIGH"
     assert tasks[0].status == "To Do"

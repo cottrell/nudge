@@ -186,6 +186,7 @@ Notes:
 Why: fixed babysit “please continue” prompts waste tokens when real work already lives in backlog.
 The orchestrator must touch backlog itself (list + claim) so agents only receive a concrete task
 when free. Delivery uses the durable log so the existing idle consumer still gates tmux-send.
+Uses `backlog task list|view --json` only (Backlog.md BACK-545; git/main until the next release after 1.48.0 — do not scrape `--plain`).
 
 ```yaml
 # top-level (session)
