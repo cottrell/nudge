@@ -147,6 +147,7 @@ Pulls real work from backlog onto free panes. Separate from babysit continue-nud
 # optional overrides only:
 tasks:
   poll_secs: 30
+  max_inflight: 2       # 0 = unlimited; still one task per free pane
 nudge:
   tasks:
     enabled: false   # opt this pane out
@@ -165,7 +166,16 @@ aiswarm tasks stop
 
 ### Behaviour
 
-- **New work:** unassigned ingest (default To Do) → free idle pane: claim once + prompt.
+- **New work:** every pass pairs candidates with free panes, at most one task per pane.
+  A free pane has no local assignment or pending comms-log event and is idle when
+  `require_idle: true` (the default); monitor-unknown panes are also eligible.
+- With N free panes and M candidates, the pass claims `min(N, M)` tasks, subject to the remaining
+  `max_inflight` capacity. `max_inflight: 0` means unlimited overall, not multiple tasks per pane.
+  Example: 3 free panes and 10 To Dos claims 3 now; the other 7 wait for a later poll and a free
+  slot.
+- The dispatcher never dumps the whole To Do list onto one pane or queues another task on a pane
+  while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
+  `aiswarm start` alone does not start dispatching.
 - **Chase:** if pane still has that assignment and is idle → re-prompt every poll until Done / agent unassigns / gone.
 - Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
 - Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).

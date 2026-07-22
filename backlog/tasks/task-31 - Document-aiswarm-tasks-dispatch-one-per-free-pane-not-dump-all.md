@@ -1,9 +1,11 @@
 ---
 id: TASK-31
 title: 'Document aiswarm tasks dispatch: one-per-free-pane, not dump-all'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - 'aiswarm:nudge:0.0'
 created_date: '2026-07-22 08:48'
+updated_date: '2026-07-22 13:59'
 labels: []
 dependencies: []
 priority: high
@@ -54,8 +56,30 @@ Human-readable docs (README + `aiswarm instructions tasks`) state this policy in
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 README tasks section states: one task per free pane per pass; remaining To Dos wait for next free slot / poll
-- [ ] #2 aiswarm instructions tasks states the same policy + free-pane definition + max_inflight
-- [ ] #3 Explicit non-goals: no dump-all, no multi-task queue per pane while assigned
-- [ ] #4 Example: N free panes, M candidates → min(N,M) claims this pass (respect max_inflight)
+- [x] #1 README tasks section states: one task per free pane per pass; remaining To Dos wait for next free slot / poll
+- [x] #2 aiswarm instructions tasks states the same policy + free-pane definition + max_inflight
+- [x] #3 Explicit non-goals: no dump-all, no multi-task queue per pane while assigned
+- [x] #4 Example: N free panes, M candidates → min(N,M) claims this pass (respect max_inflight)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add a plain-language dispatch-pass policy and N/M example to the README task dispatcher section.
+2. Expand `aiswarm instructions tasks` with the same policy, free-pane eligibility, cap behavior, and non-goals.
+3. Inspect the final docs against each acceptance criterion and record verification notes.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by aiswarm tasks dispatcher for pane 0.0 (session nudge).
+
+Documented one-per-free-pane dispatch capacity, free-pane eligibility, max_inflight semantics, the N/M example, and explicit non-goals in README and the rendered tasks guide. Verified aiswarm instructions tasks renders the guidance; make test-swarm passed (47 tests).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Documented the dispatcher one-task-per-free-pane policy in README and aiswarm instructions tasks, including eligibility, max_inflight, N/M example, and non-goals. Verified rendered guide and make test-swarm (47 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->
