@@ -1555,6 +1555,85 @@ windows:
     assert "assignment retained for chase: log unavailable" in capsys.readouterr().err
 
 
+def test_healthcheck_pong_ignores_consumer_ack(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    nonce = "nonce-123"
+    monkeypatch.setattr(
+        tasksctl,
+        "get_events",
+        lambda *a: [(1, "", "0.0:healthcheck:ack", "consumer", "ack", nonce, "{}")],
+    )
+    assert tasksctl.healthcheck_ponged(cfg, "0.0", nonce) is False
+    monkeypatch.setattr(
+        tasksctl,
+        "get_events",
+        lambda *a: [(2, "", "0.0:healthcheck", "agent-pong", "healthcheck-pong", f"pong {nonce}", "{}")],
+    )
+    assert tasksctl.healthcheck_ponged(cfg, "0.0", nonce) is True
+
+
+def test_healthcheck_probe_then_respawn_is_bounded(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+  min_chase_secs: 0
+  healthcheck_chases: 1
+  healthcheck_timeout_secs: 5
+  healthcheck_max_restarts: 1
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude --safe
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(type(cfg), "runtime_dir", property(lambda self: tmp_path / "rt" / self.session_name))
+    monkeypatch.setattr(
+        tasksctl,
+        "view_assignment",
+        lambda *a: tasksctl.AssignmentView("open", task={"id": "TASK-9", "title": "Stalled"}),
+    )
+    monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda *a: True)
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: 7)
+    monkeypatch.setattr(tasksctl, "log_send", lambda *a, **k: 8)
+    monkeypatch.setattr(tasksctl, "healthcheck_ponged", lambda *a: False)
+    state = {"assignments": {"0.0": {"task_id": "TASK-9", "assignee": "aiswarm:demo:0.0"}}}
+
+    tasksctl.chase_assigned(cfg, state)
+    probe = state["assignments"]["0.0"]["healthcheck"]
+    assert probe["event_id"] == 8
+    assert state["assignments"]["0.0"]["idle_chases"] == 1
+
+    respawns = []
+    monkeypatch.setattr(tasksctl, "respawn_task_pane", lambda c, p: respawns.append((c, p)))
+    probe["sent_at"] = 0
+    tasksctl.chase_assigned(cfg, state)
+    assert respawns == [(cfg, "0.0")]
+    assert state["assignments"]["0.0"]["healthcheck_restarts"] == 1
+    assert "healthcheck" not in state["assignments"]["0.0"]
+
+    state["assignments"]["0.0"]["healthcheck"] = {"nonce": "again", "sent_at": 0}
+    tasksctl.chase_assigned(cfg, state)
+    assert respawns == [(cfg, "0.0")]
+    assert state["assignments"]["0.0"].get("healthcheck_exhausted_at")
+
+
 def test_require_idle_rejects_unknown_monitor_state(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""

@@ -181,6 +181,14 @@ aiswarm tasks stop
   `min_chase_secs` (default = `poll_secs`).
 - Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
 - Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).
+
+### Stalled assigned panes
+
+After `healthcheck_chases` idle chases (default 3), tasks sends one durable HEALTHCHECK nonce.
+Reply from the agent with `aiswarm healthcheck pong <pane> <nonce>`; consumer delivery acks are
+not liveness. No pong before `healthcheck_timeout_secs` (300 by default) respawns that pane only,
+rewires its monitor, and queues a chase. `healthcheck_max_restarts` (default 1) limits this path.
+It is not a continuous heartbeat and does not inspect provider error strings.
 """,
 )
 

@@ -241,6 +241,15 @@ The dispatcher does not dump the whole To Do list onto one pane and does not que
 on a pane while it has an assignment. `aiswarm start` does not start this dispatcher; run
 `aiswarm tasks start` (or a single `aiswarm tasks once`) explicitly.
 
+### Stalled assigned panes
+
+After `healthcheck_chases` idle chases (default 3), the dispatcher sends one durable `HEALTHCHECK`
+with a nonce. The agent replies with `aiswarm healthcheck pong <pane> <nonce>`; consumer delivery
+acks do not count. No pong before `healthcheck_timeout_secs` (default 300) restarts only that pane,
+re-attaches its monitor, and queues a chase. `healthcheck_max_restarts` (default 1) caps retries;
+then the dispatcher leaves the assignment for an operator or later peer-checkup path. This is not a
+continuous heartbeat and never scrapes provider-specific error text.
+
 ## Babysit quota pacing
 
 When `babysit.enabled: true` and `agent` is one of `claude`, `codex`, or `agy`, the

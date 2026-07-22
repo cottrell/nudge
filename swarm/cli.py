@@ -327,6 +327,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=CONFIG_ARG_HELP,
     )
+
+    health_p = sub.add_parser("healthcheck", help="Reply to a dispatcher healthcheck")
+    health_sub = health_p.add_subparsers(dest="healthcheck_command", required=True)
+    pong_p = health_sub.add_parser("pong", help="Record an agent healthcheck pong")
+    _add_optional_config(pong_p)
+    pong_p.add_argument("pane", help="Pane id from the HEALTHCHECK prompt")
+    pong_p.add_argument("nonce", help="Nonce from the HEALTHCHECK prompt")
     send_p.add_argument(
         "tokens",
         nargs="+",
@@ -671,6 +678,26 @@ def main(argv: list[str] | None = None) -> int:
                 eid = log_send(cfg.session_name, target, msg, sender="cli send")
                 print(f"log-sent id={eid} session={cfg.session_name} target={target}")
             return 0
+
+        if args.command == "healthcheck":
+            cfg = _cfg_from_args(args)
+            if args.healthcheck_command == "pong":
+                try:
+                    from .tasksctl import healthcheck_recipient
+                    from .common import log_send
+                except ImportError:
+                    from tasksctl import healthcheck_recipient
+                    from common import log_send
+                eid = log_send(
+                    cfg.session_name,
+                    healthcheck_recipient(args.pane),
+                    f"pong {args.nonce}",
+                    sender="agent-pong",
+                    etype="healthcheck-pong",
+                    meta={"pane": args.pane, "nonce": args.nonce},
+                )
+                print(f"healthcheck pong id={eid} session={cfg.session_name} pane={args.pane}")
+                return 0
 
         if args.command == "stop":
             cfg = _cfg_from_args(args)
