@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Control plane for the session-level tasks dispatcher (not babysit).
 
-Backlog source adapter uses structured CLI JSON only:
-  backlog task list … --json
-  backlog task <id> --json
+Each pass:
+  1) chase: assigned + pane idle → re-prompt until Done / unassigned / gone
+  2) claim: free panes get new unassigned ingest tasks (default To Do)
 
-Requires Backlog.md with BACK-545 (main / post-1.48.0 release). Do not scrape --plain.
+Backlog JSON only (BACK-545). unassigned_only filters *new* claims, not chase.
 """
 from __future__ import annotations
 
@@ -277,18 +277,25 @@ def claim_task(cfg: SwarmConfig, task_id: str, pane: str, dry_run: bool = False)
     return assignee
 
 
-def build_task_prompt(cfg: SwarmConfig, task: BacklogTask, pane: str, body: str) -> str:
+def build_task_prompt(
+    cfg: SwarmConfig, task: BacklogTask, pane: str, body: str, *, chase: bool = False
+) -> str:
     assignee = claim_assignee(cfg, pane)
+    head = (
+        f"Reminder: backlog task {task.id} is still assigned to you (pane {pane}). Keep going or Done/unassign.\n"
+        if chase
+        else f"You have been assigned backlog task {task.id} via aiswarm tasks dispatch.\n"
+    )
     return (
-        f"You have been assigned backlog task {task.id} via aiswarm tasks dispatch.\n"
+        f"{head}"
         f"Session: {cfg.session_name}  Pane: {pane}  Assignee claim: {assignee}\n"
         f"Title: {task.title}\n"
         "\n"
         "Instructions:\n"
         f"1. Read the full task with: backlog task {task.id} --plain\n"
         "2. Implement the work; update the task with notes / AC checks via the backlog CLI.\n"
-        f"3. When done, mark complete: backlog task complete {task.id}  (or set status Done).\n"
-        "4. Do not wait for further babysit/continue nudges for this assignment — the task is the work unit.\n"
+        f"3. When done: backlog task complete {task.id} (or status Done).\n"
+        "4. If this should not be yours: unassign yourself in backlog (clear assignee).\n"
         "5. Prefer durable aiswarm log messaging if you need help from other panes.\n"
         "\n"
         "--- task snapshot ---\n"
@@ -296,6 +303,39 @@ def build_task_prompt(cfg: SwarmConfig, task: BacklogTask, pane: str, body: str)
         "--- end snapshot ---\n"
     )
 
+
+def deliver_task_prompt(
+    cfg: SwarmConfig, pane: str, prompt: str, *, dry_run: bool, meta: dict | None = None
+) -> int | None:
+    """Send prompt via log (default) or direct tmux-send. Returns event_id if log."""
+    if dry_run:
+        return None
+    if cfg.tasks.via_log:
+        return log_send(
+            cfg.session_name,
+            pane,
+            prompt,
+            sender="tasks-dispatch",
+            etype="task",
+            meta=meta or {},
+        )
+    target = f"{cfg.session_name}:{pane}"
+    subprocess.run(
+        [str(ROOT_DIR / "tmux-send"), "--no-prefix", target, prompt],
+        check=False,
+    )
+    return None
+
+
+def pane_ready_for_prompt(cfg: SwarmConfig, pane: str) -> bool:
+    """True if we may inject a tasks prompt (idle + no pending log)."""
+    if pane_has_pending(cfg, pane):
+        return False
+    if cfg.tasks.require_idle:
+        mon = query_monitor_state(cfg.session_name, pane)
+        if mon not in ("idle", "unknown"):
+            return False
+    return True
 
 def query_monitor_state(session_name: str, pane: str) -> str:
     sock = monitor_socket_path(session_name, pane)
@@ -450,24 +490,92 @@ def yaml_dump_tasks(eff: dict) -> str:
         return json.dumps(eff, indent=2)
 
 
+def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list[dict]:
+    """Re-prompt idle panes that still own an open assignment.
+
+    Assigned ≠ done. If pane is idle and still has the task, bother them again until
+    Done / not found / they clear assignee. unassigned_only only affects *new* claims.
+    """
+    actions: list[dict] = []
+    assignments = dict(state.get("assignments") or {})
+    changed = False
+    for pane, info in list(assignments.items()):
+        tid = (info or {}).get("task_id")
+        if not tid:
+            del assignments[pane]
+            changed = True
+            continue
+        if not pane_ready_for_prompt(cfg, pane):
+            continue
+        # Still ours?
+        try:
+            task_obj = view_task_json(cfg, tid)
+        except RuntimeError as e:
+            err = str(e).lower()
+            if "not found" in err:
+                del assignments[pane]
+                changed = True
+            continue
+        status = str(task_obj.get("status") or "").strip().lower()
+        if status == "done":
+            del assignments[pane]
+            changed = True
+            continue
+        assignees = task_obj.get("assignees") or []
+        if isinstance(assignees, str):
+            assignees = [assignees]
+        want = claim_assignee(cfg, pane)
+        # Agent unassigned or gave away: free pane for new work.
+        if not assignees or want not in assignees:
+            del assignments[pane]
+            changed = True
+            continue
+        title = str(task_obj.get("title") or (info or {}).get("title") or "")
+        task = BacklogTask(id=tid, title=title, status=str(task_obj.get("status") or ""), priority="")
+        body = format_task_snapshot(task_obj)
+        prompt = build_task_prompt(cfg, task, pane, body, chase=True)
+        if dry_run:
+            print(f"would chase {tid} -> pane {pane} (still assigned, pane idle)")
+            event_id = None
+        else:
+            event_id = deliver_task_prompt(
+                cfg,
+                pane,
+                prompt,
+                dry_run=False,
+                meta={"task_id": tid, "pane": pane, "chase": True},
+            )
+            print(f"chased {tid} -> {cfg.session_name}:{pane} event_id={event_id}")
+        actions.append(
+            {"task_id": tid, "pane": pane, "event_id": event_id, "dry_run": dry_run, "chase": True}
+        )
+    if changed:
+        state["assignments"] = assignments
+        save_state(cfg, state)
+    return actions
+
+
 def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
-    """Claim+dispatch at most one task per free pane. Returns list of actions taken."""
+    """One pass: chase open assignments on idle panes, then claim new work onto free panes."""
     validate_tasks_config(cfg)
     assert cfg.tasks is not None
     if dry_run:
         print_effective_tasks(cfg)
     state = reconcile_assignments(cfg, load_state(cfg))
+    actions: list[dict] = []
+    # 1) Assigned + idle → re-prompt (do not abandon assigned work).
+    actions.extend(chase_assigned(cfg, state, dry_run=dry_run))
+    state = load_state(cfg)  # chase may have cleared unassign/done
+    # 2) Free panes → claim unassigned To Do (ingest) once each.
     free = free_task_panes(cfg, state)
     if not free:
-        return []
+        return actions
     candidates = list_candidate_tasks(cfg)
-    # Skip tasks already assigned in local state
     assigned_ids = {
         (info or {}).get("task_id")
         for info in (state.get("assignments") or {}).values()
     }
     candidates = [t for t in candidates if t.id not in assigned_ids]
-    actions: list[dict] = []
     max_n = cfg.tasks.max_inflight
     inflight = len(state.get("assignments") or {})
     for pane in free:
@@ -476,39 +584,26 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
         if not candidates:
             break
         task = candidates.pop(0)
-        body = ""
-        if not dry_run:
-            try:
-                body = view_task_plain(cfg, task.id)
-            except Exception as e:
-                body = f"(could not load task body: {e})"
-        else:
-            body = f"(dry-run snapshot for {task.id})"
-        prompt = build_task_prompt(cfg, task, pane, body)
+        try:
+            body = view_task_plain(cfg, task.id) if not dry_run else f"(dry-run snapshot for {task.id})"
+        except Exception as e:
+            body = f"(could not load task body: {e})"
+        prompt = build_task_prompt(cfg, task, pane, body, chase=False)
         assignee = claim_task(cfg, task.id, pane, dry_run=dry_run)
-        event_id = None
         if dry_run:
             print(
                 f"would claim {task.id} -> pane {pane} assignee={assignee} "
                 f"and deliver via {'log' if cfg.tasks.via_log else 'direct'}"
             )
+            event_id = None
         else:
-            if cfg.tasks.via_log:
-                event_id = log_send(
-                    cfg.session_name,
-                    pane,
-                    prompt,
-                    sender="tasks-dispatch",
-                    etype="task",
-                    meta={"task_id": task.id, "pane": pane, "assignee": assignee},
-                )
-            else:
-                # Direct fallback via tmux-send
-                target = f"{cfg.session_name}:{pane}"
-                subprocess.run(
-                    [str(ROOT_DIR / "tmux-send"), "--no-prefix", target, prompt],
-                    check=False,
-                )
+            event_id = deliver_task_prompt(
+                cfg,
+                pane,
+                prompt,
+                dry_run=False,
+                meta={"task_id": task.id, "pane": pane, "assignee": assignee},
+            )
             assignments = dict(state.get("assignments") or {})
             assignments[pane] = {
                 "task_id": task.id,
@@ -529,6 +624,7 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
                 "assignee": assignee,
                 "event_id": event_id,
                 "dry_run": dry_run,
+                "chase": False,
             }
         )
     return actions
@@ -570,7 +666,7 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
     env["AISWARM_TASKS_CONFIG"] = str(cfg.path)
     with log_path(cfg).open("ab") as log:
         proc = subprocess.Popen(
-            [sys.executable, str(ROOT_DIR / "tasks_dispatch.py"), str(cfg.path)],
+            [sys.executable, str(Path(__file__).resolve().parent / "tasks_dispatch.py"), str(cfg.path)],
             stdout=log,
             stderr=log,
             start_new_session=True,
@@ -616,7 +712,11 @@ def status(cfg: SwarmConfig) -> None:
     print(f"session: {cfg.session_name}")
     print(f"config:  {cfg.path}")
     print(f"source:  {t.source}")
-    print(f"backlog: {t.backlog_dir}")
+    try:
+        bdir = ensure_backlog_dir(cfg)
+    except Exception as e:
+        bdir = f"(unresolved: {e})"
+    print(f"backlog: {bdir}")
     print(f"ingest:  {t.ingest}")
     print(f"poll:    {t.poll_secs}s  unassigned_only={t.unassigned_only} "
           f"require_label={t.require_label!r} require_idle={t.require_idle}")
@@ -633,6 +733,8 @@ def status(cfg: SwarmConfig) -> None:
         print("dispatcher: not started")
     state = load_state(cfg)
     assignments = state.get("assignments") or {}
+    free = free_task_panes(cfg, state)
+    print(f"free panes: {free if free else '(none)'}")
     if assignments:
         print("assignments:")
         for pane, info in sorted(assignments.items()):
@@ -642,12 +744,12 @@ def status(cfg: SwarmConfig) -> None:
             )
     else:
         print("assignments: (none)")
-    # candidates preview
+    # Status display only: preview candidates (cap lines; full list still used by dispatch).
     if t and panes:
         try:
             cands = list_candidate_tasks(cfg)
             print(f"candidates ({len(cands)}):")
-            for c in cands[:15]:
+            for c in cands[:15]:  # display cap only
                 pri = f"[{c.priority}] " if c.priority else ""
                 print(f"  {pri}{c.id} - {c.title} ({c.status})")
             if len(cands) > 15:

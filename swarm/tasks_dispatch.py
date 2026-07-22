@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Session-level tasks dispatcher loop.
 
-Polls a task source (v1: backlog.md) and claims+delivers work to free panes
-with nudge.tasks.enabled. Separate from babysit prompt nudges.
+Polls a task source (v1: backlog) and claims+delivers work to free panes
+with tasks enabled. Separate from babysit prompt nudges.
 
-Usage: tasks_dispatch.py <swarm-yaml>
+Usage: python swarm/tasks_dispatch.py <swarm-yaml>
+   or: python -m swarm.tasks_dispatch <swarm-yaml>
 Env: AISWARM_TASKS_DRY_RUN=1 to never claim/send.
 """
 from __future__ import annotations
@@ -12,13 +13,13 @@ from __future__ import annotations
 import os
 import sys
 import time
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(_ROOT / "swarm"))
-
-from common import load_config  # noqa: E402
-import tasksctl  # noqa: E402
+try:
+    from .common import load_config
+    from . import tasksctl
+except ImportError:
+    from common import load_config
+    import tasksctl
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,7 +41,18 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 )
             else:
-                print(f"[{time.strftime('%H:%M:%S')}] idle (no free pane or candidates)", flush=True)
+                state = tasksctl.load_state(cfg)
+                free = tasksctl.free_task_panes(cfg, state)
+                assigned = list((state.get("assignments") or {}).keys())
+                try:
+                    n_cand = len(tasksctl.list_candidate_tasks(cfg))
+                except Exception as e:
+                    n_cand = f"error:{e}"
+                print(
+                    f"[{time.strftime('%H:%M:%S')}] idle free={free} "
+                    f"assigned={assigned} candidates={n_cand}",
+                    flush=True,
+                )
         except Exception as e:
             print(f"[{time.strftime('%H:%M:%S')}] error: {e}", flush=True)
             poll = 60
