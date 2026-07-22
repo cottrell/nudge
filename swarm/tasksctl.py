@@ -333,9 +333,11 @@ def pane_ready_for_prompt(cfg: SwarmConfig, pane: str) -> bool:
         return False
     if cfg.tasks.require_idle:
         mon = query_monitor_state(cfg.session_name, pane)
+        # NOTE: unknown==ready is intentional today (offline dry-run); see TASK-33.
         if mon not in ("idle", "unknown"):
             return False
     return True
+
 
 def query_monitor_state(session_name: str, pane: str) -> str:
     sock = monitor_socket_path(session_name, pane)
@@ -368,69 +370,75 @@ def pane_has_pending(cfg: SwarmConfig, pane: str) -> bool:
 
 
 def is_pane_free(cfg: SwarmConfig, pane: str, state: dict) -> bool:
-    """Free = no local assignment, no pending log events, and idle if required."""
-    assignments = state.get("assignments") or {}
-    if pane in assignments:
+    """Free for *new* claim: no local assignment + ready for prompt."""
+    if pane in (state.get("assignments") or {}):
         return False
-    if pane_has_pending(cfg, pane):
-        return False
-    if cfg.tasks.require_idle:
-        mon = query_monitor_state(cfg.session_name, pane)
-        # idle: ok. unknown (no socket / probe fail): allow so once/dry-run works offline.
-        # working/rate_limited/etc: not free.
-        if mon not in ("idle", "unknown"):
-            return False
-    return True
+    return pane_ready_for_prompt(cfg, pane)
 
 
 def free_task_panes(cfg: SwarmConfig, state: dict) -> list[str]:
-    free: list[str] = []
-    for p in cfg.task_panes:
-        if is_pane_free(cfg, p.pane, state):
-            free.append(p.pane)
-    return free
+    return [p.pane for p in cfg.task_panes if is_pane_free(cfg, p.pane, state)]
+
+
+@dataclass
+class AssignmentView:
+    """Lifecycle of a local pane→task assignment vs backlog (single source of truth)."""
+
+    kind: str  # open | done | missing | unassigned | error | empty
+    task: dict | None = None
+    reason: str = ""
+
+
+def view_assignment(cfg: SwarmConfig, pane: str, task_id: str | None) -> AssignmentView:
+    """How this assignment looks now. Used by reconcile + chase (do not duplicate)."""
+    if not task_id:
+        return AssignmentView("empty", reason="no_task_id")
+    try:
+        task = view_task_json(cfg, task_id)
+    except RuntimeError as e:
+        err = str(e).lower()
+        if "not found" in err:
+            return AssignmentView("missing", reason="not_found")
+        return AssignmentView("error", reason=str(e))
+    status = str(task.get("status") or "").strip().lower()
+    if status == "done":
+        return AssignmentView("done", task=task, reason="done")
+    assignees = task.get("assignees") or []
+    if isinstance(assignees, str):
+        assignees = [assignees]
+    want = claim_assignee(cfg, pane)
+    if not assignees or want not in assignees:
+        return AssignmentView("unassigned", task=task, reason="assignee_cleared")
+    return AssignmentView("open", task=task)
+
+
+def _clear_assignment(state: dict, pane: str, task_id: str, reason: str) -> None:
+    history = list(state.get("history") or [])
+    history.append(
+        {
+            "task_id": task_id,
+            "pane": pane,
+            "cleared_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "reason": reason,
+        }
+    )
+    state["history"] = history[-50:]
+    assignments = dict(state.get("assignments") or {})
+    assignments.pop(pane, None)
+    state["assignments"] = assignments
 
 
 def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
-    """Drop assignments whose backlog tasks are Done / missing."""
+    """Drop assignments that are done / missing / no longer assigned to this pane."""
     assignments = dict(state.get("assignments") or {})
     changed = False
     for pane, info in list(assignments.items()):
         tid = (info or {}).get("task_id")
-        if not tid:
-            del assignments[pane]
-            changed = True
-            continue
-        proc = _run_backlog(cfg, ["task", tid, "--json"])
-        text = f"{proc.stdout or ''}\n{proc.stderr or ''}".lower()
-        is_done = False
-        reason = "done"
-        if proc.returncode != 0 and "not found" in text:
-            is_done = True
-            reason = "not_found"
-        elif proc.returncode == 0:
-            try:
-                data = json.loads((proc.stdout or "").strip() or "{}")
-                st = str((data.get("task") or {}).get("status") or "").strip().lower()
-                if st == "done":
-                    is_done = True
-            except json.JSONDecodeError:
-                pass
-        if is_done:
-            history = list(state.get("history") or [])
-            history.append(
-                {
-                    "task_id": tid,
-                    "pane": pane,
-                    "cleared_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "reason": reason,
-                }
-            )
-            state["history"] = history[-50:]
-            del assignments[pane]
+        view = view_assignment(cfg, pane, tid)
+        if view.kind in ("done", "missing", "unassigned", "empty"):
+            _clear_assignment(state, pane, tid or "", view.reason or view.kind)
             changed = True
     if changed:
-        state["assignments"] = assignments
         save_state(cfg, state)
     return state
 
@@ -491,58 +499,33 @@ def yaml_dump_tasks(eff: dict) -> str:
 
 
 def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list[dict]:
-    """Re-prompt idle panes that still own an open assignment.
-
-    Assigned ≠ done. If pane is idle and still has the task, bother them again until
-    Done / not found / they clear assignee. unassigned_only only affects *new* claims.
-    """
+    """Re-prompt idle panes that still own an open assignment (until Done/unassign/gone)."""
     actions: list[dict] = []
-    assignments = dict(state.get("assignments") or {})
     changed = False
-    for pane, info in list(assignments.items()):
+    for pane, info in list((state.get("assignments") or {}).items()):
         tid = (info or {}).get("task_id")
-        if not tid:
-            del assignments[pane]
+        view = view_assignment(cfg, pane, tid)
+        if view.kind in ("done", "missing", "unassigned", "empty"):
+            _clear_assignment(state, pane, tid or "", view.reason or view.kind)
             changed = True
+            continue
+        if view.kind != "open" or not view.task or not tid:
             continue
         if not pane_ready_for_prompt(cfg, pane):
             continue
-        # Still ours?
-        try:
-            task_obj = view_task_json(cfg, tid)
-        except RuntimeError as e:
-            err = str(e).lower()
-            if "not found" in err:
-                del assignments[pane]
-                changed = True
-            continue
-        status = str(task_obj.get("status") or "").strip().lower()
-        if status == "done":
-            del assignments[pane]
-            changed = True
-            continue
-        assignees = task_obj.get("assignees") or []
-        if isinstance(assignees, str):
-            assignees = [assignees]
-        want = claim_assignee(cfg, pane)
-        # Agent unassigned or gave away: free pane for new work.
-        if not assignees or want not in assignees:
-            del assignments[pane]
-            changed = True
-            continue
-        title = str(task_obj.get("title") or (info or {}).get("title") or "")
-        task = BacklogTask(id=tid, title=title, status=str(task_obj.get("status") or ""), priority="")
-        body = format_task_snapshot(task_obj)
-        prompt = build_task_prompt(cfg, task, pane, body, chase=True)
+        title = str(view.task.get("title") or (info or {}).get("title") or "")
+        task = BacklogTask(
+            id=tid, title=title, status=str(view.task.get("status") or ""), priority=""
+        )
+        prompt = build_task_prompt(
+            cfg, task, pane, format_task_snapshot(view.task), chase=True
+        )
         if dry_run:
             print(f"would chase {tid} -> pane {pane} (still assigned, pane idle)")
             event_id = None
         else:
             event_id = deliver_task_prompt(
-                cfg,
-                pane,
-                prompt,
-                dry_run=False,
+                cfg, pane, prompt, dry_run=False,
                 meta={"task_id": tid, "pane": pane, "chase": True},
             )
             print(f"chased {tid} -> {cfg.session_name}:{pane} event_id={event_id}")
@@ -550,23 +533,15 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
             {"task_id": tid, "pane": pane, "event_id": event_id, "dry_run": dry_run, "chase": True}
         )
     if changed:
-        state["assignments"] = assignments
         save_state(cfg, state)
     return actions
 
 
-def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
-    """One pass: chase open assignments on idle panes, then claim new work onto free panes."""
-    validate_tasks_config(cfg)
-    assert cfg.tasks is not None
-    if dry_run:
-        print_effective_tasks(cfg)
-    state = reconcile_assignments(cfg, load_state(cfg))
+def _claim_new_onto_free(
+    cfg: SwarmConfig, state: dict, dry_run: bool
+) -> list[dict]:
+    """Pair free panes with unassigned candidates (one each)."""
     actions: list[dict] = []
-    # 1) Assigned + idle → re-prompt (do not abandon assigned work).
-    actions.extend(chase_assigned(cfg, state, dry_run=dry_run))
-    state = load_state(cfg)  # chase may have cleared unassign/done
-    # 2) Free panes → claim unassigned To Do (ingest) once each.
     free = free_task_panes(cfg, state)
     if not free:
         return actions
@@ -585,7 +560,11 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
             break
         task = candidates.pop(0)
         try:
-            body = view_task_plain(cfg, task.id) if not dry_run else f"(dry-run snapshot for {task.id})"
+            body = (
+                view_task_plain(cfg, task.id)
+                if not dry_run
+                else f"(dry-run snapshot for {task.id})"
+            )
         except Exception as e:
             body = f"(could not load task body: {e})"
         prompt = build_task_prompt(cfg, task, pane, body, chase=False)
@@ -598,10 +577,7 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
             event_id = None
         else:
             event_id = deliver_task_prompt(
-                cfg,
-                pane,
-                prompt,
-                dry_run=False,
+                cfg, pane, prompt, dry_run=False,
                 meta={"task_id": task.id, "pane": pane, "assignee": assignee},
             )
             assignments = dict(state.get("assignments") or {})
@@ -627,6 +603,19 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
                 "chase": False,
             }
         )
+    return actions
+
+
+def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
+    """One pass: reconcile → chase open work → claim new unassigned work."""
+    validate_tasks_config(cfg)
+    assert cfg.tasks is not None
+    if dry_run:
+        print_effective_tasks(cfg)
+    state = reconcile_assignments(cfg, load_state(cfg))
+    actions = chase_assigned(cfg, state, dry_run=dry_run)
+    state = load_state(cfg)
+    actions.extend(_claim_new_onto_free(cfg, state, dry_run))
     return actions
 
 

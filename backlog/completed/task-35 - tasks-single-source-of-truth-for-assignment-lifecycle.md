@@ -1,9 +1,10 @@
 ---
 id: TASK-35
 title: 'tasks: single source of truth for assignment lifecycle'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-22 13:55'
+updated_date: '2026-07-22 13:56'
 labels: []
 dependencies: []
 priority: medium
@@ -20,6 +21,18 @@ Refactor: one helper e.g. assignment_status(cfg, pane, task_id) → open|done|mi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 one function owns Done/missing/unassigned clearing
-- [ ] #2 reconcile and chase call it; no duplicated JSON status parsing
+- [x] #1 one function owns Done/missing/unassigned clearing
+- [x] #2 reconcile and chase call it; no duplicated JSON status parsing
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+view_assignment is the single lifecycle helper (with TASK-40).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+reconcile + chase share view_assignment.
+<!-- SECTION:FINAL_SUMMARY:END -->
