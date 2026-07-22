@@ -5,3 +5,4 @@ monitor-bin
 nudge.log
 *.pyc
 __pycache__/
+scratch/
