@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import secrets
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -532,13 +533,17 @@ def healthcheck_ponged(cfg: SwarmConfig, pane: str, nonce: str) -> bool:
     return False
 
 
-def send_healthcheck(cfg: SwarmConfig, pane: str, task_id: str) -> dict:
+def send_healthcheck(
+    cfg: SwarmConfig, pane: str, task_id: str, *, dry_run: bool = False
+) -> dict:
     nonce = secrets.token_urlsafe(12)
     payload = (
         f"HEALTHCHECK for assigned task {task_id}. If you can read this, reply now with:\n"
         f"aiswarm healthcheck pong {pane} {nonce}\n"
         "This is a one-off stall check, not a continuous heartbeat."
     )
+    if dry_run:
+        return {"nonce": nonce, "sent_at": time.time(), "event_id": None, "dry_run": True}
     event_id = log_send(
         cfg.session_name,
         pane,
@@ -550,14 +555,23 @@ def send_healthcheck(cfg: SwarmConfig, pane: str, task_id: str) -> dict:
     return {"nonce": nonce, "sent_at": time.time(), "event_id": event_id}
 
 
+def pane_respawn_argv(command: str) -> list[str]:
+    """Split shell_command into argv for tmux respawn-pane (not one blob string)."""
+    argv = shlex.split(command or "")
+    if not argv:
+        raise ValueError("empty shell_command for pane respawn")
+    return argv
+
+
 def respawn_task_pane(cfg: SwarmConfig, pane: str) -> None:
     """Restart one configured pane and attach a fresh activity monitor."""
     pane_spec = next(p for p in cfg.task_panes if p.pane == pane)
     target = pane_spec.target(cfg.session_name)
+    argv = pane_respawn_argv(pane_spec.command)
     subprocess.run(["tmux", "pipe-pane", "-t", target, ""], check=False, text=True)
     monitor_socket_path(cfg.session_name, pane).unlink(missing_ok=True)
     subprocess.run(
-        ["tmux", "respawn-pane", "-k", "-t", target, "--", pane_spec.command],
+        ["tmux", "respawn-pane", "-k", "-t", target, "--", *argv],
         check=True,
         text=True,
     )
@@ -825,6 +839,9 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
         if health and health.get("nonce"):
             nonce = str(health["nonce"])
             if healthcheck_ponged(cfg, pane, nonce):
+                if dry_run:
+                    print(f"would clear healthcheck pong {tid} <- pane {pane}")
+                    continue
                 cur.pop("healthcheck", None)
                 cur["idle_chases"] = 0
                 cur["last_healthcheck_pong_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -839,6 +856,12 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
                 continue
             restarts = int(cur.get("healthcheck_restarts") or 0)
             if restarts >= cfg.tasks.healthcheck_max_restarts:
+                if dry_run:
+                    print(
+                        f"would mark healthcheck exhausted {tid} -> pane {pane} "
+                        f"(restarts={restarts})"
+                    )
+                    continue
                 cur["healthcheck_exhausted_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
                 cur.pop("healthcheck", None)
                 assignments[pane] = cur
@@ -847,6 +870,13 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
                 print(
                     f"warning: healthcheck budget exhausted for {tid} -> {cfg.session_name}:{pane}",
                     file=sys.stderr,
+                )
+                continue
+            if dry_run:
+                print(
+                    f"would respawn {tid} -> pane {pane} "
+                    f"(healthcheck timeout, restart {restarts + 1}/"
+                    f"{cfg.tasks.healthcheck_max_restarts})"
                 )
                 continue
             try:
@@ -894,6 +924,9 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
         prompt = build_task_prompt(cfg, task, pane, "", chase=True)
         if dry_run:
             print(f"would chase {tid} -> pane {pane} (still assigned, pane idle)")
+            idle_after = int(cur.get("idle_chases") or 0) + 1
+            if idle_after >= cfg.tasks.healthcheck_chases:
+                print(f"would healthcheck probe {tid} -> pane {pane}")
             event_id = None
         else:
             event_id = deliver_task_prompt(
@@ -907,7 +940,7 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
             if event_id is not None:
                 cur["last_chase_event_id"] = event_id
             if cur["idle_chases"] >= cfg.tasks.healthcheck_chases:
-                cur["healthcheck"] = send_healthcheck(cfg, pane, tid)
+                cur["healthcheck"] = send_healthcheck(cfg, pane, tid, dry_run=False)
                 print(f"healthcheck probe {tid} -> {cfg.session_name}:{pane}")
             assignments[pane] = cur
             state["assignments"] = assignments

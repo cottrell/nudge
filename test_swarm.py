@@ -1700,6 +1700,47 @@ windows:
     assert tasksctl.healthcheck_ponged(cfg, "0.0", nonce) is True
 
 
+def test_pane_respawn_argv_splits_shell_command():
+    assert tasksctl.pane_respawn_argv("claude --safe") == ["claude", "--safe"]
+    assert tasksctl.pane_respawn_argv("agy --dangerously-skip-permissions") == [
+        "agy",
+        "--dangerously-skip-permissions",
+    ]
+    with pytest.raises(ValueError, match="empty"):
+        tasksctl.pane_respawn_argv("   ")
+
+
+def test_respawn_task_pane_uses_split_argv(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude --safe
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr(tasksctl.subprocess, "run", fake_run)
+    monkeypatch.setattr(tasksctl, "monitor_socket_path", lambda *a: tmp_path / "m.sock")
+    tasksctl.respawn_task_pane(cfg, "0.0")
+    respawn = next(c for c in calls if c[:1] == ["tmux"] and "respawn-pane" in c)
+    assert respawn[:5] == ["tmux", "respawn-pane", "-k", "-t", "demo:0.0"]
+    assert respawn[-3:] == ["--", "claude", "--safe"]
+    assert any("attach.sh" in " ".join(c) for c in calls)
+
+
 def test_healthcheck_probe_then_respawn_is_bounded(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
@@ -1749,6 +1790,64 @@ windows:
     tasksctl.chase_assigned(cfg, state)
     assert respawns == [(cfg, "0.0")]
     assert state["assignments"]["0.0"].get("healthcheck_exhausted_at")
+
+
+def test_healthcheck_dry_run_does_not_respawn_or_probe(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+  min_chase_secs: 0
+  healthcheck_chases: 1
+  healthcheck_timeout_secs: 5
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude --safe
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(type(cfg), "runtime_dir", property(lambda self: tmp_path / "rt" / self.session_name))
+    monkeypatch.setattr(
+        tasksctl,
+        "view_assignment",
+        lambda *a: tasksctl.AssignmentView("open", task={"id": "TASK-9", "title": "Stalled"}),
+    )
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda *a: True)
+    monkeypatch.setattr(tasksctl, "healthcheck_ponged", lambda *a: False)
+    sent = []
+    respawns = []
+    monkeypatch.setattr(tasksctl, "log_send", lambda *a, **k: sent.append(1) or 1)
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: sent.append(1) or 1)
+    monkeypatch.setattr(tasksctl, "respawn_task_pane", lambda *a: respawns.append(1))
+
+    state = {
+        "assignments": {
+            "0.0": {
+                "task_id": "TASK-9",
+                "healthcheck": {"nonce": "n1", "sent_at": 0},
+                "healthcheck_restarts": 0,
+            }
+        }
+    }
+    tasksctl.chase_assigned(cfg, state, dry_run=True)
+    assert respawns == []
+    assert sent == []
+    assert state["assignments"]["0.0"].get("healthcheck", {}).get("nonce") == "n1"
+    out = capsys.readouterr().out
+    assert "would respawn TASK-9" in out
+
+    state2 = {"assignments": {"0.0": {"task_id": "TASK-9", "idle_chases": 0}}}
+    tasksctl.chase_assigned(cfg, state2, dry_run=True)
+    assert sent == []
+    assert "healthcheck" not in state2["assignments"]["0.0"]
+    out2 = capsys.readouterr().out
+    assert "would chase TASK-9" in out2
+    assert "would healthcheck probe TASK-9" in out2
 
 
 def test_require_idle_rejects_unknown_monitor_state(tmp_path: Path, monkeypatch):
