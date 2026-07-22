@@ -177,7 +177,12 @@ aiswarm tasks stop
 - The dispatcher never dumps the whole To Do list onto one pane or queues another task on a pane
   while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
   `aiswarm start` alone does not start dispatching.
-- **Chase:** idle + still assigned → short re-prompt until Done/unassign. Interval
+- **Dependency gate:** a task is runnable only when its backlog dependencies are complete
+  (default: `Done`). If you are waiting on a blocker or review, make that task a dependency with
+  `backlog task edit TASK-NN --depends-on TASK-BLOCKER` and keep the parent open; the dispatcher
+  pauses chase/claim on the parent until the dependency clears. Cycles and missing dependency ids
+  are treated as blocked errors.
+- **Chase:** idle + still assigned + deps clear → short re-prompt until Done/unassign. Interval
   `min_chase_secs` (default = `poll_secs`).
 - Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
 - Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).

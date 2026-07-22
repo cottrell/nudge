@@ -1,9 +1,11 @@
 ---
 id: TASK-45
 title: 'tasks: honor backlog dependencies for claim/chase (blocked + review)'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - 'aiswarm:nudge:0.1'
 created_date: '2026-07-22 21:25'
+updated_date: '2026-07-22 21:35'
 labels: []
 dependencies: []
 priority: medium
@@ -36,9 +38,29 @@ Implementation sketch: view_task_json already has dependencies[]; list/view deps
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Do not claim a task whose dependencies are not all Done (or configured complete statuses)
-- [ ] #2 Do not chase an assigned task while any open dependency remains; treat as blocked (log once, not spam)
-- [ ] #3 Document agent pattern: add dep (blocker or review task) via backlog to pause chase; clear/complete deps to resume
-- [ ] #4 Define policy for pathological graphs: cycle detection; Done child with unfinished deps; missing dep ids
-- [ ] #5 Minimal tests: blocked claim/chase; unblocked after dep Done
+- [x] #1 Do not claim a task whose dependencies are not all Done (or configured complete statuses)
+- [x] #2 Do not chase an assigned task while any open dependency remains; treat as blocked (log once, not spam)
+- [x] #3 Document agent pattern: add dep (blocker or review task) via backlog to pause chase; clear/complete deps to resume
+- [x] #4 Define policy for pathological graphs: cycle detection; Done child with unfinished deps; missing dep ids
+- [x] #5 Minimal tests: blocked claim/chase; unblocked after dep Done
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add a dependency gate in tasksctl that fetches task dependency statuses, detects cycles/self-deps/missing ids, and treats only complete statuses as runnable.\n2. Use the gate to skip claim candidates and block chase prompts once per assignment while dependencies are open.\n3. Update agent-facing instructions to describe the blocker/review dependency pattern and the unblock/resume rule.\n4. Add regression tests for blocked claim/chase and the unblock-after-Done case, then verify with pytest.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by aiswarm tasks dispatcher for pane 0.1 (session nudge).
+
+Implemented dependency gating in tasksctl: tasks are runnable only when their dependencies are complete (default set: Done; helper also respects a tasks.complete_statuses attribute if present). Claiming now skips blocked candidates; chase writes one blocked record per assignment and suppresses repeat warnings until the dependency state changes. Policy: self-deps, cycles, and missing dependency ids are treated as blocked errors. Documented the backlog dependency pattern in README and aiswarm instructions/tasks. Verified with pytest -q test_swarm.py (63 passed).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added dependency-aware dispatch gating for tasks claim/chase. Blocked tasks now stay out of claim rotation until dependencies are complete, chase logs once per blocked state, and cycle/missing/self-dependency cases are treated as blocked errors. Documented the backlog dependency pause/resume pattern in README and aiswarm instructions, and verified the behavior with pytest -q test_swarm.py (63 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

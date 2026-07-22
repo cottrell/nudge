@@ -1426,6 +1426,7 @@ windows:
             task={"id": tid, "title": "Stay busy", "status": "In Progress", "assignees": ["aiswarm:demo:0.0"]},
         ),
     )
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
     monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda c, p: True)
     delivered: list = []
     monkeypatch.setattr(
@@ -1451,6 +1452,116 @@ windows:
     assert "chased TASK-99" in out
 
 
+def test_dispatch_skips_blocked_claim_until_dependency_done(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    monkeypatch.setattr(tasksctl, "recover_assignments_from_backlog", lambda c, state: state)
+    monkeypatch.setattr(tasksctl, "reconcile_assignments", lambda c, state: state)
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    tasks = {
+        "TASK-1": {"id": "TASK-1", "title": "Blocked", "status": "To Do", "dependencies": ["TASK-2"]},
+        "TASK-2": {"id": "TASK-2", "title": "Blocker", "status": "In Progress", "dependencies": []},
+        "TASK-3": {"id": "TASK-3", "title": "Ready", "status": "To Do", "dependencies": []},
+    }
+    monkeypatch.setattr(tasksctl, "list_candidate_tasks", lambda c: [
+        tasksctl.BacklogTask(id="TASK-1", title="Blocked", status="To Do", priority="HIGH"),
+        tasksctl.BacklogTask(id="TASK-3", title="Ready", status="To Do", priority="LOW"),
+    ])
+    monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
+    actions = tasksctl.dispatch_once(cfg, dry_run=True)
+    assert [a["task_id"] for a in actions] == ["TASK-3"]
+    tasks["TASK-2"]["status"] = "Done"
+    actions2 = tasksctl.dispatch_once(cfg, dry_run=True)
+    assert [a["task_id"] for a in actions2] == ["TASK-1"]
+
+
+def test_chase_blocks_once_for_open_dependency_then_resumes(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  min_chase_secs: 0
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    state = {
+        "assignments": {
+            "0.0": {
+                "task_id": "TASK-1",
+                "title": "Blocked",
+                "assignee": "aiswarm:demo:0.0",
+                "claimed_at": "2026-07-22T00:00:00",
+            }
+        },
+        "history": [],
+    }
+    tasks = {
+        "TASK-1": {
+            "id": "TASK-1",
+            "title": "Blocked",
+            "status": "In Progress",
+            "dependencies": ["TASK-2"],
+            "assignees": ["aiswarm:demo:0.0"],
+        },
+        "TASK-2": {"id": "TASK-2", "title": "Review", "status": "In Progress", "dependencies": []},
+    }
+    monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    delivered: list[int] = []
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: delivered.append(1) or 42)
+
+    actions = tasksctl.chase_assigned(cfg, state, dry_run=False)
+    assert actions == []
+    err1 = capsys.readouterr().err
+    assert "blocked TASK-1" in err1
+    blocked = tasksctl.load_state(cfg)["assignments"]["0.0"]
+    assert blocked["blocked_on"] == ["TASK-2"]
+
+    actions2 = tasksctl.chase_assigned(cfg, tasksctl.load_state(cfg), dry_run=False)
+    assert actions2 == []
+    err2 = capsys.readouterr().err
+    assert err2 == ""
+
+    tasks["TASK-2"]["status"] = "Done"
+    state2 = tasksctl.load_state(cfg)
+    actions3 = tasksctl.chase_assigned(cfg, state2, dry_run=False)
+    assert [a["task_id"] for a in actions3] == ["TASK-1"]
+    assert delivered == [1]
+
+
 def test_dispatch_once_dry_run_claims_without_side_effects(tmp_path: Path, monkeypatch, capsys):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
@@ -1474,6 +1585,8 @@ windows:
         "runtime_dir",
         property(lambda self: tmp_path / "rt" / self.session_name),
     )
+    monkeypatch.setattr(tasksctl, "recover_assignments_from_backlog", lambda c, state: state)
+    monkeypatch.setattr(tasksctl, "reconcile_assignments", lambda c, state: state)
     monkeypatch.setattr(
         tasksctl,
         "list_candidate_tasks",
@@ -1481,6 +1594,7 @@ windows:
     )
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
     actions = tasksctl.dispatch_once(cfg, dry_run=True)
     assert len(actions) == 1
     assert actions[0]["task_id"] == "TASK-42"
@@ -1513,6 +1627,7 @@ windows:
         "list_candidate_tasks",
         lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
     )
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
     monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
 
     assert tasksctl._claim_new_onto_free(cfg, {"assignments": {}}, dry_run=False) == []
@@ -1541,6 +1656,7 @@ windows:
         "list_candidate_tasks",
         lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
     )
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
     monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: "aiswarm:demo:0.0")
     monkeypatch.setattr(
         tasksctl,
@@ -1609,6 +1725,7 @@ windows:
         "view_assignment",
         lambda *a: tasksctl.AssignmentView("open", task={"id": "TASK-9", "title": "Stalled"}),
     )
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
     monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda *a: True)
     monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: 7)
     monkeypatch.setattr(tasksctl, "log_send", lambda *a, **k: 8)
