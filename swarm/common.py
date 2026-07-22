@@ -63,7 +63,7 @@ class TasksSpec:
     source: str = "backlog"
     backlog_dir: Path | None = None
     # Statuses to pull from the source. Default: only To Do (In Progress is opt-in).
-    ingest: list[str] = field(default_factory=lambda: ["To Do"])
+    ingest: list[str] = field(default_factory=lambda: ["To Do", "In Progress"])
     poll_secs: int = 60
     require_label: str | None = None
     unassigned_only: bool = True
