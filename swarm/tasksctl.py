@@ -73,6 +73,10 @@ class DependencyGate:
     blocked_on: list[str] = None
     missing: list[str] = None
     cycle: list[str] = None
+    # Incomplete deps with non-swarm/non-human assignees — do not block parents.
+    orphans_ignored: list[str] = None
+    # Incomplete deps parked for humans (tasks.human_assignees).
+    human_park: list[str] = None
 
     def __post_init__(self) -> None:
         if self.blocked_on is None:
@@ -81,6 +85,10 @@ class DependencyGate:
             self.missing = []
         if self.cycle is None:
             self.cycle = []
+        if self.orphans_ignored is None:
+            self.orphans_ignored = []
+        if self.human_park is None:
+            self.human_park = []
 
 
 def tasks_runtime_dir(cfg: SwarmConfig) -> Path:
@@ -262,6 +270,51 @@ def _task_status(task: dict) -> str:
     return str(task.get("status") or "").strip().lower()
 
 
+def _task_assignees(task: dict) -> list[str]:
+    raw = task.get("assignees")
+    if raw is None:
+        raw = task.get("assignee")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = [raw]
+    out: list[str] = []
+    for item in raw:
+        s = str(item or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _assignee_kind(cfg: SwarmConfig, assignees: list[str]) -> str:
+    """Classify ownership of an incomplete dependency.
+
+    - unassigned: no assignees → still blocks (open work)
+    - swarm: any aiswarm:<session>:<pane> style claim (prefix match)
+    - human: in tasks.human_assignees (intentional park); empty list disables
+    - orphan: model names / other noise → does not block parents
+    """
+    if not assignees:
+        return "unassigned"
+    prefix = (cfg.tasks.claim_assignee_prefix or "aiswarm").strip().lower()
+    humans = {h.strip().lower() for h in (cfg.tasks.human_assignees or []) if h.strip()}
+    kinds: set[str] = set()
+    for a in assignees:
+        al = a.lower()
+        if al.startswith(f"{prefix}:") or al == prefix:
+            kinds.add("swarm")
+        elif al in humans:
+            kinds.add("human")
+        else:
+            kinds.add("orphan")
+    # Prefer real ownership over orphan if mixed.
+    if "swarm" in kinds:
+        return "swarm"
+    if "human" in kinds:
+        return "human"
+    return "orphan"
+
+
 def _dependency_ids(task: dict) -> list[str]:
     raw = task.get("dependencies")
     if raw is None:
@@ -344,19 +397,55 @@ def dependency_gate(
     complete = _complete_statuses(cfg)
     blocked_on: list[str] = []
     missing: list[str] = []
+    orphans_ignored: list[str] = []
+    human_park: list[str] = []
     for dep_id in deps:
         dep = _task_or_none(cfg, dep_id, cache)
         if dep is None:
             missing.append(dep_id)
             continue
-        if _task_status(dep) not in complete:
+        if _task_status(dep) in complete:
+            continue
+        assignees = _task_assignees(dep)
+        kind = _assignee_kind(cfg, assignees)
+        if kind == "orphan":
+            who = ",".join(assignees) if assignees else "?"
+            orphans_ignored.append(f"{dep_id}({who})")
+            continue
+        if kind == "human":
+            human_park.append(dep_id)
             blocked_on.append(dep_id)
+            continue
+        # swarm or unassigned incomplete → block
+        blocked_on.append(dep_id)
 
     if missing:
-        return DependencyGate(False, True, reason="missing", blocked_on=blocked_on, missing=missing)
+        return DependencyGate(
+            False,
+            True,
+            reason="missing",
+            blocked_on=blocked_on,
+            missing=missing,
+            orphans_ignored=orphans_ignored,
+            human_park=human_park,
+        )
     if blocked_on:
-        return DependencyGate(False, True, reason="waiting", blocked_on=blocked_on)
-    return DependencyGate(True, False)
+        reason = (
+            "human_park"
+            if human_park and set(blocked_on) == set(human_park)
+            else "waiting"
+        )
+        return DependencyGate(
+            False,
+            True,
+            reason=reason,
+            blocked_on=blocked_on,
+            orphans_ignored=orphans_ignored,
+            human_park=human_park,
+        )
+    return DependencyGate(
+        True, False, orphans_ignored=orphans_ignored, human_park=human_park
+    )
 
 
 def format_task_snapshot(task: dict) -> str:
@@ -441,10 +530,12 @@ def build_task_prompt(
         f"3. When done: backlog task complete {task.id} (or status Done).\n"
         "4. If you cannot do this now (blocked, wrong priority, or deferred):\n"
         "   - If blocked on another backlog item, add it as a dependency with "
-        f"`backlog task edit {task.id} --depends-on <blocker-task-id>` (or create a review/blocker task and depend on it)\n"
-        f"   - Unassign yourself: backlog task edit {task.id} -a '' (or use backlog UI)\n"
-        f"   - Optionally move to To Do: backlog task edit {task.id} -s 'To Do'\n"
-        f"   - Task returns to dispatch pool for another pane\n"
+        f"`backlog task edit {task.id} --depends-on <blocker-task-id>` "
+        "(create a review/blocker task first if needed). Parent chase pauses until deps are Done.\n"
+        "   - To park for a human (not a model name): "
+        f"`backlog task edit {task.id} -a human` (only names in tasks.human_assignees park; default: human).\n"
+        "   - Never use model names as assignees; use aiswarm:<session>:<pane> or clear assignee.\n"
+        f"   - Or unassign: backlog task edit {task.id} -a '' and optionally -s 'To Do'\n"
         "5. Prefer durable aiswarm log messaging if you need help from other panes.\n"
         "\n"
         "--- task snapshot ---\n"
@@ -459,6 +550,8 @@ def _blocked_signature(gate: DependencyGate) -> dict:
         "blocked_on": list(gate.blocked_on),
         "missing": list(gate.missing),
         "cycle": list(gate.cycle),
+        "orphans_ignored": list(gate.orphans_ignored),
+        "human_park": list(gate.human_park),
     }
 
 
@@ -471,11 +564,17 @@ def _blocked_prompt(gate: DependencyGate) -> str:
             parts.append(f"missing dependency ids: {', '.join(gate.missing)}")
         if gate.blocked_on:
             parts.append(f"waiting on: {', '.join(gate.blocked_on)}")
+    elif gate.reason == "human_park":
+        parts.append(f"human park: {', '.join(gate.human_park or gate.blocked_on)}")
     else:
         if gate.blocked_on:
             parts.append(f"waiting on: {', '.join(gate.blocked_on)}")
         if gate.missing:
             parts.append(f"missing dependency ids: {', '.join(gate.missing)}")
+        if gate.human_park:
+            parts.append(f"human park: {', '.join(gate.human_park)}")
+    if gate.orphans_ignored:
+        parts.append(f"ignored orphan deps: {', '.join(gate.orphans_ignored)}")
     return "; ".join(parts) or gate.reason or "blocked"
 
 
@@ -741,6 +840,7 @@ def desired_spec(cfg: SwarmConfig) -> dict:
         "healthcheck_chases": t.healthcheck_chases,
         "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
         "healthcheck_max_restarts": t.healthcheck_max_restarts,
+        "human_assignees": list(t.human_assignees),
         "panes": [p.pane for p in cfg.task_panes],
     }
 
@@ -809,12 +909,16 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
                 "blocked_on": list(cur.get("blocked_on") or []),
                 "missing": list(cur.get("blocked_missing") or []),
                 "cycle": list(cur.get("blocked_cycle") or []),
+                "orphans_ignored": list(cur.get("blocked_orphans") or []),
+                "human_park": list(cur.get("blocked_human_park") or []),
             }
             if prev != sig:
                 cur["blocked_reason"] = sig["reason"]
                 cur["blocked_on"] = sig["blocked_on"]
                 cur["blocked_missing"] = sig["missing"]
                 cur["blocked_cycle"] = sig["cycle"]
+                cur["blocked_orphans"] = sig["orphans_ignored"]
+                cur["blocked_human_park"] = sig["human_park"]
                 cur["blocked_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
                 assignments[pane] = cur
                 state["assignments"] = assignments
@@ -826,11 +930,23 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
             continue
         assignments = dict(state.get("assignments") or {})
         cur = dict(assignments.get(pane) or info or {})
-        if any(cur.get(key) for key in ("blocked_reason", "blocked_on", "blocked_missing", "blocked_cycle")):
+        if any(
+            cur.get(key)
+            for key in (
+                "blocked_reason",
+                "blocked_on",
+                "blocked_missing",
+                "blocked_cycle",
+                "blocked_orphans",
+                "blocked_human_park",
+            )
+        ):
             cur.pop("blocked_reason", None)
             cur.pop("blocked_on", None)
             cur.pop("blocked_missing", None)
             cur.pop("blocked_cycle", None)
+            cur.pop("blocked_orphans", None)
+            cur.pop("blocked_human_park", None)
             cur.pop("blocked_at", None)
             assignments[pane] = cur
             state["assignments"] = assignments
@@ -1045,7 +1161,18 @@ def _claim_new_onto_free(
         while candidates:
             candidate = candidates.pop(0)
             gate = dependency_gate(cfg, candidate.id, cache=cache)
+            if gate.orphans_ignored:
+                print(
+                    f"note: {candidate.id} ignores orphan deps "
+                    f"{', '.join(gate.orphans_ignored)} "
+                    f"(not swarm/human; not blocking)",
+                    file=sys.stderr,
+                )
             if gate.blocked:
+                print(
+                    f"skip claim {candidate.id}: {_blocked_prompt(gate)}",
+                    file=sys.stderr,
+                )
                 continue
             task = candidate
             break
@@ -1214,6 +1341,7 @@ def status(cfg: SwarmConfig) -> None:
         bdir = f"(unresolved: {e})"
     print(f"backlog: {bdir}")
     print(f"ingest:  {t.ingest}")
+    print(f"human_assignees: {t.human_assignees}")
     print(
         f"poll:    {t.poll_secs}s  min_chase={t.min_chase_secs}s  "
         f"unassigned_only={t.unassigned_only} "
