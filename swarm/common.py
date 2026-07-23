@@ -77,9 +77,9 @@ class TasksSpec:
     healthcheck_chases: int = 3
     healthcheck_timeout_secs: int = 300
     healthcheck_max_restarts: int = 1
-    # Incomplete deps assigned to these names intentionally park parents (review/human).
-    # Empty list disables human-park blocking (only swarm/unassigned incomplete deps block).
-    human_assignees: list[str] = field(default_factory=lambda: ["human"])
+    # Assignees the dispatcher leaves alone (no claim/reclaim). Default: human park.
+    # Empty list = no extra skips (only unassigned_only / aiswarm ownership rules apply).
+    skip_assignees: list[str] = field(default_factory=lambda: ["human"])
 
 
 @dataclass
@@ -245,16 +245,21 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
     min_chase_secs = max(
         0, int(raw["min_chase_secs"]) if "min_chase_secs" in raw else poll_secs
     )
-    if "human_assignees" in raw:
-        ha_raw = raw.get("human_assignees")
-        if ha_raw is None:
-            human_assignees: list[str] = []
-        elif isinstance(ha_raw, str):
-            human_assignees = [s.strip() for s in ha_raw.split(",") if s.strip()]
-        else:
-            human_assignees = [str(s).strip() for s in ha_raw if str(s).strip()]
+    # Prefer skip_assignees; accept legacy human_assignees key for one migration step.
+    if "skip_assignees" in raw:
+        sa_raw = raw.get("skip_assignees")
+    elif "human_assignees" in raw:
+        sa_raw = raw.get("human_assignees")
     else:
-        human_assignees = list(d.human_assignees)
+        sa_raw = None
+    if sa_raw is None and "skip_assignees" not in raw and "human_assignees" not in raw:
+        skip_assignees = list(d.skip_assignees)
+    elif sa_raw is None:
+        skip_assignees = []
+    elif isinstance(sa_raw, str):
+        skip_assignees = [s.strip() for s in sa_raw.split(",") if s.strip()]
+    else:
+        skip_assignees = [str(s).strip() for s in sa_raw if str(s).strip()]
     return TasksSpec(
         source=source,
         backlog_dir=backlog_dir,
@@ -272,7 +277,7 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         healthcheck_chases=max(1, int(raw.get("healthcheck_chases", d.healthcheck_chases))),
         healthcheck_timeout_secs=max(5, int(raw.get("healthcheck_timeout_secs", d.healthcheck_timeout_secs))),
         healthcheck_max_restarts=max(0, int(raw.get("healthcheck_max_restarts", d.healthcheck_max_restarts))),
-        human_assignees=human_assignees,
+        skip_assignees=skip_assignees,
     )
 
 
@@ -337,7 +342,7 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "healthcheck_chases": t.healthcheck_chases,
             "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
             "healthcheck_max_restarts": t.healthcheck_max_restarts,
-            "human_assignees": list(t.human_assignees),
+            "skip_assignees": list(t.skip_assignees),
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },

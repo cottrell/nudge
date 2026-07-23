@@ -177,13 +177,15 @@ aiswarm tasks stop
 - The dispatcher never dumps the whole To Do list onto one pane or queues another task on a pane
   while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
   `aiswarm start` alone does not start dispatching.
-- **Dependency gate:** incomplete deps block claim/chase only when the dep is **unassigned**,
-  **swarm-owned** (`aiswarm:<session>:<pane>`), or a **human park** assignee
-  (`tasks.human_assignees`, default `human`). Model names / other assignees are **orphans** and
-  do **not** block parents (logged as ignored orphan deps). Empty `human_assignees: []` disables
-  human park. To wait on a person: `backlog task edit TASK-NN -a human`. To link work:
-  `backlog task edit TASK-NN --depends-on TASK-BLOCKER`. Cycles / missing ids still block.
-- **Chase:** idle + still assigned + deps clear → short re-prompt until Done/unassign. Interval
+- **Claim pool:** with `unassigned_only` (default), only unassigned tasks. Assignees in
+  `tasks.skip_assignees` (default `human`) are **not** claimed/reclaimed — leave for people.
+  Empty `skip_assignees: []` disables that skip. Swarm owners are `aiswarm:<session>:<pane>` only;
+  never use model names as assignees.
+- **Dependency gate:** if any dependency is not Done, the task is not claimable/chaseable.
+  Assignee on the dep does not matter (In Progress, human, etc.). Link work with
+  `backlog task edit TASK-NN --depends-on TASK-BLOCKER`. Park for a human:
+  `backlog task edit TASK-NN -a human`. Cycles / missing dep ids still block.
+- **Chase:** idle + still assigned + deps Done → short re-prompt until Done/unassign. Interval
   `min_chase_secs` (default = `poll_secs`).
 - Claim = In Progress + assignee `aiswarm:<session>:<pane>` before log delivery.
 - Idle alone ≠ Done. Agent marks Done (or unassigns if wrong task).
