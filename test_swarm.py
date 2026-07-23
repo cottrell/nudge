@@ -1452,6 +1452,140 @@ windows:
     assert "chased TASK-99" in out
 
 
+def test_load_config_human_assignees_default_and_empty(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg.tasks.human_assignees == ["human"]
+    p2 = tmp_path / "empty_ha"
+    p2.mkdir()
+    cfg2 = load_config(write_config(p2, f"""
+session_name: demo2
+tasks:
+  backlog_dir: "{bdir}"
+  human_assignees: []
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg2.tasks.human_assignees == []
+
+
+def test_dependency_gate_ignores_orphan_assignee_blocks_human(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    tasks = {
+        "TASK-1": {
+            "id": "TASK-1",
+            "title": "Parent",
+            "status": "In Progress",
+            "dependencies": ["TASK-91", "TASK-2"],
+            "assignees": ["aiswarm:demo:0.0"],
+        },
+        "TASK-91": {
+            "id": "TASK-91",
+            "title": "Fake model owner",
+            "status": "In Progress",
+            "dependencies": [],
+            "assignees": ["Codex GPT-5"],
+        },
+        "TASK-2": {
+            "id": "TASK-2",
+            "title": "Human review",
+            "status": "In Progress",
+            "dependencies": [],
+            "assignees": ["human"],
+        },
+    }
+    monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
+    gate = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate.blocked is True
+    assert gate.reason == "human_park"
+    assert gate.blocked_on == ["TASK-2"]
+    assert gate.human_park == ["TASK-2"]
+    assert any("TASK-91" in x for x in gate.orphans_ignored)
+
+    # empty human_assignees → "human" is also orphan → parent ready
+    p_noh = tmp_path / "noh"
+    p_noh.mkdir()
+    cfg_no_h = load_config(write_config(p_noh, f"""
+session_name: demo3
+tasks:
+  backlog_dir: "{bdir}"
+  human_assignees: []
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    gate2 = tasksctl.dependency_gate(cfg_no_h, "TASK-1")
+    assert gate2.blocked is False
+    assert gate2.ready is True
+    assert any("TASK-91" in x for x in gate2.orphans_ignored)
+    assert any("TASK-2" in x for x in gate2.orphans_ignored)
+
+
+def test_dependency_gate_blocks_unassigned_and_swarm_deps(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    tasks = {
+        "TASK-1": {
+            "id": "TASK-1",
+            "status": "To Do",
+            "dependencies": ["TASK-A", "TASK-B"],
+        },
+        "TASK-A": {"id": "TASK-A", "status": "In Progress", "assignees": []},
+        "TASK-B": {
+            "id": "TASK-B",
+            "status": "In Progress",
+            "assignees": ["aiswarm:demo:0.2"],
+        },
+    }
+    monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
+    gate = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate.blocked is True
+    assert set(gate.blocked_on) == {"TASK-A", "TASK-B"}
+
+
 def test_dispatch_skips_blocked_claim_until_dependency_done(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""

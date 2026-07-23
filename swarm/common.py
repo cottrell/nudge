@@ -77,6 +77,9 @@ class TasksSpec:
     healthcheck_chases: int = 3
     healthcheck_timeout_secs: int = 300
     healthcheck_max_restarts: int = 1
+    # Incomplete deps assigned to these names intentionally park parents (review/human).
+    # Empty list disables human-park blocking (only swarm/unassigned incomplete deps block).
+    human_assignees: list[str] = field(default_factory=lambda: ["human"])
 
 
 @dataclass
@@ -242,6 +245,16 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
     min_chase_secs = max(
         0, int(raw["min_chase_secs"]) if "min_chase_secs" in raw else poll_secs
     )
+    if "human_assignees" in raw:
+        ha_raw = raw.get("human_assignees")
+        if ha_raw is None:
+            human_assignees: list[str] = []
+        elif isinstance(ha_raw, str):
+            human_assignees = [s.strip() for s in ha_raw.split(",") if s.strip()]
+        else:
+            human_assignees = [str(s).strip() for s in ha_raw if str(s).strip()]
+    else:
+        human_assignees = list(d.human_assignees)
     return TasksSpec(
         source=source,
         backlog_dir=backlog_dir,
@@ -259,6 +272,7 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         healthcheck_chases=max(1, int(raw.get("healthcheck_chases", d.healthcheck_chases))),
         healthcheck_timeout_secs=max(5, int(raw.get("healthcheck_timeout_secs", d.healthcheck_timeout_secs))),
         healthcheck_max_restarts=max(0, int(raw.get("healthcheck_max_restarts", d.healthcheck_max_restarts))),
+        human_assignees=human_assignees,
     )
 
 
@@ -323,6 +337,7 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "healthcheck_chases": t.healthcheck_chases,
             "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
             "healthcheck_max_restarts": t.healthcheck_max_restarts,
+            "human_assignees": list(t.human_assignees),
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },

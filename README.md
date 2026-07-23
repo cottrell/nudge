@@ -227,11 +227,11 @@ Claim happens **before** log delivery (`In Progress` + assignee). Completion is 
 from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
 state is cleared on the next poll when status is Done.
 
-- **Dependency gate:** a task is runnable only when its backlog dependencies are complete
-  (default: `Done`). If a task is waiting on a blocker or review, add that task as a dependency
-  with `backlog task edit TASK-NN --depends-on TASK-BLOCKER`; the dispatcher pauses claim/chase on
-  the parent until the dependency clears. Cycles and missing dependency ids are treated as blocked
-  errors.
+- **Dependency gate:** incomplete deps block claim/chase only if unassigned, swarm-assigned
+  (`aiswarm:<session>:<pane>`), or in `tasks.human_assignees` (default: `human` for intentional
+  human park). Other assignees (e.g. model names) are treated as orphans and do **not** block
+  parents. Set `human_assignees: []` to disable human park. Link work with
+  `backlog task edit TASK-NN --depends-on TASK-BLOCKER`. Cycles / missing ids still block.
 - **Chase:** idle + still assigned + deps clear → short re-prompt until Done/unassign. Interval is
   `min_chase_secs` (default same as `poll_secs`). Raise it only if you need fewer nudges.
 
