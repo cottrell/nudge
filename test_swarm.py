@@ -1452,7 +1452,7 @@ windows:
     assert "chased TASK-99" in out
 
 
-def test_load_config_human_assignees_default_and_empty(tmp_path: Path):
+def test_load_config_skip_assignees_default_empty_and_legacy(tmp_path: Path):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
 session_name: demo
@@ -1466,14 +1466,14 @@ windows:
           agent: claude
           monitor: true
 """))
-    assert cfg.tasks.human_assignees == ["human"]
-    p2 = tmp_path / "empty_ha"
+    assert cfg.tasks.skip_assignees == ["human"]
+    p2 = tmp_path / "empty_skip"
     p2.mkdir()
     cfg2 = load_config(write_config(p2, f"""
 session_name: demo2
 tasks:
   backlog_dir: "{bdir}"
-  human_assignees: []
+  skip_assignees: []
 windows:
   - window_name: grid
     panes:
@@ -1482,62 +1482,14 @@ windows:
           agent: claude
           monitor: true
 """))
-    assert cfg2.tasks.human_assignees == []
-
-
-def test_dependency_gate_ignores_orphan_assignee_blocks_human(tmp_path: Path, monkeypatch):
-    bdir = _write_backlog_project(tmp_path)
-    cfg = load_config(write_config(tmp_path, f"""
-session_name: demo
-tasks:
-  backlog_dir: "{bdir}"
-windows:
-  - window_name: grid
-    panes:
-      - shell_command: claude
-        nudge:
-          agent: claude
-          monitor: true
-"""))
-    tasks = {
-        "TASK-1": {
-            "id": "TASK-1",
-            "title": "Parent",
-            "status": "In Progress",
-            "dependencies": ["TASK-91", "TASK-2"],
-            "assignees": ["aiswarm:demo:0.0"],
-        },
-        "TASK-91": {
-            "id": "TASK-91",
-            "title": "Fake model owner",
-            "status": "In Progress",
-            "dependencies": [],
-            "assignees": ["Codex GPT-5"],
-        },
-        "TASK-2": {
-            "id": "TASK-2",
-            "title": "Human review",
-            "status": "In Progress",
-            "dependencies": [],
-            "assignees": ["human"],
-        },
-    }
-    monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
-    gate = tasksctl.dependency_gate(cfg, "TASK-1")
-    assert gate.blocked is True
-    assert gate.reason == "human_park"
-    assert gate.blocked_on == ["TASK-2"]
-    assert gate.human_park == ["TASK-2"]
-    assert any("TASK-91" in x for x in gate.orphans_ignored)
-
-    # empty human_assignees → "human" is also orphan → parent ready
-    p_noh = tmp_path / "noh"
-    p_noh.mkdir()
-    cfg_no_h = load_config(write_config(p_noh, f"""
+    assert cfg2.tasks.skip_assignees == []
+    p3 = tmp_path / "legacy_ha"
+    p3.mkdir()
+    cfg3 = load_config(write_config(p3, f"""
 session_name: demo3
 tasks:
   backlog_dir: "{bdir}"
-  human_assignees: []
+  human_assignees: [human, "reviewer"]
 windows:
   - window_name: grid
     panes:
@@ -1546,14 +1498,10 @@ windows:
           agent: claude
           monitor: true
 """))
-    gate2 = tasksctl.dependency_gate(cfg_no_h, "TASK-1")
-    assert gate2.blocked is False
-    assert gate2.ready is True
-    assert any("TASK-91" in x for x in gate2.orphans_ignored)
-    assert any("TASK-2" in x for x in gate2.orphans_ignored)
+    assert cfg3.tasks.skip_assignees == ["human", "reviewer"]
 
 
-def test_dependency_gate_blocks_unassigned_and_swarm_deps(tmp_path: Path, monkeypatch):
+def test_dependency_gate_blocks_any_incomplete_dep(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
 session_name: demo
@@ -1571,7 +1519,7 @@ windows:
         "TASK-1": {
             "id": "TASK-1",
             "status": "To Do",
-            "dependencies": ["TASK-A", "TASK-B"],
+            "dependencies": ["TASK-A", "TASK-B", "TASK-C"],
         },
         "TASK-A": {"id": "TASK-A", "status": "In Progress", "assignees": []},
         "TASK-B": {
@@ -1579,11 +1527,50 @@ windows:
             "status": "In Progress",
             "assignees": ["aiswarm:demo:0.2"],
         },
+        "TASK-C": {
+            "id": "TASK-C",
+            "status": "In Progress",
+            "assignees": ["Codex GPT-5"],
+        },
     }
     monkeypatch.setattr(tasksctl, "view_task_json", lambda c, tid: tasks[tid])
     gate = tasksctl.dependency_gate(cfg, "TASK-1")
     assert gate.blocked is True
-    assert set(gate.blocked_on) == {"TASK-A", "TASK-B"}
+    assert set(gate.blocked_on) == {"TASK-A", "TASK-B", "TASK-C"}
+    tasks["TASK-A"]["status"] = "Done"
+    tasks["TASK-B"]["status"] = "Done"
+    tasks["TASK-C"]["status"] = "Done"
+    gate2 = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate2.ready is True
+    assert gate2.blocked is False
+
+
+def test_task_skipped_for_claim_skip_assignees(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert tasksctl.task_skipped_for_claim(
+        cfg, {"id": "T1", "assignees": ["human"]}
+    ) is True
+    assert tasksctl.task_skipped_for_claim(
+        cfg, {"id": "T2", "assignees": ["Codex GPT-5"]}
+    ) is False
+    assert tasksctl.task_skipped_for_claim(
+        cfg, {"id": "T3", "assignees": ["aiswarm:demo:0.0"]}
+    ) is False
+    assert tasksctl.task_skipped_for_claim(cfg, {"id": "T4", "assignees": []}) is False
+    assert tasksctl.is_skip_assignee(cfg, "human") is True
+    assert tasksctl.is_swarm_assignee(cfg, "aiswarm:demo:0.1") is True
 
 
 def test_dispatch_skips_blocked_claim_until_dependency_done(tmp_path: Path, monkeypatch):

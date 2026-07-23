@@ -227,12 +227,13 @@ Claim happens **before** log delivery (`In Progress` + assignee). Completion is 
 from pane idle — the agent (or human) marks the task Done via the backlog CLI. Local assignment
 state is cleared on the next poll when status is Done.
 
-- **Dependency gate:** incomplete deps block claim/chase only if unassigned, swarm-assigned
-  (`aiswarm:<session>:<pane>`), or in `tasks.human_assignees` (default: `human` for intentional
-  human park). Other assignees (e.g. model names) are treated as orphans and do **not** block
-  parents. Set `human_assignees: []` to disable human park. Link work with
-  `backlog task edit TASK-NN --depends-on TASK-BLOCKER`. Cycles / missing ids still block.
-- **Chase:** idle + still assigned + deps clear → short re-prompt until Done/unassign. Interval is
+- **`skip_assignees`:** (default `[human]`) assignees the dispatcher will **not** claim or reclaim.
+  Use `-a human` to park a task for people. Empty list disables. Swarm ownership is only
+  `aiswarm:<session>:<pane>` — never model names.
+- **Dependency gate:** any incomplete dependency (not Done) blocks claim/chase of the parent,
+  regardless of who owns the dep. Link with `backlog task edit TASK-NN --depends-on TASK-BLOCKER`.
+  Cycles / missing ids still block.
+- **Chase:** idle + still assigned + deps Done → short re-prompt until Done/unassign. Interval is
   `min_chase_secs` (default same as `poll_secs`). Raise it only if you need fewer nudges.
 
 Each `tasks once` pass (and each poll from `tasks start`) assigns **at most one task to each free
