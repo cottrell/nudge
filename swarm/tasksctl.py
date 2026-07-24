@@ -1289,6 +1289,19 @@ def stop_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
 
 def status(cfg: SwarmConfig) -> None:
     t = cfg.tasks
+    path = pid_path(cfg)
+    if path.exists():
+        pid = int(path.read_text().strip() or "0")
+        alive = process_running(pid) if pid else False
+        if alive:
+            tasks_state = f"ON  (dispatcher pid={pid} running)"
+        else:
+            tasks_state = f"OFF (dispatcher pid={pid} dead — restart with: aiswarm tasks start)"
+    else:
+        pid = 0
+        alive = False
+        tasks_state = "OFF (dispatcher not started — aiswarm tasks start)"
+    print(f"tasks:   {tasks_state}")
     print(f"session: {cfg.session_name}")
     print(f"config:  {cfg.path}")
     print(f"source:  {t.source}")
@@ -1308,10 +1321,7 @@ def status(cfg: SwarmConfig) -> None:
     print(f"task panes ({len(panes)}): " + (
         ", ".join(f"{p.pane}({p.title})" for p in panes) if panes else "(none)"
     ))
-    path = pid_path(cfg)
     if path.exists():
-        pid = int(path.read_text().strip() or "0")
-        alive = process_running(pid) if pid else False
         print(f"dispatcher: pid={pid} {'running' if alive else 'dead'}")
     else:
         print("dispatcher: not started")
