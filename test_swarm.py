@@ -1750,6 +1750,11 @@ windows:
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
     monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(
+        tasksctl,
+        "_task_or_none",
+        lambda c, tid, cache: {"id": tid, "title": "Example", "status": "To Do", "dependencies": [], "assignees": []},
+    )
     actions = tasksctl.dispatch_once(cfg, dry_run=True)
     assert len(actions) == 1
     assert actions[0]["task_id"] == "TASK-42"
@@ -1783,6 +1788,11 @@ windows:
         lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
     )
     monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(
+        tasksctl,
+        "_task_or_none",
+        lambda c, tid, cache: {"id": tid, "title": "Example", "status": "To Do", "dependencies": [], "assignees": []},
+    )
     monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
 
     assert tasksctl._claim_new_onto_free(cfg, {"assignments": {}}, dry_run=False) == []
@@ -1812,6 +1822,11 @@ windows:
         lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
     )
     monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(
+        tasksctl,
+        "_task_or_none",
+        lambda c, tid, cache: {"id": tid, "title": "Example", "status": "To Do", "dependencies": [], "assignees": []},
+    )
     monkeypatch.setattr(tasksctl, "claim_task", lambda *a, **k: "aiswarm:demo:0.0")
     monkeypatch.setattr(
         tasksctl,
@@ -1945,6 +1960,40 @@ windows:
     tasksctl.chase_assigned(cfg, state)
     assert respawns == [(cfg, "0.0")]
     assert state["assignments"]["0.0"].get("healthcheck_exhausted_at")
+
+
+def test_claim_logs_and_skips_when_task_detail_unavailable(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(type(cfg), "runtime_dir", property(lambda self: tmp_path / "rt" / self.session_name))
+    monkeypatch.setattr(
+        tasksctl,
+        "list_candidate_tasks",
+        lambda c: [tasksctl.BacklogTask(id="TASK-404", title="Missing", status="To Do", priority="HIGH")],
+    )
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
+    monkeypatch.setattr(tasksctl, "task_skipped_for_claim", lambda *a, **k: False)
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda *a, **k: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(tasksctl, "_task_or_none", lambda *a, **k: None)
+    actions = tasksctl.dispatch_once(cfg, dry_run=True)
+    assert actions == []
+    err = capsys.readouterr().err
+    assert "skip claim TASK-404" in err
 
 
 def test_healthcheck_dry_run_does_not_respawn_or_probe(tmp_path: Path, monkeypatch, capsys):

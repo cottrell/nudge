@@ -1115,9 +1115,26 @@ def _claim_new_onto_free(
             candidate = candidates.pop(0)
             try:
                 full = _task_or_none(cfg, candidate.id, cache)
-            except Exception:
-                full = None
-            if full is not None and task_skipped_for_claim(cfg, full):
+            except Exception as e:
+                # Fail closed: a transient fetch error must not be treated as
+                # "skip_assignees can't apply, safe to claim." Skip this
+                # candidate instead of silently claiming it.
+                print(
+                    f"skip claim {candidate.id}: task detail fetch failed, "
+                    f"cannot verify skip_assignees: {e}",
+                    file=sys.stderr,
+                )
+                continue
+            if full is None:
+                # Not found (or unrecoverable fetch failure cached as None):
+                # same fail-closed reasoning as above.
+                print(
+                    f"skip claim {candidate.id}: task detail unavailable "
+                    f"(not found or fetch error); cannot verify skip_assignees",
+                    file=sys.stderr,
+                )
+                continue
+            if task_skipped_for_claim(cfg, full):
                 print(
                     f"skip claim {candidate.id}: assignee in skip_assignees "
                     f"{_task_assignees(full)}",
