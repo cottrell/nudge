@@ -181,9 +181,9 @@ def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
         os.kill(pid, signal.SIGTERM)
     path.unlink(missing_ok=True)
     for pane in cfg.panes:
-        pid_path(cfg, pane).unlink(missing_ok=True)
-        spec_path(cfg, pane).unlink(missing_ok=True)
-        state_path(cfg, pane).unlink(missing_ok=True)
+        pid_path(cfg, pane.pane).unlink(missing_ok=True)
+        spec_path(cfg, pane.pane).unlink(missing_ok=True)
+        state_path(cfg, pane.pane).unlink(missing_ok=True)
     write_runtime_map(cfg)
     print(f"Stopped session worker for {cfg.session_name}")
 

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 import topology as swarm_start
 swarm_apply = swarm_start
 import pane_worker as babysit_worker
+import session_worker
 import babysitctl
 import cli as swarm_cli
 import init as swarm_init
@@ -568,6 +569,22 @@ windows:
     assert not tasksctl.pid_path(cfg).exists()
     tasksctl.stop_dispatcher(cfg)
     assert not tasksctl.enabled_path(cfg).exists()
+
+
+def test_pane_worker_ema_spec_controls_next_wait():
+    assert session_worker.PaneWorker is babysit_worker.PaneWorker
+    worker = babysit_worker.PaneWorker("demo", "0.0")
+    worker.nudge_count = 3
+    worker.nudge_sent_ts = 900.0
+    worker.current_pct = 50.0
+    worker.current_reset_ts = 10_900.0
+    fast = {
+        "interval_secs": 60, "ema_alpha": .3, "ema_safety": .92,
+        "ema_k_var": 0, "ema_warmup": 3, "ema_min_wait": 1, "ema_max_wait": 10,
+    }
+    slow = {**fast, "ema_min_wait": 100, "ema_max_wait": 500}
+    assert worker._next_wait(fast, 1_000.0) == 10
+    assert worker._next_wait(slow, 1_000.0) == 500
 
 
 def test_swarm_status_reports_window_command_and_monitor(monkeypatch, tmp_path: Path, capsys):

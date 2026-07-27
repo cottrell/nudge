@@ -7,7 +7,7 @@ status: Done
 assignee:
   - 'aiswarm:nudge:0.0'
 created_date: '2026-07-27 12:15'
-updated_date: '2026-07-27 12:44'
+updated_date: '2026-07-27 12:54'
 labels:
   - swarm
   - babysit
@@ -112,7 +112,7 @@ Concretely:
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1) Keep pane_worker rename. 2) Implement one long-running Python session supervisor per swarm that multiplexes ALL panes: durable-log/comms drain + optional babysit prompt group per pane. 3) Fold tasks_dispatch loop into that same supervisor (aiswarm tasks start|stop toggles the group; dispatch_once stays callable for once). 4) Stop spawning N pane_worker processes; stop separate tasks_dispatch process when supervisor owns tasks. 5) C monitor-bin stays per-pane. 6) Restart/migrate live workers; prove with ps that one swarm => one Python supervisor. 7) Comms status back to requester pane nudge:0.5 (grok) via aiswarm send when done or blocked.
+1. Extract the complete pane worker state machine into PaneWorker.tick in pane_worker.py. 2. Keep the standalone compatibility entrypoint as a thin loop over that same object. 3. Make session_worker only multiplex PaneWorker instances and schedule tasks. 4. Add EMA wiring tests and update doc-4/task notes; verify make test and notify 0.5.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -123,6 +123,10 @@ REOPENED 2026-07-27 by grok on nudge:0.5 (human-directed). Prior close by Codex 
 Implemented the session-worker consolidation: controller writes per-pane specs but launches one session_worker.py; it multiplexes pane comms/babysit and polls the tasks enable flag. tasks start/stop now toggles that flag instead of launching tasks_dispatch.py.
 
 Validation: make test passes (28 monitor + 72 swarm tests). Live migration of nudge retired exactly its six recorded legacy workers and produced one session_worker.py PID (3769391) for six panes; status reported all six panes through it. tasks group has an explicit enabled.json state and test verifies start/stop toggles it with no dispatcher PID.
+
+Follow-up review found session_worker had a simplified duplicate of pane_worker semantics. Reopened to make the supervisor call the shared full per-pane state machine, including quota/EMA pacing.
+
+TASK-49 now tracks the semantics-fidelity follow-up; TASK-48 remains complete for process topology.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
