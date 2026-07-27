@@ -1403,6 +1403,42 @@ def parse_provider_usage(agent: str, text: str) -> dict:
     return {"limits": []}
 
 
+def _usage_session_name(agent: str, pid: int) -> str:
+    if agent not in {"claude", "codex", "agy"} or pid <= 0:
+        raise ValueError("invalid temporary usage session")
+    return f"{agent}-usage-{pid}"
+
+
+def _kill_usage_session(agent: str, pid: int) -> None:
+    """Best-effort cleanup for the exact session created by a timed-out scraper."""
+    session = _usage_session_name(agent, pid)
+    subprocess.run(
+        ["tmux", "kill-session", "-t", f"={session}"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+
+def _run_usage_scraper(script_path: Path, agent: str, timeout: float = 30.0) -> subprocess.CompletedProcess[str]:
+    """Run one usage scraper; timeout cleanup cannot rely on the shell EXIT trap."""
+    proc = subprocess.Popen(
+        [str(script_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        _kill_usage_session(agent, proc.pid)
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(e.cmd, e.timeout, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
+
+
 def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -> dict:
     """Get provider usage with TTL caching, calling the underlying shell script if needed.
     
@@ -1454,14 +1490,7 @@ def get_cached_provider_usage(agent: str, ttl: int = 120, force: bool = False) -
         return {"error": f"Script not found at {script_path}", "limits": [], "fetched_at": now_ts}
 
     try:
-        proc = subprocess.run(
-            [str(script_path)],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30
-        )
+        proc = _run_usage_scraper(script_path, agent)
     except subprocess.TimeoutExpired:
         if entry:
             raw_text = entry.get("raw_text", "")

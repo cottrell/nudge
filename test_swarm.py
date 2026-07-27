@@ -17,6 +17,7 @@ import babysit as babysit_worker
 import babysitctl
 import cli as swarm_cli
 import init as swarm_init
+import common
 from common import (
     ROOT_DIR,
     SWARM_CLI,
@@ -880,6 +881,39 @@ def test_comms_helpers(tmp_path: Path):
         if db.exists():
             db.unlink()
         # also remove parent if empty? skip
+
+
+def test_usage_scraper_timeout_cleans_exact_tmux_session(monkeypatch, tmp_path: Path):
+    class TimedOutProcess:
+        pid = 4321
+        args = ["usage.sh"]
+        returncode = -9
+        calls = 0
+        killed = False
+
+        def communicate(self, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired(self.args, timeout)
+            return "", ""
+
+        def kill(self):
+            self.killed = True
+
+    proc = TimedOutProcess()
+    commands = []
+    monkeypatch.setattr(common.subprocess, "Popen", lambda *a, **k: proc)
+    monkeypatch.setattr(
+        common.subprocess,
+        "run",
+        lambda args, **kwargs: commands.append(args) or subprocess.CompletedProcess(args, 0),
+    )
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        common._run_usage_scraper(tmp_path / "usage.sh", "codex", timeout=0.1)
+
+    assert proc.killed is True
+    assert commands == [["tmux", "kill-session", "-t", "=codex-usage-4321"]]
 
 
 def test_comms_end_to_end_plain_pane_no_agent(tmp_path: Path):
