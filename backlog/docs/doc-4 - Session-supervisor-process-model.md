@@ -3,7 +3,7 @@ id: doc-4
 title: Session supervisor process model
 type: specification
 created_date: '2026-07-27 12:16'
-updated_date: '2026-07-27 12:16'
+updated_date: '2026-07-27 12:41'
 tags:
   - swarm
   - process-model
@@ -11,18 +11,21 @@ tags:
 ---
 # Session supervisor process model
 
-## Current state
+## Implemented model
 
 - C `monitor-bin` remains the per-pane activity/status source.
-- `pane_worker.py` is currently one Python comms worker per pane; its babysit prompt group is optional.
-- `tasks_dispatch.py` is a separate per-session Python polling process.
+- `session_worker.py` is the one long-running Python process per swarm session. It multiplexes durable-log/comms drains for every configured pane and writes the existing per-pane state files for status consumers.
+- Babysit is an optional prompt group: `aiswarm babysit start|stop` changes each pane spec, which the same session worker reads on its next loop. It does not create or stop a separate per-pane process.
+- Tasks is another group in that supervisor: `aiswarm tasks start|stop` writes/removes `tasks/enabled.json`; the worker calls `dispatch_once` on `poll_secs`. `aiswarm tasks once` remains a direct CLI pass.
 
-## Target state
+## Process shape
 
-One Python session supervisor per swarm multiplexes all pane comms drains, optional babysit prompt groups, and the task-dispatch polling group. The C monitors remain separate and are not reimplemented in Python.
+A six-pane swarm has six cheap C monitor processes and one `session_worker.py` Python PID. Legacy per-pane worker PID files may point to that shared PID for status compatibility; they are not independent workers. There is no `tasks_dispatch.py` long-running process when tasks is enabled.
 
-`aiswarm babysit start|stop` continues to control only the prompt group. `aiswarm tasks start|stop` controls the dispatch group within the same supervisor. Per-swarm isolation remains; this is not a machine-global daemon.
+## Compatibility
 
-## Migration
+`pane_worker.py` remains available for external one-pane invocations, but normal `aiswarm start` launches `session_worker.py`. `babysit.py` is no longer an entrypoint.
 
-The rename to `pane_worker.py` is intentionally behavior-preserving. Supervisor consolidation is follow-on work: preserve the durable-log protocol, task claim semantics, per-pane runtime state, and explicit start/stop controls while replacing N per-pane Python processes plus the task dispatcher with one session process.
+## Boundaries
+
+The supervisor does not scrape terminal output or reimplement status detection. Durable-log protocol, task claim semantics, and per-swarm isolation stay unchanged.

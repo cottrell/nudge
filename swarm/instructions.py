@@ -65,8 +65,9 @@ aiswarm stop                 # workers + session teardown
 - Do **not** attach to another agent's pane and stream it; use send + backlog + done-ping
   (`aiswarm instructions handoff`).
 - Completion of assigned work is **backlog status Done**, not "pane went idle".
-- `pane_worker.py` is the current per-pane worker process (comms always, babysit prompts optional).
-  `babysit.py` is no longer an entrypoint; update external scripts to use `pane_worker.py`.
+- `session_worker.py` is one worker process per swarm session: it multiplexes comms for all panes,
+  optional per-pane babysit prompts, and the tasks group. C `monitor-bin` remains per pane.
+  `pane_worker.py` is only a compatibility entrypoint; `babysit.py` is no longer an entrypoint.
 - Session identity / runtime map path: `aiswarm this` (resolves config; points at
   `/tmp/nudge-swarm/<session>/runtime.json` written on start).
 
@@ -211,7 +212,7 @@ Common workflow:
   aiswarm start                       Start session, monitors, comms workers
   aiswarm status --brief              Pane states
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
-  aiswarm babysit start|stop          Optional idle nudges (per-pane worker)
+  aiswarm babysit start|stop          Optional per-pane idle nudges (session worker)
   aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (idle if empty)
   aiswarm stop                        Tear down workers + tmux session
 

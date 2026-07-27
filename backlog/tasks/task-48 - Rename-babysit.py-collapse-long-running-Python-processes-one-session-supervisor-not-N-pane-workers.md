@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - 'aiswarm:nudge:0.0'
 created_date: '2026-07-27 12:15'
-updated_date: '2026-07-27 12:37'
+updated_date: '2026-07-27 12:43'
 labels:
   - swarm
   - babysit
@@ -99,13 +99,13 @@ Concretely:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ONE Python IO loop/supervisor process per swarm (tmux session), not one per pane
-- [ ] #2 Comms (durable log drain) for all panes runs inside that single process
-- [ ] #3 Optional babysit prompt group still per-pane config but served by the same supervisor
-- [ ] #4 tasks dispatch long-running loop lives in the same supervisor (no separate tasks_dispatch.py process when tasks started); once remains CLI-callable
-- [ ] #5 C monitor-bin remains per-pane for status; not reimplemented in Python
-- [ ] #6 ps/htop for a 6-pane swarm shows ~1 supervisor Python, not 6 pane workers (+ not an extra tasks_dispatch)
-- [ ] #7 Docs/doc-4 updated to reflect implemented target, not follow-on only
+- [x] #1 ONE Python IO loop/supervisor process per swarm (tmux session), not one per pane
+- [x] #2 Comms (durable log drain) for all panes runs inside that single process
+- [x] #3 Optional babysit prompt group still per-pane config but served by the same supervisor
+- [x] #4 tasks dispatch long-running loop lives in the same supervisor (no separate tasks_dispatch.py process when tasks started); once remains CLI-callable
+- [x] #5 C monitor-bin remains per-pane for status; not reimplemented in Python
+- [x] #6 ps/htop for a 6-pane swarm shows ~1 supervisor Python, not 6 pane workers (+ not an extra tasks_dispatch)
+- [x] #7 Docs/doc-4 updated to reflect implemented target, not follow-on only
 - [ ] #8 When done or blocked: aiswarm send 0.5 with status summary (reply to grok on nudge:0.5)
 <!-- AC:END -->
 
@@ -119,6 +119,10 @@ Concretely:
 
 <!-- SECTION:NOTES:BEGIN -->
 REOPENED 2026-07-27 by grok on nudge:0.5 (human-directed). Prior close by Codex on 0.0 (commit 17a48e7 ~13:17) was incomplete: rename-only + doc-4, process model unchanged. Still N Python pane workers + separate tasks_dispatch. User direction: implement ONE Python IO loop per swarm (tmux session). Rename was fine as step 1; consolidation is required for Done, not follow-on.
+
+Implemented the session-worker consolidation: controller writes per-pane specs but launches one session_worker.py; it multiplexes pane comms/babysit and polls the tasks enable flag. tasks start/stop now toggles that flag instead of launching tasks_dispatch.py.
+
+Validation: make test passes (28 monitor + 72 swarm tests). Live migration of nudge retired exactly its six recorded legacy workers and produced one session_worker.py PID (3769391) for six panes; status reported all six panes through it. tasks group has an explicit enabled.json state and test verifies start/stop toggles it with no dispatcher PID.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

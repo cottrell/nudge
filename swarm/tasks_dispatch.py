@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Session-level tasks dispatcher loop.
+"""Compatibility entrypoint for one tasks dispatch pass.
 
-Polls a task source (v1: backlog) and claims+delivers work to free panes
-with tasks enabled. Separate from babysit prompt nudges.
+Long-running dispatch belongs to ``session_worker.py``. Use ``aiswarm tasks
+start`` to enable that group, or invoke this script for one direct pass.
 
 Usage: python swarm/tasks_dispatch.py <swarm-yaml>
    or: python -m swarm.tasks_dispatch <swarm-yaml>
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 try:
     from .common import load_config
@@ -28,35 +27,11 @@ def main(argv: list[str] | None = None) -> int:
         print("usage: tasks_dispatch.py <swarm-yaml>", file=sys.stderr)
         return 2
     cfg_path = args[0]
-    dry = os.environ.get("AISWARM_TASKS_DRY_RUN") == "1"
-    while True:
-        try:
-            cfg = load_config(cfg_path)
-            tasksctl.validate_tasks_config(cfg)
-            poll = cfg.tasks.poll_secs
-            actions = tasksctl.dispatch_once(cfg, dry_run=dry)
-            if actions:
-                print(
-                    f"[{time.strftime('%H:%M:%S')}] dispatched {len(actions)} task(s)",
-                    flush=True,
-                )
-            else:
-                state = tasksctl.load_state(cfg)
-                free = tasksctl.free_task_panes(cfg, state)
-                assigned = list((state.get("assignments") or {}).keys())
-                try:
-                    n_cand = len(tasksctl.list_candidate_tasks(cfg))
-                except Exception as e:
-                    n_cand = f"error:{e}"
-                print(
-                    f"[{time.strftime('%H:%M:%S')}] idle free={free} "
-                    f"assigned={assigned} candidates={n_cand}",
-                    flush=True,
-                )
-        except Exception as e:
-            print(f"[{time.strftime('%H:%M:%S')}] error: {e}", flush=True)
-            poll = 60
-        time.sleep(max(5, int(poll)))
+    cfg = load_config(cfg_path)
+    tasksctl.validate_tasks_config(cfg)
+    actions = tasksctl.dispatch_once(cfg, dry_run=os.environ.get("AISWARM_TASKS_DRY_RUN") == "1")
+    print(f"dispatched {len(actions)} task(s)")
+    return 0
 
 
 if __name__ == "__main__":

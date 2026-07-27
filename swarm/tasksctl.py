@@ -103,6 +103,11 @@ def spec_path(cfg: SwarmConfig) -> Path:
     return tasks_runtime_dir(cfg) / "spec.json"
 
 
+def enabled_path(cfg: SwarmConfig) -> Path:
+    """Flag consumed by the session worker; tasks is a loop group, not a process."""
+    return tasks_runtime_dir(cfg) / "enabled.json"
+
+
 def process_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -1231,93 +1236,51 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
     validate_tasks_config(cfg)
     tasks_runtime_dir(cfg).mkdir(parents=True, exist_ok=True)
     wanted = desired_spec(cfg)
-    path = pid_path(cfg)
-    if path.exists():
-        pid = int(path.read_text().strip() or "0")
-        if process_running(pid):
-            cur = {}
-            if spec_path(cfg).exists():
-                try:
-                    cur = json.loads(spec_path(cfg).read_text() or "{}")
-                except json.JSONDecodeError:
-                    cur = {}
-            if cur == wanted:
-                print(f"tasks dispatcher already running for {cfg.session_name} pid={pid}")
-                return
-            if dry_run:
-                print(f"would restart tasks dispatcher for {cfg.session_name} pid={pid}")
-            else:
-                stop_dispatcher(cfg, dry_run=False)
     if dry_run:
         print(
-            f"would start tasks dispatcher session={cfg.session_name} "
+            f"would enable tasks group in session worker session={cfg.session_name} "
             f"panes={[p.pane for p in cfg.task_panes]} "
             f"backlog_dir={cfg.tasks.backlog_dir} "
             f"ingest={cfg.tasks.ingest}"
         )
         print_effective_tasks(cfg)
-        spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
-        write_runtime_map(cfg)
         return
-    env = dict(os.environ)
-    env["AISWARM_TASKS_CONFIG"] = str(cfg.path)
-    with log_path(cfg).open("ab") as log:
-        proc = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve().parent / "tasks_dispatch.py"), str(cfg.path)],
-            stdout=log,
-            stderr=log,
-            start_new_session=True,
-            text=True,
-            env=env,
-        )
-    pid_path(cfg).write_text(str(proc.pid) + "\n")
+    # The worker also owns comms, so ensure it exists before enabling the group.
+    try:
+        from . import babysitctl
+    except ImportError:
+        import babysitctl
+    babysitctl.ensure_workers(cfg, dry_run=False)
     spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
+    enabled_path(cfg).write_text(json.dumps({"enabled": True}) + "\n")
     write_runtime_map(cfg)
-    print(f"Started tasks dispatcher for {cfg.session_name} pid={proc.pid}")
+    print(f"Enabled tasks group in session worker for {cfg.session_name}")
 
 
 def stop_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
-    path = pid_path(cfg)
-    if not path.exists():
-        print(f"No tasks dispatcher pid for {cfg.session_name}")
-        return
-    pid = int(path.read_text().strip() or "0")
     if dry_run:
-        print(f"would stop tasks dispatcher session={cfg.session_name} pid={pid}")
+        print(f"would disable tasks group in session worker for {cfg.session_name}")
         return
-    if pid and process_running(pid):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        # brief wait
-        for _ in range(20):
-            if not process_running(pid):
-                break
-            time.sleep(0.05)
-        if process_running(pid):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-    path.unlink(missing_ok=True)
-    print(f"Stopped tasks dispatcher for {cfg.session_name}")
+    enabled_path(cfg).unlink(missing_ok=True)
+    print(f"Disabled tasks group in session worker for {cfg.session_name}")
 
 
 def status(cfg: SwarmConfig) -> None:
     t = cfg.tasks
-    path = pid_path(cfg)
-    if path.exists():
-        pid = int(path.read_text().strip() or "0")
-        alive = process_running(pid) if pid else False
-        if alive:
-            tasks_state = f"ON  (dispatcher pid={pid} running)"
-        else:
-            tasks_state = f"OFF (dispatcher pid={pid} dead — restart with: aiswarm tasks start)"
+    enabled = enabled_path(cfg).exists()
+    try:
+        from .babysitctl import supervisor_pid_path
+    except ImportError:
+        from babysitctl import supervisor_pid_path
+    path = supervisor_pid_path(cfg)
+    pid = int(path.read_text().strip() or "0") if path.exists() else 0
+    alive = process_running(pid) if pid else False
+    if enabled and alive:
+        tasks_state = f"ON  (session worker pid={pid} running)"
+    elif enabled:
+        tasks_state = "OFF (tasks enabled but session worker is dead — restart with: aiswarm tasks start)"
     else:
-        pid = 0
-        alive = False
-        tasks_state = "OFF (dispatcher not started — aiswarm tasks start)"
+        tasks_state = "OFF (tasks group disabled — aiswarm tasks start)"
     print(f"tasks:   {tasks_state}")
     print(f"session: {cfg.session_name}")
     print(f"config:  {cfg.path}")

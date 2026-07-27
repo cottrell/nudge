@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import random
 import shutil
@@ -515,7 +516,7 @@ windows:
     assert ("tmux", "select-layout", "-t", "demo:grid", "tiled") in tmux_calls
 
 
-def test_babysit_start_restarts_worker_when_spec_changes(monkeypatch, tmp_path: Path):
+def test_babysit_start_updates_pane_spec_without_per_pane_process(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
 windows:
@@ -532,28 +533,41 @@ windows:
             prompt: "please continue"
 """))
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
-    babysitctl.pid_path(cfg, "0.0").write_text("1234")
-    babysitctl.spec_path(cfg, "0.0").write_text("""{
-  "session": "demo",
-  "pane": "0.0",
-  "target": "demo:0.0",
-  "interval_secs": 600,
-  "long_prompt": "old long",
-  "short_prompt": "old short"
-}
-""")
-    actions: list[tuple[str, ...]] = []
-
-    monkeypatch.setattr(babysitctl, "process_running", lambda pid: pid == 1234)
-    monkeypatch.setattr(babysitctl, "stop_worker", lambda cfg, pane, dry_run: actions.append(("stop", pane, str(dry_run))))
-    monkeypatch.setattr(babysitctl, "start_worker", lambda cfg, pane, interval, clear_every, long_prompt, short_prompt, lp_file, sp_file, via_log, dry_run: actions.append(("start", pane, str(interval), str(clear_every), long_prompt, short_prompt, lp_file, sp_file, str(via_log), str(dry_run))))
+    calls: list[str] = []
+    monkeypatch.setattr(babysitctl, "_start_supervisor", lambda cfg, dry_run: calls.append(cfg.session_name))
 
     babysitctl.apply_babysit(cfg, dry_run=False)
 
-    assert actions == [
-        ("stop", "0.0", "False"),
-        ("start", "0.0", "321", "0", "please continue", "please continue", "", "", "True", "False"),
-    ]
+    assert calls == ["demo"]
+    spec = json.loads(babysitctl.spec_path(cfg, "0.0").read_text())
+    assert spec["interval_secs"] == 321
+    assert spec["long_prompt"] == "please continue"
+
+
+def test_tasks_start_toggles_session_worker_group(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+tasks:
+  backlog_dir: "."
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(tasksctl, "validate_tasks_config", lambda cfg: None)
+    monkeypatch.setattr(tasksctl, "write_runtime_map", lambda cfg: None)
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda cfg, dry_run: None)
+
+    tasksctl.start_dispatcher(cfg)
+
+    assert tasksctl.enabled_path(cfg).exists()
+    assert tasksctl.spec_path(cfg).exists()
+    assert not tasksctl.pid_path(cfg).exists()
+    tasksctl.stop_dispatcher(cfg)
+    assert not tasksctl.enabled_path(cfg).exists()
 
 
 def test_swarm_status_reports_window_command_and_monitor(monkeypatch, tmp_path: Path, capsys):

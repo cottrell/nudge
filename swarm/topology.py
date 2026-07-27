@@ -320,7 +320,7 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     if not skip_grid:
         setup_grid(cfg, dry_run)
     setup_monitors(cfg, dry_run)
-    # Ensure base comms/IO workers (the single loop per pane) are running.
+    # Ensure the one session worker (multiplexed comms/IO for every pane) is running.
     # Babysit prompt group is managed separately via 'aiswarm babysit start'.
     try:
         from . import babysitctl

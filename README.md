@@ -160,8 +160,8 @@ Built-in examples:
 - each window has `window_name`, `layout`, and `panes`
 - pane command is `shell_command`
 - nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`, `comms`, `tasks`)
-- `comms.enabled` (defaults to `monitor`) starts a per-pane worker that consumes the durable log and delivers on idle
-- optional top-level `tasks:` configures the session task dispatcher (v1 source: backlog)
+- `comms.enabled` (defaults to `monitor`) is served by the session worker, which consumes each pane's durable log and delivers on idle
+- optional top-level `tasks:` configures a task-dispatch group in that same session worker (v1 source: backlog)
 
 Notes:
 
@@ -170,19 +170,19 @@ Notes:
   It is **not** safe to re-run after changing pane counts or layout on a live session
   (you'll be told to recreate the session).
 - One monitor per `monitor: true` pane (started by `start`)
-- `start` ensures the base worker loop (comms/message delivery) for monitored panes.
+- `start` ensures one Python `session_worker.py` for the swarm; it multiplexes base comms/message delivery for monitored panes.
 - `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
   It does not affect the base comms worker loop.
-- `pane_worker.py` is the per-pane process currently shown in `ps`: it always handles comms and
-  only runs babysit prompts when that group is enabled. `babysit.py` was renamed in this release;
-  update external invocations to `pane_worker.py`.
-- `tasks start` runs a **session-level** dispatcher (not folded into babysit) that lists backlog
+- `session_worker.py` is the one process shown in `ps` for a swarm, not one Python process per pane.
+  It handles comms for every configured pane and enables babysit prompts only for panes in that group.
+  `pane_worker.py` is retained as a compatibility entrypoint; `babysit.py` was renamed in this release.
+- `tasks start` enables a **session-level group in that same worker** that lists backlog
   tasks matching `tasks.ingest` (default: `To Do` + `In Progress`), claims them, and delivers a prompt via
   the durable log to free monitored panes (tasks enabled by default; opt out with
   `nudge.tasks.enabled: false`).
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json` (path via `aiswarm this`)
-- tasks dispatcher state: `/tmp/nudge-swarm/<session>/tasks/`
+- tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`
 
 ## Tasks dispatcher (backlog → free panes)
 

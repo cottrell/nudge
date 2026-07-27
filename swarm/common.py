@@ -534,8 +534,9 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
         "ingest": list(t.ingest),
         "poll_secs": t.poll_secs,
         "min_chase_secs": t.min_chase_secs,
-        "pid": str(tdir / "dispatcher.pid"),
-        "log": str(tdir / "dispatcher.log"),
+        "pid": str(cfg.runtime_dir / "session_worker.pid"),
+        "log": str(cfg.runtime_dir / "session_worker.log"),
+        "enabled": str(tdir / "enabled.json"),
         "state": str(tdir / "state.json"),
         "panes": [p.pane for p in cfg.task_panes],
     }
