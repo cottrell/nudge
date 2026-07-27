@@ -111,7 +111,7 @@ def start_worker(cfg: SwarmConfig, pane: str, interval: int, clear_every: int, l
     )
     with log_path(cfg, pane).open("ab") as log:
         proc = subprocess.Popen(
-            [sys.executable, str(ROOT_DIR / "babysit.py"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
+            [sys.executable, str(ROOT_DIR / "pane_worker.py"), f"{cfg.session_name}:{pane}", str(interval), long_prompt, short_prompt],
             stdout=log,
             stderr=log,
             start_new_session=True,

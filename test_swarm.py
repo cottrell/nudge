@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "swarm"))
 
 import topology as swarm_start
 swarm_apply = swarm_start
-import babysit as babysit_worker
+import pane_worker as babysit_worker
 import babysitctl
 import cli as swarm_cli
 import init as swarm_init
@@ -981,7 +981,7 @@ def test_comms_end_to_end_plain_pane_no_agent(tmp_path: Path):
             BABYSIT_STATE_FILE=str(runtime / "state.json"),
         )
         worker = subprocess.Popen(
-            [sys.executable, str(Path.cwd() / "babysit.py"), target, "2", "", ""],
+            [sys.executable, str(Path.cwd() / "pane_worker.py"), target, "2", "", ""],
             stdout=worker_log.open("ab"),
             stderr=worker_log.open("ab"),
             env=env,

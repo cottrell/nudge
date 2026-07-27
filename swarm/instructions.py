@@ -65,6 +65,8 @@ aiswarm stop                 # workers + session teardown
 - Do **not** attach to another agent's pane and stream it; use send + backlog + done-ping
   (`aiswarm instructions handoff`).
 - Completion of assigned work is **backlog status Done**, not "pane went idle".
+- `pane_worker.py` is the current per-pane worker process (comms always, babysit prompts optional).
+  `babysit.py` is no longer an entrypoint; update external scripts to use `pane_worker.py`.
 - Session identity / runtime map path: `aiswarm this` (resolves config; points at
   `/tmp/nudge-swarm/<session>/runtime.json` written on start).
 

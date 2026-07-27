@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Poll a monitored tmux pane and nudge when idle.
+"""Run the per-pane comms worker with an optional babysit prompt group.
 
-Usage: babysit.py <session-or-target> [interval_secs] [long_nudge] [short_nudge]
+Usage: pane_worker.py <session-or-target> [interval_secs] [long_nudge] [short_nudge]
 
   session-or-target  tmux session or pane target (e.g. claude_myproject_alice or
                      claude_myproject_alice:0.0)

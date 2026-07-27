@@ -173,6 +173,9 @@ Notes:
 - `start` ensures the base worker loop (comms/message delivery) for monitored panes.
 - `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
   It does not affect the base comms worker loop.
+- `pane_worker.py` is the per-pane process currently shown in `ps`: it always handles comms and
+  only runs babysit prompts when that group is enabled. `babysit.py` was renamed in this release;
+  update external invocations to `pane_worker.py`.
 - `tasks start` runs a **session-level** dispatcher (not folded into babysit) that lists backlog
   tasks matching `tasks.ingest` (default: `To Do` + `In Progress`), claims them, and delivers a prompt via
   the durable log to free monitored panes (tasks enabled by default; opt out with
