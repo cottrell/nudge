@@ -587,6 +587,31 @@ def test_pane_worker_ema_spec_controls_next_wait():
     assert worker._next_wait(slow, 1_000.0) == 500
 
 
+def test_stop_workers_accepts_panespec_list(tmp_path: Path):
+    """Regression: stop_workers must use pane.pane, not PaneSpec.replace."""
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          comms: true
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    for pane in cfg.panes:
+        babysitctl.pid_path(cfg, pane.pane).write_text("0\n")
+        babysitctl.spec_path(cfg, pane.pane).write_text("{}\n")
+        babysitctl.state_path(cfg, pane.pane).write_text("{}\n")
+    babysitctl.supervisor_pid_path(cfg).write_text("0\n")
+    babysitctl.stop_workers(cfg, dry_run=False)
+    assert not babysitctl.supervisor_pid_path(cfg).exists()
+    for pane in cfg.panes:
+        assert not babysitctl.pid_path(cfg, pane.pane).exists()
+
+
 def test_swarm_status_reports_window_command_and_monitor(monkeypatch, tmp_path: Path, capsys):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
