@@ -3,11 +3,11 @@ id: TASK-48
 title: >-
   Rename babysit.py + collapse long-running Python processes (one session
   supervisor, not N pane workers)
-status: Done
+status: In Progress
 assignee:
   - 'aiswarm:nudge:0.0'
 created_date: '2026-07-27 12:15'
-updated_date: '2026-07-27 12:17'
+updated_date: '2026-07-27 12:37'
 labels:
   - swarm
   - babysit
@@ -99,28 +99,26 @@ Concretely:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Rename babysit.py entrypoint to a name that reflects pane/session worker (prefer pane_worker.py or session_worker.py; avoid nudge_monitor.py clash with monitor.c)
-- [x] #2 Update babysitctl/topology/tests/docs so ps, help, and self-awareness no longer imply workers are "babysit-only"
-- [x] #3 Document process model: C monitor = status; ideally one long-running Python supervisor per session for comms + optional prompt group + tasks
-- [x] #4 Write design note on folding tasks_dispatch into that supervisor (no separate long-running tasks_dispatch.py in the ideal model)
-- [x] #5 Compat: old name shim or explicit break noted in changelog/README
+- [ ] #1 ONE Python IO loop/supervisor process per swarm (tmux session), not one per pane
+- [ ] #2 Comms (durable log drain) for all panes runs inside that single process
+- [ ] #3 Optional babysit prompt group still per-pane config but served by the same supervisor
+- [ ] #4 tasks dispatch long-running loop lives in the same supervisor (no separate tasks_dispatch.py process when tasks started); once remains CLI-callable
+- [ ] #5 C monitor-bin remains per-pane for status; not reimplemented in Python
+- [ ] #6 ps/htop for a 6-pane swarm shows ~1 supervisor Python, not 6 pane workers (+ not an extra tasks_dispatch)
+- [ ] #7 Docs/doc-4 updated to reflect implemented target, not follow-on only
+- [ ] #8 When done or blocked: aiswarm send 0.5 with status summary (reply to grok on nudge:0.5)
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Rename the per-pane process entrypoint to pane_worker.py and update launch/test references without changing worker semantics.
-2. Update operator-facing docs and CLI wording to distinguish pane workers, babysit prompt groups, and the separate tasks dispatcher.
-3. Create a Backlog design note for the target one-supervisor-per-session model and document the explicit babysit.py compatibility break.
-4. Run the swarm test suite and finalize the task.
+1) Keep pane_worker rename. 2) Implement one long-running Python session supervisor per swarm that multiplexes ALL panes: durable-log/comms drain + optional babysit prompt group per pane. 3) Fold tasks_dispatch loop into that same supervisor (aiswarm tasks start|stop toggles the group; dispatch_once stays callable for once). 4) Stop spawning N pane_worker processes; stop separate tasks_dispatch process when supervisor owns tasks. 5) C monitor-bin stays per-pane. 6) Restart/migrate live workers; prove with ps that one swarm => one Python supervisor. 7) Comms status back to requester pane nudge:0.5 (grok) via aiswarm send when done or blocked.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Claimed by aiswarm tasks dispatcher for pane 0.0 (session nudge).
-
-Renamed the per-pane entrypoint to pane_worker.py and updated its launcher, integration test, operator docs, and instruction help. babysit.py is an explicit compatibility break documented in README/instructions. Added design note doc-4 for one session supervisor handling comms, optional prompt groups, and tasks dispatch. Validation: make test-swarm passed; make test-c passed on rerun after one unrelated Grok fixture timing failure.
+REOPENED 2026-07-27 by grok on nudge:0.5 (human-directed). Prior close by Codex on 0.0 (commit 17a48e7 ~13:17) was incomplete: rename-only + doc-4, process model unchanged. Still N Python pane workers + separate tasks_dispatch. User direction: implement ONE Python IO loop per swarm (tmux session). Rename was fine as step 1; consolidation is required for Done, not follow-on.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
