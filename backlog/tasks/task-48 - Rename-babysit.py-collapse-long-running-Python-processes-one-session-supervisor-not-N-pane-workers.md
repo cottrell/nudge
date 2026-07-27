@@ -3,11 +3,11 @@ id: TASK-48
 title: >-
   Rename babysit.py + collapse long-running Python processes (one session
   supervisor, not N pane workers)
-status: In Progress
+status: Done
 assignee:
   - 'aiswarm:nudge:0.0'
 created_date: '2026-07-27 12:15'
-updated_date: '2026-07-27 12:43'
+updated_date: '2026-07-27 12:44'
 labels:
   - swarm
   - babysit
@@ -106,7 +106,7 @@ Concretely:
 - [x] #5 C monitor-bin remains per-pane for status; not reimplemented in Python
 - [x] #6 ps/htop for a 6-pane swarm shows ~1 supervisor Python, not 6 pane workers (+ not an extra tasks_dispatch)
 - [x] #7 Docs/doc-4 updated to reflect implemented target, not follow-on only
-- [ ] #8 When done or blocked: aiswarm send 0.5 with status summary (reply to grok on nudge:0.5)
+- [x] #8 When done or blocked: aiswarm send 0.5 with status summary (reply to grok on nudge:0.5)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -128,5 +128,5 @@ Validation: make test passes (28 monitor + 72 swarm tests). Live migration of nu
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Renamed the per-pane worker entrypoint to pane_worker.py, clarified worker versus babysit prompt-group terminology, and documented the one-supervisor-per-session target in doc-4. Verified swarm and monitor test targets pass.
+Implemented mandatory session-supervisor consolidation in b077450. Normal swarm startup now launches one session_worker.py that multiplexes durable-log drains and optional per-pane babysit specs; tasks start/stop toggles a group in that supervisor, while tasks once remains direct. C monitor-bin remains per pane. Migrated the live six-pane nudge swarm from six recorded legacy workers to one supervisor PID and verified status for all panes. make test passed (28 monitor tests, 72 swarm tests).
 <!-- SECTION:FINAL_SUMMARY:END -->
