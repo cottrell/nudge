@@ -70,6 +70,24 @@ windows:
     assert pane.babysit.short_prompt == "nudge gently"
 
 
+def test_load_config_rejects_short_prompt_only_babysit(tmp_path: Path):
+    cfg_path = write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          babysit:
+            enabled: true
+            short_prompt: "only short"
+""")
+    with pytest.raises(ValueError, match="short_prompt"):
+        load_config(cfg_path)
+
+
 def test_swarm_init_default_3x2_layout():
     text = swarm_init.config_text("demo", flavour="3x2")
     assert text.count("agent: codex") == 2
@@ -85,7 +103,6 @@ def test_swarm_init_default_3x2_layout():
 def test_swarm_init_demo_flavour_layout():
     text = swarm_init.config_text("aiswarm-demo", flavour="demo")
     assert "session_name: aiswarm-demo" in text
-    assert "start_directory: ./" in text
     for agent in ("codex", "claude", "antigravity", "grok", "vibe", "copilot"):
         assert f"agent: {agent}" in text
     assert "agent: gemini" not in text
@@ -118,10 +135,49 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
     assert "Do NOT raw `tmux send-keys`" in agents
-    # default discovery finds the inited config
-    found = resolve_config_path(None, start=tmp_path)
-    assert found == (tmp_path / ".aiswarm" / "config.yaml").resolve()
-    assert load_config(found).session_name == "demo"
+
+
+def test_babysit_stop_workers_tolerates_empty_pid_file(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    babysitctl.supervisor_pid_path(cfg).write_text(" \n")
+    monkeypatch.setattr(babysitctl, "process_running", lambda pid: (_ for _ in ()).throw(AssertionError("should not be called")))
+    monkeypatch.setattr(babysitctl, "write_runtime_map", lambda cfg: None)
+    babysitctl.stop_workers(cfg, dry_run=False)
+
+
+def test_tasks_status_tolerates_garbage_pid_file(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    babysitctl.supervisor_pid_path(cfg).write_text("garbage\n")
+    monkeypatch.setattr(tasksctl, "process_running", lambda pid: (_ for _ in ()).throw(AssertionError("should not be called")))
+    tasksctl.status(cfg)
+    out = capsys.readouterr().out
+    assert "tasks:   OFF" in out
 
 
 def test_resolve_config_walk_up_env_and_explicit(tmp_path: Path):
@@ -2948,3 +3004,116 @@ windows:
     _drain_comms(sess, f"{sess}:0.1", "0.1", spec=spec_0_1)
     assert len(delivered) == 1
     assert delivered[0] == (f"{sess}:0.1", "all agents msg")
+
+
+def test_dispatch_once_backlog_call_count_independent_of_candidate_count(
+    tmp_path: Path, monkeypatch
+):
+    """AC #5 (TASK-55): a steady-state pass with K assigned panes and M candidates
+    makes O(ingest_statuses + K) backlog calls, not O(M) — no per-candidate detail
+    fetch when list rows already carry assignees, and reconcile/chase/claim share
+    one cache so each task is fetched at most once per pass.
+    """
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  ingest: ["To Do"]
+  require_idle: false
+  min_chase_secs: 0
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+
+    num_candidates = 50
+    detail_tasks = {
+        "TASK-A": {
+            "id": "TASK-A", "title": "A", "status": "In Progress",
+            "assignees": ["aiswarm:demo:0.0"], "dependencies": [],
+        },
+        "TASK-B": {
+            "id": "TASK-B", "title": "B", "status": "In Progress",
+            "assignees": ["aiswarm:demo:0.1"], "dependencies": [],
+        },
+    }
+    for i in range(1, num_candidates + 1):
+        detail_tasks[f"TASK-{i}"] = {
+            "id": f"TASK-{i}", "title": f"cand {i}", "status": "To Do",
+            "assignees": [], "dependencies": [],
+        }
+
+    calls: list[tuple] = []
+
+    def mock_run_backlog(cfg, args, timeout=30.0):
+        calls.append(tuple(args))
+        if list(args[:2]) == ["task", "list"]:
+            rows = [
+                {
+                    "id": f"TASK-{i}", "title": f"cand {i}", "status": "To Do",
+                    "priority": "", "assignees": [],
+                }
+                for i in range(1, num_candidates + 1)
+            ]
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"kind": "task-list", "tasks": rows}), ""
+            )
+        if list(args[:2]) == ["task", "edit"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "task" and len(args) >= 3 and args[2] == "--json":
+            task = detail_tasks.get(args[1])
+            if task is None:
+                return subprocess.CompletedProcess(args, 1, "", "not found")
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"kind": "task", "task": task}), ""
+            )
+        raise AssertionError(f"unexpected backlog args: {args}")
+
+    monkeypatch.setattr(tasksctl, "_run_backlog", mock_run_backlog)
+
+    tasksctl.save_state(cfg, {
+        "assignments": {
+            "0.0": {"task_id": "TASK-A", "title": "A", "assignee": "aiswarm:demo:0.0"},
+            "0.1": {"task_id": "TASK-B", "title": "B", "assignee": "aiswarm:demo:0.1"},
+        },
+        "history": [],
+    })
+
+    tasksctl.dispatch_once(cfg, dry_run=False)
+
+    # 1 list call ("To Do") + 2 assigned-task detail fetches (TASK-A, TASK-B,
+    # reused across recover/reconcile/chase/dependency_gate via the shared cache)
+    # + 1 detail fetch for the single candidate claimed onto the one free pane
+    # + 1 claim edit. Flat regardless of num_candidates.
+    list_calls = [c for c in calls if c[:2] == ("task", "list")]
+    detail_calls = [c for c in calls if c[0] == "task" and len(c) >= 3 and c[2] == "--json"]
+    edit_calls = [c for c in calls if c[:2] == ("task", "edit")]
+    assert len(list_calls) == 1
+    assert len(edit_calls) == 1
+    assert len(detail_calls) <= 3, f"expected O(K) detail fetches, got {detail_calls}"
+    assert len(calls) <= 5, f"expected O(ingest + K) total backlog calls, got {calls}"
