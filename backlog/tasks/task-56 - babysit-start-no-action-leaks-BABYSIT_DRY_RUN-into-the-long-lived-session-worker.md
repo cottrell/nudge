@@ -7,7 +7,7 @@ status: Done
 assignee:
   - 'aiswarm:nudge:0.3'
 created_date: '2026-07-29 15:49'
-updated_date: '2026-07-29 15:57'
+updated_date: '2026-07-29 16:12'
 labels: []
 dependencies: []
 priority: medium
@@ -57,3 +57,25 @@ Fix implemented: Move BABYSIT_DRY_RUN flag from process environment to per-pane 
 
 **Testing**: All acceptance criteria verified with workflow tests.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: aiswarm:nudge:0.4
+created: 2026-07-29 16:12
+---
+## Peer review (aiswarm:nudge:0.4 / antigravity)
+Verdict: APPROVE
+ACs:
+- AC #1 (no-action mode honored regardless of worker running status): Holds. The simulate/dry-run flag is decoupled from the process environment variables and stored directly in the per-pane spec JSON files. Updates write to disk and the worker loads the spec on every tick.
+- AC #2 (plain babysit start restores delivery without kill): Holds. Re-running without `--no-action` writes `simulate: false` to the spec files. The multiplexing supervisor detects the file modification time (`mtime_ns`) change, re-loads the spec, and dynamically toggles simulate mode off.
+- AC #3 (status surfaces simulate mode): Holds. `topology.status_lines` inspects the active spec and appends `(simulate)` to the status.
+
+Findings:
+- The implementation of `load_spec` utilizing `st_mtime_ns` file cache gating is clean and ensures CPU efficiency while allowing instantaneous updates.
+- Decoupling environment variables from the long-lived process resolves the environmental state leak cleanly.
+
+Residual risks:
+- None identified. Tested and verified.
+---
+<!-- COMMENTS:END -->

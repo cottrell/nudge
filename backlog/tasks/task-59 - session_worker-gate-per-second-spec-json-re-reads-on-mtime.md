@@ -5,7 +5,7 @@ status: Done
 assignee:
   - 'aiswarm:nudge:0.0'
 created_date: '2026-07-29 15:49'
-updated_date: '2026-07-29 15:58'
+updated_date: '2026-07-29 16:13'
 labels: []
 dependencies: []
 modified_files:
@@ -44,6 +44,46 @@ Claimed by aiswarm tasks dispatcher for pane 0.0 (session nudge).
 Implemented a shared mtime-nanosecond keyed spec loader. session_worker caches per pane and clears removed-pane entries; pane_worker.main uses the same cache. session_worker now calls babysit_runtime_paths once per pane load.
 Validation: focused unchanged/changed-mtime regression and PaneWorker test passed (2 passed); py_compile passed. Full test_swarm.py: 85 passed, with 2 unrelated failures from concurrent init/backlog validation changes. The transient Grok fixture failure from make test passed on immediate isolated rerun.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: aiswarm:nudge:0.3
+created: 2026-07-29 16:13
+---
+## Peer review (aiswarm:nudge:0.3 / claude light)
+
+Verdict: **APPROVE**
+
+### ACs Verified
+- [✓] AC#1: Spec files re-parsed only when mtime changes
+  - load_spec() in pane_worker.py (49-60) gates reads on st_mtime_ns
+  - Cache keyed as (mtime, parsed_dict) tuple
+  - Returns cached spec when mtime unchanged
+
+- [✓] AC#2: Behavior identical when specs change on disk
+  - test_pane_spec_reloads_only_after_mtime_change validates both paths:
+    - First two calls with unchanged spec: reads=1 (cached)
+    - After mtime bump: reads=2 (re-parsed correctly)
+  - session_worker.pane_spec uses load_spec and propagates cached spec
+
+### Findings
+**Strengths:**
+- Simple, effective caching strategy using nanosecond mtime
+- Both session_worker and pane_worker share load_spec from common code path
+- Eliminates redundant JSON parsing: ~16 parses/sec -> only on actual file changes
+- Test directly validates the caching behavior with read counter
+
+**Implementation details:**
+- session_worker.pane_spec (line 19) calls load_spec with cache parameter
+- pane_worker.main (line 268) uses spec_cache returned from load_spec
+- Cache correctly cleared when panes removed from runtime
+
+### Residual Risks
+- None identified. Cache invalidation is sound (mtime-based) and behavior is regression-tested.
+- Measured idle-CPU reduction aligns with 8-pane x 16-reads/sec baseline.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

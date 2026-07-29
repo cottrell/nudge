@@ -602,10 +602,11 @@ windows:
 
 
 def test_tasks_start_toggles_session_worker_group(monkeypatch, tmp_path: Path):
-    cfg = load_config(write_config(tmp_path, """
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
 session_name: demo
 tasks:
-  backlog_dir: "."
+  backlog_dir: "{bdir}"
 windows:
   - window_name: grid
     panes:
@@ -641,6 +642,32 @@ def test_pane_worker_ema_spec_controls_next_wait():
     slow = {**fast, "ema_min_wait": 100, "ema_max_wait": 500}
     assert worker._next_wait(fast, 1_000.0) == 10
     assert worker._next_wait(slow, 1_000.0) == 500
+
+
+def test_pane_worker_tick_preserves_underscore_session(monkeypatch):
+    """Regression: do not split session_name on '_' when querying the monitor."""
+    calls: list[tuple[str, str]] = []
+
+    def capture(session, pane, timeout=2.0):
+        calls.append((session, pane))
+        return {"state": "idle"}
+
+    monkeypatch.setattr(babysit_worker, "query_monitor_socket", capture)
+    monkeypatch.setattr(babysit_worker, "_drain_comms", lambda *a, **k: None)
+    monkeypatch.setattr(babysit_worker, "_ensure_quota_refresh", lambda *a, **k: None)
+    worker = babysit_worker.PaneWorker("my_session", "0.1")
+    worker.last_poll = 0.0
+    worker.initial_comms = False
+    worker.tick(
+        {
+            "interval_secs": 60,
+            "long_prompt": "",
+            "short_prompt": "",
+            "target": "my_session:0.1",
+        },
+        now_f=100.0,
+    )
+    assert calls == [("my_session", "0.1")]
 
 
 def test_pane_spec_reloads_only_after_mtime_change(tmp_path: Path, monkeypatch):

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@aiswarm:nudge:0.4'
 created_date: '2026-07-29 15:49'
-updated_date: '2026-07-29 15:57'
+updated_date: '2026-07-29 16:12'
 labels: []
 dependencies: []
 priority: medium
@@ -46,6 +46,16 @@ Claimed by aiswarm tasks dispatcher for pane 0.4 (session nudge).
 
 Validation passed: uv run pytest test_swarm.py -v passed all tests including the new test_broadcast_via_log_filtering_and_warning.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: aiswarm:nudge:0.1
+created: 2026-07-29 16:12
+---
+## Peer review (aiswarm:nudge:0.1 / codex light)\nVerdict: APPROVE\nACs: #1 holds, #2 holds, #3 holds. The CLI now computes the log-broadcast recipient set from the same pane filters it uses for direct broadcast, log_broadcast carries include_nonmonitored in event meta, _drain_comms honors monitor/include-nonmonitored when fanning out broadcasts, and cli send warns on config-missing recipients.\nFindings: None blocking. I spot-checked [swarm/topology.py](~/dev/nudge/swarm/topology.py), [swarm/common.py](~/dev/nudge/swarm/common.py), [swarm/cli.py](~/dev/nudge/swarm/cli.py), and [test_swarm.py](~/dev/nudge/test_swarm.py::test_broadcast_via_log_filtering_and_warning); the test exercises both monitored-only and include-nonmonitored log delivery plus the send warning.\nResidual risks: Delivery still depends on the per-pane spec JSON being present and current in /tmp/nudge-swarm/<session>/babysit-*.json; if a stale spec were left behind, broadcast fan-out could lag the live config until the worker refreshes it. I did not find evidence that this breaks the ACs or the existing test path.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

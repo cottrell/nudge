@@ -220,11 +220,19 @@ static void ingest(const char *line) {
     pthread_mutex_unlock(&lock);
 }
 
-/* Write a JSON-escaped string into buf, return bytes written */
+/* Write a JSON-escaped string into buf, return bytes written.
+ * Reserve 2 bytes for closing quote + NUL. Max escape is 6 (\u00XX), so
+ * loop while n + 6 <= cap - 2  (equiv. n < cap - 7). Previous n < cap - 6
+ * allowed n to reach cap after the closing quote and write NUL one past end.
+ */
 static int json_str(char *buf, int cap, const char *s) {
+    if (cap < 3) {
+        if (cap > 0) buf[0] = '\0';
+        return 0;
+    }
     int n = 0;
     buf[n++] = '"';
-    for (int i = 0; s[i] && n < cap - 6; i++) {
+    for (int i = 0; s[i] && n < cap - 7; i++) {
         unsigned char c = s[i];
         if (c == '"')       { buf[n++] = '\\'; buf[n++] = '"'; }
         else if (c == '\\') { buf[n++] = '\\'; buf[n++] = '\\'; }

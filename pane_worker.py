@@ -60,14 +60,6 @@ def load_spec(path: Path, cached: tuple[int, dict | None] | None) -> tuple[dict 
     return spec, (mtime, spec)
 
 
-def _query_socket(path: str) -> dict:
-    try:
-        session, pane = path.removeprefix("/tmp/").removesuffix(".sock").split("_", 1)
-    except ValueError:
-        return {}
-    return query_monitor_socket(session, pane)
-
-
 def _send_message(target: str, msg: str, simulate: bool = False) -> None:
     if simulate: return
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
@@ -201,7 +193,8 @@ class PaneWorker:
         if self.initial_comms:
             _drain_comms(self.session, target, self.pane, simulate=simulate, spec=spec)
             self.initial_comms = False
-        state = _query_socket(f"/tmp/{self.session}_{self.pane}.sock").get("state", "")
+        # Pass session/pane directly — do not re-parse path (breaks names with '_').
+        state = query_monitor_socket(self.session, self.pane).get("state", "")
         long_prompt = str(spec.get("long_prompt") or ""); short_prompt = str(spec.get("short_prompt") or long_prompt)
         if state in ("idle", ""): self.nonidle_since = 0
         elif not self.nonidle_since: self.nonidle_since = now

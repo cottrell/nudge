@@ -202,6 +202,29 @@ def test_query_log_bounds_long_escaped_lines(tmp_path):
         _stop(proc)
 
 
+def test_query_tail_max_control_char_line_stays_alive(tmp_path):
+    r"""json_str must reserve room for closing quote+NUL (cap-7, not cap-6).
+
+    A control-char line that fills esc[MAX_LINE*2] with \u00XX escapes used to
+    write one byte past the stack buffer after the closing quote. Keep under
+    fgets's MAX_LINE-1 payload so the line is stored whole (incl. newline).
+    """
+    proc, sock_path = _start_monitor(tmp_path)
+    try:
+        # 340 * 6-byte escapes + quotes saturates esc[2048] at the old bound.
+        _write(proc, '\x01' * 340)
+        _wait_for_state(sock_path, 'working')
+        tail = _sock_query(sock_path, 'tail')
+        assert isinstance(tail.get('line'), str)
+        assert len(tail['line']) == 340
+        log = _sock_query(sock_path, 'log')
+        assert log.get('log') == [tail['line']]
+        assert _sock_query(sock_path) == {'state': 'working'}
+        assert proc.poll() is None
+    finally:
+        _stop(proc)
+
+
 def test_cli_rejects_unknown_agent(tmp_path):
     proc = subprocess.run(
         ['./monitor-bin', '--agent', 'mistral', '--socket', str(tmp_path / 'bad.sock')],
