@@ -58,11 +58,15 @@ def main() -> int:
                 print(f"pane {pane} error: {exc}", flush=True)
         if tasks_enabled(cfg) and now >= next_tasks:
             try:
-                from tasksctl import dispatch_once
+                from tasksctl import dispatch_once, save_worker_state
                 dispatch_once(cfg)
             except Exception as exc:
                 print(f"tasks dispatch error: {exc}", flush=True)
             next_tasks = now + cfg.tasks.poll_secs
+            try:
+                save_worker_state(cfg, next_tasks)
+            except Exception as exc:
+                print(f"tasks heartbeat error: {exc}", flush=True)
         time.sleep(1)
 
 

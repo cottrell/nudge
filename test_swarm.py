@@ -710,6 +710,99 @@ windows:
     assert "off" in matching_1[0]
 
 
+def test_swarm_status_reports_tasks_state_and_heartbeat(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo_tasks_status
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+      - shell_command: codex
+        nudge:
+          agent: codex
+          monitor: true
+          tasks:
+            enabled: false
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    cfg.runtime_dir.mkdir(parents=True)
+    (cfg.runtime_dir / "session_worker.pid").write_text("123\n")
+    (cfg.runtime_dir / "tasks").mkdir()
+    (cfg.runtime_dir / "tasks" / "enabled.json").write_text('{"enabled": true}\n')
+    tasksctl.save_worker_state(cfg, 1060)
+
+    def fake_run(*args, **kwargs):
+        stdout = "%0\n%1\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid\n"
+        return type("Proc", (), {"returncode": 0, "stdout": stdout})()
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "idle"})
+    monkeypatch.setattr(swarm_apply, "babysit_process_running", lambda pid: True)
+    monkeypatch.setattr(swarm_apply.time, "time", lambda: 1000)
+
+    lines = swarm_start.status_lines(cfg)
+    assert "Tasks" in lines[2]
+    assert "Tasks HB" in lines[2]
+    enabled = next(line for line in lines if "demo_tasks_status:0.0" in line)
+    disabled = next(line for line in lines if "demo_tasks_status:0.1" in line)
+    assert enabled.split()[-2:] == ["on", "60s"]
+    assert disabled.split()[-2:] == ["off", "-"]
+    assert any("Nudge HB = countdown" in line for line in lines)
+    assert any("Tasks HB = countdown" in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("pid_text", "running", "expected"),
+    [(None, False, "stopped"), ("123", False, "stale")],
+)
+def test_swarm_status_reports_inactive_tasks_worker(
+    monkeypatch, tmp_path: Path, pid_text: str | None, running: bool, expected: str
+):
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo_tasks_{expected}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    (cfg.runtime_dir / "tasks").mkdir(parents=True)
+    (cfg.runtime_dir / "tasks" / "enabled.json").write_text('{"enabled": true}\n')
+    if pid_text is not None:
+        (cfg.runtime_dir / "session_worker.pid").write_text(pid_text)
+    monkeypatch.setattr(
+        swarm_apply,
+        "run",
+        lambda *args, **kwargs: type(
+            "Proc", (), {
+                "returncode": 0,
+                "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid\n",
+            },
+        )(),
+    )
+    monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "idle"})
+    monkeypatch.setattr(swarm_apply, "babysit_process_running", lambda pid: running)
+    row = next(
+        line for line in swarm_start.status_lines(cfg)
+        if f"demo_tasks_{expected}:0.0" in line
+    )
+    assert row.split()[-2:] == [expected, "-"]
+
+
 def test_status_lines_handles_missing_window(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo

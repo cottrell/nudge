@@ -28,7 +28,9 @@ try:
         state_path as babysit_state_path,
         process_running as babysit_process_running,
         desired_spec as babysit_desired_spec,
+        supervisor_pid_path,
     )
+    from .tasksctl import enabled_path as tasks_enabled_path, worker_state_path
 except ImportError:
     # direct script fallback
     from common import (
@@ -48,7 +50,9 @@ except ImportError:
         state_path as babysit_state_path,
         process_running as babysit_process_running,
         desired_spec as babysit_desired_spec,
+        supervisor_pid_path,
     )
+    from tasksctl import enabled_path as tasks_enabled_path, worker_state_path
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -360,8 +364,29 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         headers = ["Target", "Title", "Agent", "Worker"]
         rows = []
     else:
-        headers = ["Target", "Title", "Command", "Agent", "PID", "Comms HB", "Babysit", "Nudge HB", "Clear HB"]
+        headers = [
+            "Target", "Title", "Command", "Agent", "PID", "Comms HB",
+            "Babysit", "Nudge HB", "Clear HB", "Tasks", "Tasks HB",
+        ]
         rows = []
+
+    tasks_enabled = tasks_enabled_path(cfg).exists()
+    tasks_pid_file = supervisor_pid_path(cfg)
+    tasks_worker = "stopped"
+    if tasks_pid_file.exists():
+        try:
+            tasks_pid = int(tasks_pid_file.read_text().strip())
+            tasks_worker = "on" if babysit_process_running(tasks_pid) else "stale"
+        except (OSError, ValueError):
+            tasks_worker = "stale"
+    tasks_hb = "?"
+    if tasks_enabled and tasks_worker == "on":
+        try:
+            data = json.loads(worker_state_path(cfg).read_text())
+            delta = max(0, int(data.get("next_poll_at") or 0) - int(time.time()))
+            tasks_hb = "≤1s" if delta <= 0 else f"{delta}s"
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            tasks_hb = "?"
 
     for pane in cfg.panes:
         target = f"{cfg.session_name}:{pane.pane}"
@@ -370,7 +395,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             if brief:
                 rows.append((target, pane.title, "missing", "off"))
             else:
-                rows.append((target, pane.title, "-", "missing", "-", "-", "off", "-", "-"))
+                rows.append(
+                    (target, pane.title, "-", "missing", "-", "-", "off", "-", "-",
+                     "off", "-")
+                )
             continue
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
@@ -384,6 +412,11 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         nudge_hb = "-"
         clear_hb = "-"
         brief_val = "off"
+        tasks_val = "off"
+        pane_tasks_hb = "-"
+        if pane.tasks_enabled and tasks_enabled:
+            tasks_val = tasks_worker
+            pane_tasks_hb = tasks_hb if tasks_worker == "on" else "-"
 
         if pane.babysit.enabled or pane.comms:
             # 1. Determine active mode from running spec (fallback to configured mode)
@@ -530,7 +563,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             # not the live process name from tmux (which for node-based tools
             # like codex shows "node").
             command = pane.command or pane_current_command(cfg, pane.pane) or "-"
-            rows.append((target, pane.title, command or "-", monitor, pid_val, comms_hb, babysit_val, nudge_hb, clear_hb))
+            rows.append(
+                (target, pane.title, command or "-", monitor, pid_val, comms_hb,
+                 babysit_val, nudge_hb, clear_hb, tasks_val, pane_tasks_hb)
+            )
 
     if rows:
         all_rows = [headers] + rows
@@ -548,6 +584,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("  Babysit  = babysit prompt group status (on, off/not-started, drifted, stopped, stale)")
             lines.append("  Nudge HB = countdown to the next idle nudge check (babysit group only)")
             lines.append("  Clear HB = remaining nudges until next context clear (/clear)")
+            lines.append("  Tasks    = task-dispatch group state for this pane")
+            lines.append("  Tasks HB = countdown to the next claim/chase dispatcher pass")
             lines.append("             Run `babysit start` / `babysit stop` to toggle the babysit prompt group.")
 
     return lines

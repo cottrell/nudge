@@ -101,6 +101,10 @@ def state_path(cfg: SwarmConfig) -> Path:
     return tasks_runtime_dir(cfg) / "state.json"
 
 
+def worker_state_path(cfg: SwarmConfig) -> Path:
+    return tasks_runtime_dir(cfg) / "worker_state.json"
+
+
 def spec_path(cfg: SwarmConfig) -> Path:
     return tasks_runtime_dir(cfg) / "spec.json"
 
@@ -136,6 +140,14 @@ def save_state(cfg: SwarmConfig, state: dict) -> None:
     path = state_path(cfg)
     tmp = path.with_suffix(f".json.tmp.{os.getpid()}")
     tmp.write_text(json.dumps(state, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def save_worker_state(cfg: SwarmConfig, next_poll_at: float) -> None:
+    tasks_runtime_dir(cfg).mkdir(parents=True, exist_ok=True)
+    path = worker_state_path(cfg)
+    tmp = path.with_suffix(f".json.tmp.{os.getpid()}")
+    tmp.write_text(json.dumps({"next_poll_at": next_poll_at}) + "\n")
     os.replace(tmp, path)
 
 
