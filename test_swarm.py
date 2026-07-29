@@ -1888,7 +1888,10 @@ windows:
         "runtime_dir",
         property(lambda self: tmp_path / "rt" / self.session_name),
     )
-    monkeypatch.setattr(tasksctl, "recover_assignments_from_backlog", lambda c, state: state)
+    monkeypatch.setattr(
+        tasksctl, "recover_assignments_from_backlog",
+        lambda c, state, **kwargs: state,
+    )
     monkeypatch.setattr(tasksctl, "reconcile_assignments", lambda c, state: state)
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     tasks = {
@@ -1896,7 +1899,7 @@ windows:
         "TASK-2": {"id": "TASK-2", "title": "Blocker", "status": "In Progress", "dependencies": []},
         "TASK-3": {"id": "TASK-3", "title": "Ready", "status": "To Do", "dependencies": []},
     }
-    monkeypatch.setattr(tasksctl, "list_candidate_tasks", lambda c: [
+    monkeypatch.setattr(tasksctl, "list_candidate_tasks", lambda c, **kwargs: [
         tasksctl.BacklogTask(id="TASK-1", title="Blocked", status="To Do", priority="HIGH"),
         tasksctl.BacklogTask(id="TASK-3", title="Ready", status="To Do", priority="LOW"),
     ])
@@ -1999,12 +2002,19 @@ windows:
         "runtime_dir",
         property(lambda self: tmp_path / "rt" / self.session_name),
     )
-    monkeypatch.setattr(tasksctl, "recover_assignments_from_backlog", lambda c, state: state)
+    monkeypatch.setattr(
+        tasksctl, "recover_assignments_from_backlog",
+        lambda c, state, **kwargs: state,
+    )
     monkeypatch.setattr(tasksctl, "reconcile_assignments", lambda c, state: state)
     monkeypatch.setattr(
         tasksctl,
         "list_candidate_tasks",
-        lambda c: [tasksctl.BacklogTask(id="TASK-42", title="Example", status="To Do", priority="HIGH")],
+        lambda c, **kwargs: [
+            tasksctl.BacklogTask(
+                id="TASK-42", title="Example", status="To Do", priority="HIGH"
+            )
+        ],
     )
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
@@ -2242,7 +2252,11 @@ windows:
     monkeypatch.setattr(
         tasksctl,
         "list_candidate_tasks",
-        lambda c: [tasksctl.BacklogTask(id="TASK-404", title="Missing", status="To Do", priority="HIGH")],
+        lambda c, **kwargs: [
+            tasksctl.BacklogTask(
+                id="TASK-404", title="Missing", status="To Do", priority="HIGH"
+            )
+        ],
     )
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
@@ -2359,7 +2373,11 @@ windows:
     monkeypatch.setattr(
         tasksctl,
         "list_candidate_tasks",
-        lambda c: [tasksctl.BacklogTask(id="TASK-7", title="Example", status="To Do", priority="HIGH")],
+        lambda c, **kwargs: [
+            tasksctl.BacklogTask(
+                id="TASK-7", title="Example", status="To Do", priority="HIGH"
+            )
+        ],
     )
     monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
     actions = tasksctl.dispatch_once(cfg, dry_run=True)
@@ -2503,7 +2521,11 @@ windows:
     )
 
     # Mock backlog CLI: task list returns a task assigned to our pane
+    list_calls = []
+    detail_calls = []
+
     def mock_run_backlog(cfg, args, timeout=30.0):
+        list_calls.append(tuple(args))
         result = subprocess.CompletedProcess(args, returncode=0, stdout="", stderr="")
         if "task" in args and "list" in args:
             result.stdout = """{
@@ -2520,6 +2542,7 @@ windows:
         return result
 
     def mock_view_task_json(cfg, task_id):
+        detail_calls.append(task_id)
         if task_id == "TASK-99":
             return {
                 "id": "TASK-99",
@@ -2545,6 +2568,51 @@ windows:
     assert state["assignments"]["0.0"]["task_id"] == "TASK-99"
     assert state["assignments"]["0.0"]["assignee"] == "aiswarm:demo:0.0"
     assert "recovered_at" in state["assignments"]["0.0"]
+    assert len(list_calls) == len(cfg.tasks.ingest)
+    assert detail_calls == ["TASK-99"]
+
+
+def test_recover_assignments_dry_run_does_not_save(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(
+        tasksctl,
+        "_run_backlog",
+        lambda cfg, args, timeout=30.0: subprocess.CompletedProcess(
+            args,
+            returncode=0,
+            stdout='{"kind":"task-list","tasks":[{"id":"TASK-99","title":"Recovered","status":"In Progress"}]}',
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        tasksctl,
+        "view_task_json",
+        lambda cfg, task_id: {
+            "id": task_id,
+            "assignees": ["aiswarm:demo:0.0"],
+        },
+    )
+    monkeypatch.setattr(
+        tasksctl,
+        "save_state",
+        lambda *args, **kwargs: pytest.fail("dry-run recovery wrote state"),
+    )
+    state = tasksctl.recover_assignments_from_backlog(
+        cfg, {"assignments": {}, "history": []}, dry_run=True
+    )
+    assert state["assignments"]["0.0"]["task_id"] == "TASK-99"
 
 
 def test_recover_assignments_does_not_override_existing_local_assignments(tmp_path: Path, monkeypatch):

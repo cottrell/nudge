@@ -231,13 +231,16 @@ def parse_task_list_json(data: dict) -> list[BacklogTask]:
     return out
 
 
-def list_candidate_tasks(cfg: SwarmConfig) -> list[BacklogTask]:
+def list_candidate_tasks(
+    cfg: SwarmConfig, *, unassigned_only: bool | None = None
+) -> list[BacklogTask]:
     tasks = cfg.tasks
+    unassigned_only = tasks.unassigned_only if unassigned_only is None else unassigned_only
     found: list[BacklogTask] = []
     seen: set[str] = set()
     for status in tasks.ingest:
         args = ["task", "list", "-s", status, "--json", "--limit", "200"]
-        if tasks.unassigned_only:
+        if unassigned_only:
             args.append("--unassigned")
         if tasks.require_label:
             args.extend(["-l", tasks.require_label])
@@ -1061,7 +1064,14 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
     return actions
 
 
-def recover_assignments_from_backlog(cfg: SwarmConfig, state: dict) -> dict:
+def recover_assignments_from_backlog(
+    cfg: SwarmConfig,
+    state: dict,
+    *,
+    dry_run: bool = False,
+    tasks: list[BacklogTask] | None = None,
+    cache: dict[str, dict | None] | None = None,
+) -> dict:
     """Rebuild local state from backlog for pane assignments matching this session/pane.
 
     Risk: local state.json is sole memory of pane↔task. If dispatcher restarts with
@@ -1073,49 +1083,38 @@ def recover_assignments_from_backlog(cfg: SwarmConfig, state: dict) -> dict:
     """
     assignments = dict(state.get("assignments") or {})
     changed = False
+    wanted = {
+        claim_assignee(cfg, pane_spec.pane): pane_spec.pane
+        for pane_spec in cfg.task_panes
+        if pane_spec.pane not in assignments
+    }
+    if not wanted:
+        return state
+    tasks = tasks if tasks is not None else list_candidate_tasks(
+        cfg, unassigned_only=False
+    )
+    cache = cache if cache is not None else {}
+    found: dict[str, BacklogTask] = {}
+    for task in tasks:
+        try:
+            full = _task_or_none(cfg, task.id, cache)
+        except Exception:
+            continue
+        for assignee in _task_assignees(full or {}):
+            pane = wanted.get(assignee)
+            if pane is not None and pane not in found:
+                found[pane] = task
 
-    # For each pane, search backlog for tasks assigned to this pane via claim_assignee prefix
     for pane_spec in cfg.task_panes:
         pane = pane_spec.pane
         if pane in assignments:
-            continue  # Local assignment exists; do not override
-
-        want_assignee = claim_assignee(cfg, pane)
-
-        # Search all ingest statuses for tasks with matching assignee
-        found_task: BacklogTask | None = None
-        for status in cfg.tasks.ingest:
-            args = ["task", "list", "-s", status, "--json", "--limit", "200"]
-            if cfg.tasks.require_label:
-                args.extend(["-l", cfg.tasks.require_label])
-            try:
-                proc = _run_backlog(cfg, args)
-                data = _json_or_raise(proc, f"backlog recovery task list status={status!r}")
-                tasks = parse_task_list_json(data)
-
-                # Find first task assigned to this pane
-                for task in tasks:
-                    try:
-                        full_task = view_task_json(cfg, task.id)
-                        assignees = full_task.get("assignees") or []
-                        if isinstance(assignees, str):
-                            assignees = [assignees]
-                        if want_assignee in assignees:
-                            found_task = task
-                            break
-                    except Exception:
-                        continue
-
-                if found_task:
-                    break
-            except Exception:
-                continue
-
+            continue
+        found_task = found.get(pane)
         if found_task:
             assignments[pane] = {
                 "task_id": found_task.id,
                 "title": found_task.title,
-                "assignee": want_assignee,
+                "assignee": claim_assignee(cfg, pane),
                 "recovered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "event_id": None,
             }
@@ -1123,20 +1122,26 @@ def recover_assignments_from_backlog(cfg: SwarmConfig, state: dict) -> dict:
 
     if changed:
         state["assignments"] = assignments
-        save_state(cfg, state)
+        if not dry_run:
+            save_state(cfg, state)
 
     return state
 
 
 def _claim_new_onto_free(
-    cfg: SwarmConfig, state: dict, dry_run: bool
+    cfg: SwarmConfig,
+    state: dict,
+    dry_run: bool,
+    *,
+    candidates: list[BacklogTask] | None = None,
+    cache: dict[str, dict | None] | None = None,
 ) -> list[dict]:
     """Pair free panes with unassigned candidates (one each)."""
     actions: list[dict] = []
     free = free_task_panes(cfg, state)
     if not free:
         return actions
-    candidates = list_candidate_tasks(cfg)
+    candidates = list(candidates) if candidates is not None else list_candidate_tasks(cfg)
     assigned_ids = {
         (info or {}).get("task_id")
         for info in (state.get("assignments") or {}).values()
@@ -1144,7 +1149,7 @@ def _claim_new_onto_free(
     candidates = [t for t in candidates if t.id not in assigned_ids]
     max_n = cfg.tasks.max_inflight
     inflight = len(state.get("assignments") or {})
-    cache: dict[str, dict | None] = {}
+    cache = cache if cache is not None else {}
     for pane in free:
         if max_n and inflight >= max_n:
             break
@@ -1257,11 +1262,29 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
     assert cfg.tasks is not None
     if dry_run:
         print_effective_tasks(cfg)
-    state = recover_assignments_from_backlog(cfg, load_state(cfg))
+    tasks = list_candidate_tasks(cfg, unassigned_only=False)
+    cache: dict[str, dict | None] = {}
+    state = recover_assignments_from_backlog(
+        cfg, load_state(cfg), dry_run=dry_run, tasks=tasks, cache=cache
+    )
     state = reconcile_assignments(cfg, state)
     actions = chase_assigned(cfg, state, dry_run=dry_run)
-    state = load_state(cfg)
-    actions.extend(_claim_new_onto_free(cfg, state, dry_run))
+    if not dry_run:
+        state = load_state(cfg)
+    candidates = []
+    for task in tasks:
+        full = _task_or_none(cfg, task.id, cache)
+        if full is None:
+            candidates.append(task)
+            continue
+        if cfg.tasks.unassigned_only and _task_assignees(full):
+            continue
+        candidates.append(task)
+    actions.extend(
+        _claim_new_onto_free(
+            cfg, state, dry_run, candidates=candidates, cache=cache
+        )
+    )
     return actions
 
 
