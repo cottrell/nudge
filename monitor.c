@@ -264,19 +264,26 @@ static int handle_query(const char *cmd, char *out, int cap) {
     } else if (!strncmp(cmd, "log", 3)) {
         int tail  = g_count < 50 ? g_count : 50;
         int start = (g_head - tail + MAX_LOG) % MAX_LOG;
-        n += snprintf(out + n, cap - n, "{\"log\":[");
+        n = snprintf(out, cap, "{\"log\":[");
         for (int i = 0; i < tail; i++) {
             char esc[MAX_LINE * 2];
-            json_str(esc, sizeof(esc), g_log[(start + i) % MAX_LOG]);
-            n += snprintf(out + n, cap - n, "%s%s", esc, i < tail - 1 ? "," : "");
+            int elen = json_str(esc, sizeof(esc), g_log[(start + i) % MAX_LOG]);
+            int separator = i > 0;
+            if (n + separator + elen + 2 >= cap) break;
+            if (separator) out[n++] = ',';
+            memcpy(out + n, esc, elen);
+            n += elen;
         }
-        n += snprintf(out + n, cap - n, "]}");
+        out[n++] = ']';
+        out[n++] = '}';
+        out[n] = '\0';
 
     } else {
         n = snprintf(out, cap, "{\"error\":\"unknown command\"}");
     }
 
     pthread_mutex_unlock(&lock);
+    if (n >= cap) n = cap - 1;
     return n;
 }
 

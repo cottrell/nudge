@@ -1,11 +1,16 @@
 ---
 id: TASK-53
 title: 'monitor.c: log query overflows RESP_MAX response buffer (verified OOB write)'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - 'aiswarm:nudge:0.0'
 created_date: '2026-07-29 15:48'
+updated_date: '2026-07-29 15:54'
 labels: []
 dependencies: []
+modified_files:
+  - monitor.c
+  - test_monitor.py
 priority: high
 type: bug
 ---
@@ -18,7 +23,30 @@ In handle_query the "log" branch accumulates n += snprintf(...) over up to 50 es
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 log query on a pane whose 50 buffered lines are each ~1000 control chars returns a response no larger than the buffer and valid JSON (possibly fewer lines)
-- [ ] #2 test_monitor.py regression test feeds long control-char lines and asserts response size bound and monitor stays alive
-- [ ] #3 status and tail branches audited for the same snprintf-return accumulation pattern
+- [x] #1 log query on a pane whose 50 buffered lines are each ~1000 control chars returns a response no larger than the buffer and valid JSON (possibly fewer lines)
+- [x] #2 test_monitor.py regression test feeds long control-char lines and asserts response size bound and monitor stays alive
+- [x] #3 status and tail branches audited for the same snprintf-return accumulation pattern
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Make handle_query track actual bytes and reserve space for valid JSON closure, with a final length clamp for all branches.
+2. Add a Unix-socket regression using 50 long control-character lines, checking bounded valid JSON and liveness.
+3. Run focused and full monitor tests, audit status/tail bounds, then record AC evidence and finalize.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by aiswarm tasks dispatcher for pane 0.0 (session nudge).
+
+Implemented complete-entry admission for log JSON: each escaped line is copied only if the separator, entry, closing ]}, and NUL fit. handle_query now clamps all branch return lengths to RESP_MAX-1, so the Unix socket newline remains in bounds. Audited status and tail: both perform a single snprintf; status is fixed-size, while tail uses a bounded 2048-byte escaped buffer against the 56320-byte response buffer, and the common return clamp protects their reported lengths.
+Validation: uv run pytest test_monitor.py -q -> 29 passed. Warning-enabled compilation succeeded (pre-existing ignored-I/O and strncpy warnings only). Full make test passed test_c.sh and all 29 monitor tests; its unrelated test_swarm.py phase had 80 pass / 1 fail because concurrent swarm code no longer exports tasksctl.monitor_socket_path.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bounded log response construction to complete JSON entries with reserved closure space and clamped every handle_query result before socket newline append. Added a 50x1000-control-character regression that verifies the response stays within RESP_MAX, parses as JSON, and the monitor remains alive. All 29 monitor tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

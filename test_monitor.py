@@ -182,6 +182,26 @@ def test_query_log_tail_and_unknown_command(tmp_path):
         _stop(proc)
 
 
+def test_query_log_bounds_long_escaped_lines(tmp_path):
+    proc, sock_path = _start_monitor(tmp_path)
+    try:
+        _write(proc, *['\x01' * 1000] * 50)
+        _wait_for_state(sock_path, 'working')
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(sock_path)
+            client.sendall(b'log')
+            response = bytearray()
+            while chunk := client.recv(65536):
+                response.extend(chunk)
+        payload = json.loads(response)
+        assert len(response) <= 1024 * 55
+        assert 0 < len(payload['log']) < 50
+        assert _sock_query(sock_path) == {'state': 'working'}
+        assert proc.poll() is None
+    finally:
+        _stop(proc)
+
+
 def test_cli_rejects_unknown_agent(tmp_path):
     proc = subprocess.run(
         ['./monitor-bin', '--agent', 'mistral', '--socket', str(tmp_path / 'bad.sock')],
