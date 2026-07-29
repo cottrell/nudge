@@ -20,6 +20,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 try:
     from .common import (
         ROOT_DIR,
@@ -250,6 +252,24 @@ def view_task_json(cfg: SwarmConfig, task_id: str) -> dict:
     return task
 
 
+def view_completed_task(cfg: SwarmConfig, task_id: str) -> dict | None:
+    """Read a task moved out of Backlog's editable JSON view by task complete."""
+    completed = ensure_backlog_dir(cfg) / "completed"
+    if not completed.is_dir():
+        return None
+    for path in completed.glob("*.md"):
+        text = path.read_text()
+        if not text.startswith("---\n"):
+            continue
+        end = text.find("\n---", 4)
+        if end < 0:
+            continue
+        data = yaml.safe_load(text[4:end]) or {}
+        if isinstance(data, dict) and str(data.get("id") or "").strip() == task_id:
+            return data
+    return None
+
+
 def _complete_statuses(cfg: SwarmConfig) -> set[str]:
     raw = getattr(cfg.tasks, "complete_statuses", None)
     if not raw:
@@ -348,8 +368,9 @@ def _task_or_none(cfg: SwarmConfig, task_id: str, cache: dict[str, dict | None])
         task = view_task_json(cfg, task_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
-            cache[task_id] = None
-            return None
+            task = view_completed_task(cfg, task_id)
+            cache[task_id] = task
+            return task
         raise
     cache[task_id] = task
     return task
@@ -1323,10 +1344,15 @@ def status(cfg: SwarmConfig) -> None:
     if t and panes:
         try:
             cands = list_candidate_tasks(cfg)
-            print(f"candidates ({len(cands)}):")
+            cache: dict[str, dict | None] = {}
+            gates = {c.id: dependency_gate(cfg, c.id, cache=cache) for c in cands}
+            ready = sum(gate.ready for gate in gates.values())
+            print(f"candidates ({len(cands)}; ready {ready}, blocked {len(cands) - ready}):")
             for c in cands[:15]:  # display cap only
                 pri = f"[{c.priority}] " if c.priority else ""
-                print(f"  {pri}{c.id} - {c.title} ({c.status})")
+                gate = gates[c.id]
+                suffix = "ready" if gate.ready else f"blocked: {_blocked_prompt(gate)}"
+                print(f"  {pri}{c.id} - {c.title} ({c.status}; {suffix})")
             if len(cands) > 15:
                 print(f"  ... +{len(cands) - 15} more")
         except Exception as e:

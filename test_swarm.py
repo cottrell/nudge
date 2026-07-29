@@ -1635,6 +1635,116 @@ windows:
     assert gate2.blocked is False
 
 
+def test_dependency_gate_finds_task_moved_to_completed(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    completed = bdir / "completed"
+    completed.mkdir()
+    (completed / "task-2.md").write_text(
+        "---\nid: TASK-2\ntitle: Blocker\nstatus: Done\ndependencies: []\n---\n"
+    )
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    parent = {
+        "id": "TASK-1",
+        "status": "To Do",
+        "dependencies": ["TASK-2"],
+    }
+
+    def view(_cfg, task_id):
+        if task_id == "TASK-1":
+            return parent
+        raise RuntimeError(f"backlog task {task_id}: Task {task_id} not found.")
+
+    monkeypatch.setattr(tasksctl, "view_task_json", view)
+    gate = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate.ready is True
+    assert gate.blocked is False
+
+
+def test_dependency_gate_reports_genuinely_missing_task(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    parent = {
+        "id": "TASK-1",
+        "status": "To Do",
+        "dependencies": ["TASK-MISSING"],
+    }
+
+    def view(_cfg, task_id):
+        if task_id == "TASK-1":
+            return parent
+        raise RuntimeError(f"backlog task {task_id}: Task {task_id} not found.")
+
+    monkeypatch.setattr(tasksctl, "view_task_json", view)
+    gate = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate.blocked is True
+    assert gate.reason == "missing"
+    assert gate.missing == ["TASK-MISSING"]
+
+
+def test_tasks_status_labels_blocked_candidates(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    monkeypatch.setattr(tasksctl, "free_task_panes", lambda c, state: ["0.0"])
+    monkeypatch.setattr(tasksctl, "list_candidate_tasks", lambda c: [
+        tasksctl.BacklogTask(id="TASK-1", title="Ready", status="To Do"),
+        tasksctl.BacklogTask(id="TASK-2", title="Blocked", status="To Do"),
+    ])
+    monkeypatch.setattr(
+        tasksctl,
+        "dependency_gate",
+        lambda c, tid, cache=None: (
+            tasksctl.DependencyGate(True, False)
+            if tid == "TASK-1"
+            else tasksctl.DependencyGate(
+                False, True, reason="missing", missing=["TASK-MISSING"]
+            )
+        ),
+    )
+    tasksctl.status(cfg)
+    out = capsys.readouterr().out
+    assert "candidates (2; ready 1, blocked 1)" in out
+    assert "TASK-1 - Ready (To Do; ready)" in out
+    assert "TASK-2 - Blocked (To Do; blocked: missing dependency ids: TASK-MISSING)" in out
+
+
 def test_task_skipped_for_claim_skip_assignees(tmp_path: Path):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
