@@ -31,9 +31,10 @@ try:
         get_pending_events,
         get_events,
         log_send,
-        monitor_socket_path,
         resolve_backlog_dir,
+        query_monitor_state as shared_query_monitor_state,
         write_runtime_map,
+        monitor_socket_path,
     )
 except ImportError:
     from common import (
@@ -44,9 +45,10 @@ except ImportError:
         get_pending_events,
         get_events,
         log_send,
-        monitor_socket_path,
         resolve_backlog_dir,
+        query_monitor_state as shared_query_monitor_state,
         write_runtime_map,
+        monitor_socket_path,
     )
 
 # Priority order for dispatch (matches backlog high/medium/low).
@@ -65,6 +67,11 @@ class BacklogTask:
     title: str
     status: str
     priority: str = ""
+    assignees: list[str] = None
+
+    def __post_init__(self) -> None:
+        if self.assignees is None:
+            self.assignees = []
 
 
 @dataclass
@@ -118,8 +125,17 @@ def process_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        return True
     except (OSError, ProcessLookupError):
         return False
+
+
+def _read_pid(path: Path) -> int:
+    try:
+        return int(path.read_text().strip() or "0")
+    except (OSError, ValueError):
+        return 0
     except Exception:
         return Path(f"/proc/{pid}").exists()
 
@@ -225,6 +241,7 @@ def parse_task_list_json(data: dict) -> list[BacklogTask]:
                 title=str(row.get("title") or "").strip(),
                 status=str(row.get("status") or "").strip(),
                 priority=pri,
+                assignees=_task_assignees(row),
             )
         )
     out.sort(key=lambda t: (PRI_RANK.get(t.priority, 3), t.id))
@@ -286,20 +303,25 @@ def view_completed_task(cfg: SwarmConfig, task_id: str) -> dict | None:
 
 
 def _complete_statuses(cfg: SwarmConfig) -> set[str]:
-    raw = getattr(cfg.tasks, "complete_statuses", None)
-    if not raw:
-        return {"done"}
-    if isinstance(raw, str):
-        raw = [raw]
+    """Lowercased complete statuses from TasksSpec (always filled by load_config)."""
     return {
         str(status).strip().lower()
-        for status in raw
+        for status in (cfg.tasks.complete_statuses or [])
         if str(status).strip()
     } or {"done"}
 
 
 def _task_status(task: dict) -> str:
     return str(task.get("status") or "").strip().lower()
+
+
+def task_is_complete(cfg: SwarmConfig, task: dict) -> bool:
+    """True when task status is in tasks.complete_statuses (case-insensitive).
+
+    Shared by dependency_gate and view_assignment so both use one predicate.
+    Works for active tasks and for dicts loaded via view_completed_task.
+    """
+    return _task_status(task) in _complete_statuses(cfg)
 
 
 def _task_assignees(task: dict) -> list[str]:
@@ -434,7 +456,6 @@ def dependency_gate(
         return DependencyGate(True, False)
 
     # Deps are status-only: incomplete (any assignee, including human) blocks the parent.
-    complete = _complete_statuses(cfg)
     blocked_on: list[str] = []
     missing: list[str] = []
     for dep_id in deps:
@@ -442,7 +463,7 @@ def dependency_gate(
         if dep is None:
             missing.append(dep_id)
             continue
-        if _task_status(dep) not in complete:
+        if not task_is_complete(cfg, dep):
             blocked_on.append(dep_id)
 
     if missing:
@@ -716,26 +737,7 @@ def pane_ready_for_prompt(cfg: SwarmConfig, pane: str) -> bool:
 
 
 def query_monitor_state(session_name: str, pane: str) -> str:
-    sock = monitor_socket_path(session_name, pane)
-    if not sock.exists():
-        return "unknown"
-    try:
-        import socket as _socket
-
-        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
-            s.settimeout(2.0)
-            s.connect(str(sock))
-            s.sendall(b"status")
-            chunks: list[bytes] = []
-            while True:
-                chunk = s.recv(4096)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-        data = json.loads(b"".join(chunks) or b"{}")
-        return str(data.get("state") or data.get("status") or "unknown").lower()
-    except Exception:
-        return "unknown"
+    return shared_query_monitor_state(session_name, pane)
 
 
 def pane_has_pending(cfg: SwarmConfig, pane: str) -> bool:
@@ -765,19 +767,28 @@ class AssignmentView:
     reason: str = ""
 
 
-def view_assignment(cfg: SwarmConfig, pane: str, task_id: str | None) -> AssignmentView:
-    """How this assignment looks now. Used by reconcile + chase (do not duplicate)."""
+def view_assignment(
+    cfg: SwarmConfig,
+    pane: str,
+    task_id: str | None,
+    *,
+    cache: dict[str, dict | None] | None = None,
+) -> AssignmentView:
+    """How this assignment looks now. Used by reconcile + chase (do not duplicate).
+
+    Shares `cache` with dependency_gate so reconcile + chase reuse one fetch per task
+    within a dispatch pass instead of each issuing its own `backlog task <id> --json`.
+    """
     if not task_id:
         return AssignmentView("empty", reason="no_task_id")
+    cache = cache if cache is not None else {}
     try:
-        task = view_task_json(cfg, task_id)
+        task = _task_or_none(cfg, task_id, cache)
     except RuntimeError as e:
-        err = str(e).lower()
-        if "not found" in err:
-            return AssignmentView("missing", reason="not_found")
         return AssignmentView("error", reason=str(e))
-    status = str(task.get("status") or "").strip().lower()
-    if status == "done":
+    if task is None:
+        return AssignmentView("missing", reason="not_found")
+    if task_is_complete(cfg, task):
         return AssignmentView("done", task=task, reason="done")
     assignees = task.get("assignees") or []
     if isinstance(assignees, str):
@@ -804,13 +815,27 @@ def _clear_assignment(state: dict, pane: str, task_id: str, reason: str) -> None
     state["assignments"] = assignments
 
 
-def reconcile_assignments(cfg: SwarmConfig, state: dict) -> dict:
+def _call_view_assignment(cfg: SwarmConfig, pane: str, task_id: str | None, cache: dict | None) -> AssignmentView:
+    import inspect
+    try:
+        sig = inspect.signature(view_assignment)
+        if "cache" in sig.parameters:
+            return view_assignment(cfg, pane, task_id, cache=cache)
+    except Exception:
+        pass
+    return view_assignment(cfg, pane, task_id)
+
+
+def reconcile_assignments(
+    cfg: SwarmConfig, state: dict, *, cache: dict[str, dict | None] | None = None
+) -> dict:
     """Drop assignments that are done / missing / no longer assigned to this pane."""
+    cache = cache if cache is not None else {}
     assignments = dict(state.get("assignments") or {})
     changed = False
     for pane, info in list(assignments.items()):
         tid = (info or {}).get("task_id")
-        view = view_assignment(cfg, pane, tid)
+        view = _call_view_assignment(cfg, pane, tid, cache)
         if view.kind in ("done", "missing", "unassigned", "empty"):
             _clear_assignment(state, pane, tid or "", view.reason or view.kind)
             changed = True
@@ -840,8 +865,12 @@ def desired_spec(cfg: SwarmConfig) -> dict:
         "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
         "healthcheck_max_restarts": t.healthcheck_max_restarts,
         "skip_assignees": list(t.skip_assignees),
+        "complete_statuses": list(t.complete_statuses),
         "panes": [p.pane for p in cfg.task_panes],
     }
+
+
+_babysit_tasks_warned: set[tuple[str, str]] = set()
 
 
 def validate_tasks_config(cfg: SwarmConfig) -> None:
@@ -856,6 +885,10 @@ def validate_tasks_config(cfg: SwarmConfig) -> None:
     ensure_backlog_dir(cfg)
     for p in cfg.task_panes:
         if p.babysit.enabled:
+            key = (cfg.session_name, p.pane)
+            if key in _babysit_tasks_warned:
+                continue
+            _babysit_tasks_warned.add(key)
             print(
                 f"warning: pane {p.pane} has both babysit.enabled and tasks.enabled; "
                 "prefer only tasks for that pane to avoid prompt fights",
@@ -879,7 +912,13 @@ def yaml_dump_tasks(eff: dict) -> str:
         return json.dumps(eff, indent=2)
 
 
-def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list[dict]:
+def chase_assigned(
+    cfg: SwarmConfig,
+    state: dict,
+    dry_run: bool = False,
+    *,
+    cache: dict[str, dict | None] | None = None,
+) -> list[dict]:
     """Re-prompt idle panes that still own an open assignment (until Done/unassign/gone).
 
     Throttled by tasks.min_chase_secs (default = poll_secs: one chase opportunity per pass).
@@ -888,10 +927,10 @@ def chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool = False) -> list
     changed = False
     min_chase = cfg.tasks.min_chase_secs
     now = time.time()
-    cache: dict[str, dict | None] = {}
+    cache = cache if cache is not None else {}
     for pane, info in list((state.get("assignments") or {}).items()):
         tid = (info or {}).get("task_id")
-        view = view_assignment(cfg, pane, tid)
+        view = _call_view_assignment(cfg, pane, tid, cache)
         if view.kind in ("done", "missing", "unassigned", "empty"):
             _clear_assignment(state, pane, tid or "", view.reason or view.kind)
             changed = True
@@ -1070,7 +1109,7 @@ def recover_assignments_from_backlog(
     *,
     dry_run: bool = False,
     tasks: list[BacklogTask] | None = None,
-    cache: dict[str, dict | None] | None = None,
+    cache: dict | None = None,
 ) -> dict:
     """Rebuild local state from backlog for pane assignments matching this session/pane.
 
@@ -1080,6 +1119,7 @@ def recover_assignments_from_backlog(
 
     Fix: scan backlog for In Progress (or ingest) tasks assigned to our session's panes,
     rehydrate local state. Do NOT override existing local assignments (they take precedence).
+    List rows already carry assignees (BACK-545), so no per-task detail fetch is needed here.
     """
     assignments = dict(state.get("assignments") or {})
     changed = False
@@ -1093,14 +1133,9 @@ def recover_assignments_from_backlog(
     tasks = tasks if tasks is not None else list_candidate_tasks(
         cfg, unassigned_only=False
     )
-    cache = cache if cache is not None else {}
     found: dict[str, BacklogTask] = {}
     for task in tasks:
-        try:
-            full = _task_or_none(cfg, task.id, cache)
-        except Exception:
-            continue
-        for assignee in _task_assignees(full or {}):
+        for assignee in task.assignees:
             pane = wanted.get(assignee)
             if pane is not None and pane not in found:
                 found[pane] = task
@@ -1154,6 +1189,7 @@ def _claim_new_onto_free(
         if max_n and inflight >= max_n:
             break
         task: BacklogTask | None = None
+        task_full: dict | None = None
         while candidates:
             candidate = candidates.pop(0)
             try:
@@ -1192,12 +1228,13 @@ def _claim_new_onto_free(
                 )
                 continue
             task = candidate
+            task_full = full
             break
         if task is None:
             break
         try:
             body = (
-                view_task_plain(cfg, task.id)
+                format_task_snapshot(task_full)
                 if not dry_run
                 else f"(dry-run snapshot for {task.id})"
             )
@@ -1256,6 +1293,28 @@ def _claim_new_onto_free(
     return actions
 
 
+def _call_reconcile_assignments(cfg: SwarmConfig, state: dict, cache: dict | None) -> dict:
+    import inspect
+    try:
+        sig = inspect.signature(reconcile_assignments)
+        if "cache" in sig.parameters:
+            return reconcile_assignments(cfg, state, cache=cache)
+    except Exception:
+        pass
+    return reconcile_assignments(cfg, state)
+
+
+def _call_chase_assigned(cfg: SwarmConfig, state: dict, dry_run: bool, cache: dict | None) -> list[dict]:
+    import inspect
+    try:
+        sig = inspect.signature(chase_assigned)
+        if "cache" in sig.parameters:
+            return chase_assigned(cfg, state, dry_run=dry_run, cache=cache)
+    except Exception:
+        pass
+    return chase_assigned(cfg, state, dry_run=dry_run)
+
+
 def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
     """One pass: recover lost assignments → reconcile → chase open work → claim new unassigned work."""
     validate_tasks_config(cfg)
@@ -1263,23 +1322,21 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
     if dry_run:
         print_effective_tasks(cfg)
     tasks = list_candidate_tasks(cfg, unassigned_only=False)
+    # Shared per-pass cache: dependency_gate/view_assignment/_task_or_none all key off
+    # task id, so reconcile, chase, and claim-gating reuse one detail fetch per task.
     cache: dict[str, dict | None] = {}
     state = recover_assignments_from_backlog(
-        cfg, load_state(cfg), dry_run=dry_run, tasks=tasks, cache=cache
+        cfg, load_state(cfg), dry_run=dry_run, tasks=tasks
     )
-    state = reconcile_assignments(cfg, state)
-    actions = chase_assigned(cfg, state, dry_run=dry_run)
+    state = _call_reconcile_assignments(cfg, state, cache)
+    actions = _call_chase_assigned(cfg, state, dry_run, cache)
     if not dry_run:
         state = load_state(cfg)
-    candidates = []
-    for task in tasks:
-        full = _task_or_none(cfg, task.id, cache)
-        if full is None:
-            candidates.append(task)
-            continue
-        if cfg.tasks.unassigned_only and _task_assignees(full):
-            continue
-        candidates.append(task)
+    # unassigned_only filter uses list-row assignees; no detail fetch needed here.
+    if cfg.tasks.unassigned_only:
+        candidates = [t for t in tasks if not t.assignees]
+    else:
+        candidates = list(tasks)
     actions.extend(
         _claim_new_onto_free(
             cfg, state, dry_run, candidates=candidates, cache=cache
@@ -1329,7 +1386,7 @@ def status(cfg: SwarmConfig) -> None:
     except ImportError:
         from babysitctl import supervisor_pid_path
     path = supervisor_pid_path(cfg)
-    pid = int(path.read_text().strip() or "0") if path.exists() else 0
+    pid = _read_pid(path) if path.exists() else 0
     alive = process_running(pid) if pid else False
     if enabled and alive:
         tasks_state = f"ON  (session worker pid={pid} running)"
@@ -1375,15 +1432,21 @@ def status(cfg: SwarmConfig) -> None:
             )
     else:
         print("assignments: (none)")
-    # Status display only: preview candidates (cap lines; full list still used by dispatch).
+    # Status display only: preview candidates. Only the displayed rows are
+    # dependency-gated (transitive closure per task is too costly to run over
+    # the full candidate list just for a 15-line preview).
     if t and panes:
         try:
             cands = list_candidate_tasks(cfg)
+            shown = cands[:15]
             cache: dict[str, dict | None] = {}
-            gates = {c.id: dependency_gate(cfg, c.id, cache=cache) for c in cands}
+            gates = {c.id: dependency_gate(cfg, c.id, cache=cache) for c in shown}
             ready = sum(gate.ready for gate in gates.values())
-            print(f"candidates ({len(cands)}; ready {ready}, blocked {len(cands) - ready}):")
-            for c in cands[:15]:  # display cap only
+            print(
+                f"candidates ({len(cands)}; showing {len(shown)}: "
+                f"ready {ready}, blocked {len(shown) - ready}):"
+            )
+            for c in shown:
                 pri = f"[{c.priority}] " if c.priority else ""
                 gate = gates[c.id]
                 suffix = "ready" if gate.ready else f"blocked: {_blocked_prompt(gate)}"

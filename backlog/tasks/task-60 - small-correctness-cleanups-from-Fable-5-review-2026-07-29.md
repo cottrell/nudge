@@ -1,9 +1,11 @@
 ---
 id: TASK-60
 title: small correctness cleanups from Fable 5 review 2026-07-29
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - 'aiswarm:nudge:0.1'
 created_date: '2026-07-29 15:49'
+updated_date: '2026-07-29 15:56'
 labels: []
 dependencies: []
 priority: low
@@ -22,3 +24,9 @@ Bundle of small verified nits, each too small for its own task. 1) babysitctl.st
 - [ ] #2 short-prompt-only babysit either nudges or fails config validation with a clear error
 - [ ] #3 stale attach.sh socket-name comment fixed; dead start_directory and rate_limited references removed or implemented
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by aiswarm tasks dispatcher for pane 0.1 (session nudge).
+<!-- SECTION:NOTES:END -->

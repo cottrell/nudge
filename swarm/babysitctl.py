@@ -43,13 +43,22 @@ def process_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        return True
     except (OSError, ProcessLookupError):
         return False
 
 
+def _read_pid(path: Path) -> int:
+    try:
+        return int(path.read_text().strip() or "0")
+    except (OSError, ValueError):
+        return 0
+
+
 def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int,
                  long_prompt: str, short_prompt: str, long_prompt_file: str = "",
-                 short_prompt_file: str = "", via_log: bool = True) -> dict:
+                 short_prompt_file: str = "", via_log: bool = True, simulate: bool = False) -> dict:
     pane_spec = next((p for p in cfg.panes if p.pane == pane), None)
     bs = pane_spec.babysit if pane_spec else None
     return {
@@ -58,6 +67,7 @@ def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int,
         "clear_every": clear_every, "long_prompt": long_prompt,
         "short_prompt": short_prompt, "long_prompt_file": long_prompt_file,
         "short_prompt_file": short_prompt_file, "via_log": via_log,
+        "simulate": simulate,
         "quota_probe_secs": bs.quota_probe_secs if bs else 300,
         "ema_alpha": bs.ema_alpha if bs else .30,
         "ema_safety": bs.ema_safety if bs else .92,
@@ -66,6 +76,7 @@ def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int,
         "ema_min_wait": bs.ema_min_wait if bs else 30,
         "ema_max_wait": bs.ema_max_wait if bs else 1200,
         "agent": pane_spec.agent if pane_spec else "",
+        "monitor": pane_spec.monitor if pane_spec else False,
     }
 
 
@@ -76,7 +87,7 @@ def load_spec(path: Path) -> dict | None:
         return None
 
 
-def _wanted(cfg: SwarmConfig, include_babysit: bool, include_comms: bool) -> dict[str, dict]:
+def _wanted(cfg: SwarmConfig, include_babysit: bool, include_comms: bool, no_action: bool = False) -> dict[str, dict]:
     out = {}
     for pane in cfg.panes:
         bs = pane.babysit
@@ -85,22 +96,20 @@ def _wanted(cfg: SwarmConfig, include_babysit: bool, include_comms: bool) -> dic
                 cfg, pane.pane, bs.interval_secs, bs.clear_every, bs.long_prompt,
                 bs.short_prompt, bs.long_prompt_file.name if bs.long_prompt_file else "",
                 bs.short_prompt_file.name if bs.short_prompt_file else "", bs.via_log,
+                simulate=no_action,
             )
         elif include_comms and (pane.comms or bs.enabled):
             out[pane.pane] = desired_spec(cfg, pane.pane,
                 bs.interval_secs if bs.enabled else 5, bs.clear_every if bs.enabled else 0,
-                "", "", via_log=bs.via_log if bs.enabled else True)
+                "", "", via_log=bs.via_log if bs.enabled else True, simulate=no_action)
     return out
 
 
 def _start_supervisor(cfg: SwarmConfig, dry_run: bool) -> None:
     path = supervisor_pid_path(cfg)
     if path.exists():
-        try:
-            if process_running(int(path.read_text().strip())):
-                return
-        except ValueError:
-            pass
+        if process_running(_read_pid(path)):
+            return
     if dry_run:
         print(f"would start session worker for {cfg.session_name}")
         return
@@ -136,9 +145,9 @@ def _retire_legacy_workers(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def _apply(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, include_comms: bool,
-           label: str) -> None:
+           label: str, no_action: bool = False) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
-    wanted = _wanted(cfg, include_babysit, include_comms)
+    wanted = _wanted(cfg, include_babysit, include_comms, no_action)
     for pane, spec in wanted.items():
         if not dry_run:
             spec_path(cfg, pane).write_text(json.dumps(spec, indent=2) + "\n")
@@ -163,8 +172,9 @@ def ensure_workers(cfg: SwarmConfig, dry_run: bool) -> None:
     _apply(cfg, dry_run, False, True, "session worker")
 
 
-def apply_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
-    _apply(cfg, dry_run, True, True, "session worker (with babysit prompts)")
+def apply_babysit(cfg: SwarmConfig, dry_run: bool, no_action: bool = False) -> None:
+    label = "session worker (with babysit prompts, simulate mode)" if no_action else "session worker (with babysit prompts)"
+    _apply(cfg, dry_run, True, True, label, no_action)
 
 
 def disable_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -173,7 +183,7 @@ def disable_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
 
 def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
     path = supervisor_pid_path(cfg)
-    pid = int(path.read_text().strip()) if path.exists() else 0
+    pid = _read_pid(path) if path.exists() else 0
     if dry_run:
         print(f"would stop session worker for {cfg.session_name} pid={pid or '-'}")
         return

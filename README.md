@@ -205,6 +205,7 @@ tasks:
   require_idle: true
   via_log: true
   max_inflight: 0                 # 0 = unlimited; still one task per free pane
+  complete_statuses: [Done]       # dep gate + assignment clear; case-insensitive
 
 windows:
   - window_name: grid
@@ -233,8 +234,9 @@ state is cleared on the next poll when status is Done.
 - **`skip_assignees`:** (default `[human]`) assignees the dispatcher will **not** claim or reclaim.
   Use `-a human` to park a task for people. Empty list disables. Swarm ownership is only
   `aiswarm:<session>:<pane>` — never model names.
-- **Dependency gate:** any incomplete dependency (not Done) blocks claim/chase of the parent,
-  regardless of who owns the dep. Link with `backlog task edit TASK-NN --depends-on TASK-BLOCKER`.
+- **Dependency gate:** any incomplete dependency (status not in `complete_statuses`, default
+  `Done`) blocks claim/chase of the parent, regardless of who owns the dep. Same predicate
+  clears local assignments. Link with `backlog task edit TASK-NN --depends-on TASK-BLOCKER`.
   Cycles / missing ids still block.
 - **Chase:** idle + still assigned + deps Done → short re-prompt until Done/unassign. Interval is
   `min_chase_secs` (default same as `poll_secs`). Raise it only if you need fewer nudges.

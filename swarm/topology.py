@@ -18,6 +18,8 @@ try:
         SWARM_CLI,
         SwarmConfig,
         WindowSpec,
+        query_monitor_socket,
+        query_monitor_state,
         write_runtime_map,
     )
 
@@ -40,6 +42,8 @@ except ImportError:
         SWARM_CLI,
         SwarmConfig,
         WindowSpec,
+        query_monitor_socket,
+        query_monitor_state,
         write_runtime_map,
     )
 
@@ -153,32 +157,22 @@ def setup_grid(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def socket_ready(session_name: str, pane: str) -> bool:
-    sock = f"/tmp/{session_name}_{pane}.sock"
-    try:
-        proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True, timeout=3)
-        return '"state"' in proc.stdout
-    except subprocess.TimeoutExpired:
-        return False
+    return "state" in query_monitor_socket(session_name, pane)
 
 
 
 
 def _query_monitor(cfg: SwarmConfig, pane: str) -> dict:
-    sock = socket_path(cfg, pane)
-    try:
-        proc = subprocess.run(["bash", "-lc", f"printf 'status' | nc -U {sock!s} 2>/dev/null"], text=True, capture_output=True, timeout=3)
-        if proc.returncode != 0 or '"state"' not in proc.stdout:
-            return {'state': 'unreachable'}
-        try:
-            return json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return {'state': 'unparseable'}
-    except subprocess.TimeoutExpired:
+    data = query_monitor_socket(cfg.session_name, pane)
+    if not data:
         return {'state': 'unreachable'}
+    if 'state' not in data and 'status' not in data:
+        return {'state': 'unparseable'}
+    return data
 
 
 def monitor_state(cfg: SwarmConfig, pane: str) -> str:
-    return _query_monitor(cfg, pane).get('state', 'unreachable')
+    return query_monitor_state(cfg.session_name, pane)
 
 
 def ensure_monitor(cfg: SwarmConfig, pane: str, agent: str, dry_run: bool) -> None:
@@ -278,7 +272,7 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
                 from .common import log_broadcast
             except ImportError:
                 from common import log_broadcast
-            log_broadcast(cfg.session_name, message, sender="cli broadcast")
+            log_broadcast(cfg.session_name, message, include_nonmonitored=include_nonmonitored, sender="cli broadcast")
             for pane in matching_panes:
                 target = f"{cfg.session_name}:{pane.pane}"
                 print(f"log-broadcast to {target} ({pane.title})")
@@ -536,8 +530,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                         else:
                             # active running
                             babysit_val = "on"
+                            if spec and spec.get("simulate"):
+                                babysit_val += " (simulate)"
                             nudge_hb = nudge_hb_str
-                            
+
                             # clear countdown
                             if spec:
                                 clear_every = int(spec.get("clear_every") or 0)

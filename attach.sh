@@ -23,11 +23,11 @@ AGENT=$2
 
 # Socket name derived from full pane target for uniqueness
 # Examples:
-#   mysession       → /tmp/mysession_0-0.sock
-#   mysession:0     → /tmp/mysession_0-0.sock
-#   mysession:0.0   → /tmp/mysession_0-0.sock
-#   mysession:1.2   → /tmp/mysession_1-2.sock
-#   agents:0.0      → /tmp/agents_0-0.sock (pane grid friendly)
+#   mysession       → /tmp/mysession_0.0.sock
+#   mysession:0     → /tmp/mysession_0.0.sock
+#   mysession:0.0   → /tmp/mysession_0.0.sock
+#   mysession:1.2   → /tmp/mysession_1.2.sock
+#   agents:0.0      → /tmp/agents_0.0.sock (pane grid friendly)
 WINDOW_PANE="${TARGET#*:}"  # Strip session, keep window.pane
 SOCK="/tmp/${SESSION}_${WINDOW_PANE}.sock"
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -66,4 +66,4 @@ IDLE_SECS="${MONITOR_IDLE_SECS:-10}"
 tmux pipe-pane -t "$TARGET" "$CMD --agent $AGENT --socket $SOCK --idle-secs $IDLE_SECS $DEBUG_FLAG $STATE_LOG_FLAG"
 echo "Monitoring $TARGET → $SOCK"
 echo "Idle after ${IDLE_SECS}s without pane output"
-echo "Query: echo status | nc -U $SOCK"
+echo "Query: printf status | python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.sendall(b\"status\"); print(s.recv(4096).decode(), end=\"\")' $SOCK"

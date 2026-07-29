@@ -3,9 +3,11 @@ id: TASK-56
 title: >-
   babysit start --no-action leaks BABYSIT_DRY_RUN into the long-lived session
   worker
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - 'aiswarm:nudge:0.3'
 created_date: '2026-07-29 15:49'
+updated_date: '2026-07-29 15:57'
 labels: []
 dependencies: []
 priority: medium
@@ -20,7 +22,38 @@ cli.py sets os.environ["BABYSIT_DRY_RUN"]="1" for --no-action, but the flag only
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 no-action mode is honored regardless of whether the worker was already running
-- [ ] #2 plain babysit start after a --no-action start restores real delivery without manually killing session_worker
-- [ ] #3 status surfaces when the worker is in no-action/simulate mode
+- [x] #1 no-action mode is honored regardless of whether the worker was already running
+- [x] #2 plain babysit start after a --no-action start restores real delivery without manually killing session_worker
+- [x] #3 status surfaces when the worker is in no-action/simulate mode
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fix implemented: Move BABYSIT_DRY_RUN flag from process environment to per-pane spec JSON.
+
+**Changes made:**
+
+1. **babysitctl.py**:
+   - Added 'simulate' parameter to desired_spec() (default False)
+   - Updated _wanted() to pass simulate=no_action to desired_spec()
+   - Updated _apply() to accept no_action parameter
+   - Updated apply_babysit() to accept no_action and display 'simulate mode' in label
+
+2. **cli.py**:
+   - Removed os.environ["BABYSIT_DRY_RUN"] = "1" assignment
+   - Now passes no_action flag directly to apply_babysit()
+
+3. **pane_worker.py**:
+   - _send_message() now checks simulate parameter, not env var
+   - _drain_comms() accepts and passes simulate parameter
+   - _deliver() accepts and passes simulate parameter  
+   - tick() extracts simulate from spec and passes to all comms calls
+
+4. **topology.py**:
+   - status_lines() now displays '(simulate)' when spec.simulate=True
+
+**Key insight**: The spec JSON is re-read every tick (~1s) by the worker loop, so changing simulate mode doesn't require worker restart.
+
+**Testing**: All acceptance criteria verified with workflow tests.
+<!-- SECTION:NOTES:END -->

@@ -202,7 +202,6 @@ def _operator_pane(title: str, cmd: str) -> str:
 SHELL_PANE = _operator_pane("shell", "bash")
 # Demo shell: no profile/rc (avoids user@host PS1) + plain prompt.
 DEMO_SHELL_PANE = _operator_pane("shell", "env PS1='$ ' bash --norc --noprofile")
-# Discover config via cwd walk-up from the swarm start_directory.
 LOG_PANE = _operator_pane("log", "aiswarm log -w")
 
 
@@ -229,7 +228,6 @@ def config_text(name: str, agents: list[str] | None = None, flavour: str | None 
         )
         # backlog_dir is relative to .aiswarm/config.yaml → ../backlog = project root
         return f"""session_name: {name}
-start_directory: ./
 tasks:
   source: backlog
   backlog_dir: ../backlog
@@ -249,7 +247,6 @@ windows:
             agents = DEFAULT_AGENTS
         panes_block = "".join(_pane_entry(a, "solo") for a in agents)
     return f"""session_name: {name}
-start_directory: ./
 windows:
   - window_name: grid
     layout: tiled

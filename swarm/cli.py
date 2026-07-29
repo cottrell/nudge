@@ -373,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
     quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
     quota_p.add_argument("-i", "--interval", type=float, default=2.0, help="Watch refresh interval in seconds")
 
-    quota_debug_p = sub.add_parser("quota-debug", aliases=["quota-debug", "quota_debug"], help="Show raw and parsed usage details for a chosen agent")
+    quota_debug_p = sub.add_parser("quota-debug", aliases=["quota_debug"], help="Show raw and parsed usage details for a chosen agent")
     quota_debug_p.add_argument("agent", choices=["claude", "codex", "agy"], help="Agent to debug")
     quota_debug_p.add_argument("--ttl", type=int, default=120, help="Cache TTL in seconds")
     quota_debug_p.add_argument("--force", action="store_true", help="Force refresh")
@@ -672,6 +672,8 @@ def main(argv: list[str] | None = None) -> int:
                 from .common import log_send
             except ImportError:
                 from common import log_send
+            if target not in [p.pane for p in cfg.panes]:
+                print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
             if args.dry_run:
                 print(f"would log-send session={cfg.session_name} target={target} msg={msg}")
             else:
@@ -736,10 +738,8 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = _cfg_from_args(args)
         if args.babysit_command == "start":
-            if getattr(args, "no_action", False):
-                import os
-                os.environ["BABYSIT_DRY_RUN"] = "1"
-            swarm_babysit.apply_babysit(cfg, args.dry_run)
+            no_action = getattr(args, "no_action", False)
+            swarm_babysit.apply_babysit(cfg, args.dry_run, no_action)
         elif args.babysit_command == "stop":
             swarm_babysit.disable_babysit(cfg, args.dry_run)
         else:

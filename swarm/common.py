@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import socket as _socket
 import tempfile
 import time
 from datetime import datetime, timedelta
@@ -80,6 +81,9 @@ class TasksSpec:
     # Assignees the dispatcher leaves alone (no claim/reclaim). Default: human park.
     # Empty list = no extra skips (only unassigned_only / aiswarm ownership rules apply).
     skip_assignees: list[str] = field(default_factory=lambda: ["human"])
+    # Statuses that count as complete for dependency gates and assignment clear.
+    # Compared case-insensitively. Default matches backlog's Done.
+    complete_statuses: list[str] = field(default_factory=lambda: ["Done"])
 
 
 @dataclass
@@ -152,7 +156,7 @@ def resolve_backlog_dir(cfg_path: Path, explicit: str | None) -> Path:
             p = (cfg_path.parent / p).resolve()
         else:
             p = p.resolve()
-        if not (p / "config.yml").exists() and not p.is_dir():
+        if not (p / "config.yml").exists():
             raise ValueError(f"tasks.backlog_dir not found: {p}")
         if not p.is_dir():
             raise ValueError(f"tasks.backlog_dir is not a directory: {p}")
@@ -191,6 +195,8 @@ def _fill_babysit(raw: dict | None, pane_id: str, cfg_path: Path) -> BabysitSpec
             short_prompt = short_prompt_path.read_text()
     if not short_prompt:
         short_prompt = long_prompt
+    if short_prompt and not long_prompt:
+        raise ValueError(f"pane {pane_id} babysit.short_prompt requires babysit.long_prompt or prompt_file")
     return BabysitSpec(
         enabled=bool(raw.get("enabled", d.enabled)),
         interval_secs=int(raw.get("interval_secs", d.interval_secs)),
@@ -260,6 +266,18 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         skip_assignees = [s.strip() for s in sa_raw.split(",") if s.strip()]
     else:
         skip_assignees = [str(s).strip() for s in sa_raw if str(s).strip()]
+    if "complete_statuses" in raw:
+        cs_raw = raw.get("complete_statuses")
+        if isinstance(cs_raw, str):
+            complete_statuses = [s.strip() for s in cs_raw.split(",") if s.strip()]
+        else:
+            complete_statuses = [
+                str(s).strip() for s in (cs_raw or []) if str(s).strip()
+            ]
+    else:
+        complete_statuses = list(d.complete_statuses)
+    if not complete_statuses:
+        raise ValueError("tasks.complete_statuses must list at least one status")
     return TasksSpec(
         source=source,
         backlog_dir=backlog_dir,
@@ -278,6 +296,7 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         healthcheck_timeout_secs=max(5, int(raw.get("healthcheck_timeout_secs", d.healthcheck_timeout_secs))),
         healthcheck_max_restarts=max(0, int(raw.get("healthcheck_max_restarts", d.healthcheck_max_restarts))),
         skip_assignees=skip_assignees,
+        complete_statuses=complete_statuses,
     )
 
 
@@ -343,6 +362,7 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "healthcheck_timeout_secs": t.healthcheck_timeout_secs,
             "healthcheck_max_restarts": t.healthcheck_max_restarts,
             "skip_assignees": list(t.skip_assignees),
+            "complete_statuses": list(t.complete_statuses),
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },
@@ -479,6 +499,31 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
 
 def monitor_socket_path(session_name: str, pane: str) -> Path:
     return Path(f"/tmp/{session_name}_{pane}.sock")
+
+
+def query_monitor_socket(session_name: str, pane: str, timeout: float = 2.0) -> dict:
+    sock = monitor_socket_path(session_name, pane)
+    if not sock.exists():
+        return {}
+    try:
+        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(str(sock))
+            s.sendall(b"status")
+            chunks: list[bytes] = []
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return json.loads(b"".join(chunks) or b"{}")
+    except Exception:
+        return {}
+
+
+def query_monitor_state(session_name: str, pane: str, timeout: float = 2.0) -> str:
+    data = query_monitor_socket(session_name, pane, timeout=timeout)
+    return str(data.get("state") or data.get("status") or "unknown").lower()
 
 
 def babysit_runtime_paths(cfg: SwarmConfig, pane: str) -> dict[str, str]:
@@ -635,7 +680,8 @@ def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = 
     """Write a broadcast event. Consumer will fan out to appropriate panes."""
     # For simplicity we write a special recipient; real fan-out can happen at consume time
     # or we can enumerate panes here. Start simple.
-    log_send(session_name, "__broadcast__", message, sender, "broadcast")
+    log_send(session_name, "__broadcast__", message, sender, "broadcast",
+             meta={"include_nonmonitored": include_nonmonitored})
 
 
 def log_ack(session_name: str, pane: str, acked_event_id: int,

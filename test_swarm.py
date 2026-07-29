@@ -587,6 +587,42 @@ def test_pane_worker_ema_spec_controls_next_wait():
     assert worker._next_wait(slow, 1_000.0) == 500
 
 
+def test_pane_spec_reloads_only_after_mtime_change(tmp_path: Path, monkeypatch):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    spec_path = babysitctl.spec_path(cfg, "0.0")
+    spec_path.parent.mkdir(parents=True, exist_ok=True)
+    spec_path.write_text('{"interval_secs": 10}\n')
+    reads = 0
+    original = Path.read_text
+
+    def counting_read(path, *args, **kwargs):
+        nonlocal reads
+        if path == spec_path:
+            reads += 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read)
+    cache = {}
+    assert session_worker.pane_spec(cfg, "0.0", cache)["interval_secs"] == 10
+    assert session_worker.pane_spec(cfg, "0.0", cache)["interval_secs"] == 10
+    assert reads == 1
+
+    spec_path.write_text('{"interval_secs": 20}\n')
+    stat = spec_path.stat()
+    os.utime(spec_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1))
+    assert session_worker.pane_spec(cfg, "0.0", cache)["interval_secs"] == 20
+    assert reads == 2
+
+
 def test_stop_workers_accepts_panespec_list(tmp_path: Path):
     """Regression: stop_workers must use pane.pane, not PaneSpec.replace."""
     cfg = load_config(write_config(tmp_path, """
@@ -930,6 +966,26 @@ windows:
     matching = [l for l in lines if "demo_stopped:0.0" in l]
     assert len(matching) == 1
     assert matching[0].split() == ["demo_stopped:0.0", "claude", "idle", "stopped"]
+
+
+def test_swarm_status_marks_unreachable_monitor_socket(tmp_path: Path, monkeypatch):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo_unreachable
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(swarm_apply, "run", lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})())
+    monkeypatch.setattr(swarm_apply, "query_monitor_socket", lambda s, p, timeout=2.0: {})
+    lines = swarm_apply.status_lines(cfg, brief=True)
+    matching = [l for l in lines if "demo_unreachable:0.0" in l]
+    assert len(matching) == 1
+    assert "unreachable" in matching[0]
 
 
 def test_this_text_points_at_runtime_map(tmp_path: Path):
@@ -1390,6 +1446,7 @@ windows:
     assert cfg.tasks.ingest == ["To Do"]
     assert cfg.tasks.unassigned_only is True
     assert cfg.tasks.min_chase_secs == cfg.tasks.poll_secs  # default tracks poll
+    assert cfg.tasks.complete_statuses == ["Done"]
     assert cfg.panes[0].tasks_enabled is True   # monitor default on
     assert cfg.panes[1].tasks_enabled is True   # monitor default on (no tasks: key)
     assert cfg.panes[2].tasks_enabled is False  # shell / monitor=false
@@ -1398,6 +1455,7 @@ windows:
     eff = effective_config_dict(cfg)
     assert eff["tasks"]["enabled_panes"] == ["0.0", "0.1"]
     assert eff["tasks"]["min_chase_secs"] == eff["tasks"]["poll_secs"]
+    assert eff["tasks"]["complete_statuses"] == ["Done"]
 
 
 def test_load_config_tasks_ingest_in_progress_explicit(tmp_path: Path):
@@ -1684,6 +1742,45 @@ windows:
     assert cfg3.tasks.skip_assignees == ["human", "reviewer"]
 
 
+def test_load_config_tasks_complete_statuses(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  complete_statuses: [Done, Closed]
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg.tasks.complete_statuses == ["Done", "Closed"]
+    eff = effective_config_dict(cfg)
+    assert eff["tasks"]["complete_statuses"] == ["Done", "Closed"]
+    assert tasksctl.desired_spec(cfg)["complete_statuses"] == ["Done", "Closed"]
+
+
+def test_load_config_tasks_complete_statuses_rejects_empty(tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    with pytest.raises(ValueError, match="complete_statuses"):
+        load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  complete_statuses: []
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+
+
 def test_dependency_gate_blocks_any_incomplete_dep(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
@@ -1796,6 +1893,88 @@ windows:
     assert gate.missing == ["TASK-MISSING"]
 
 
+def test_complete_statuses_non_default_shared_by_gate_and_assignment(
+    tmp_path: Path, monkeypatch
+):
+    """tasks.complete_statuses is honored end-to-end; gate + view_assignment share it."""
+    bdir = _write_backlog_project(tmp_path)
+    completed = bdir / "completed"
+    completed.mkdir()
+    (completed / "task-arch.md").write_text(
+        "---\nid: TASK-ARCH\ntitle: Archived\nstatus: Closed\ndependencies: []\n---\n"
+    )
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  complete_statuses: [Closed]
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    tasks = {
+        "TASK-1": {
+            "id": "TASK-1",
+            "status": "To Do",
+            "dependencies": ["TASK-DEP", "TASK-ARCH"],
+            "assignees": ["aiswarm:demo:0.0"],
+        },
+        "TASK-DEP": {
+            "id": "TASK-DEP",
+            "status": "Done",  # default complete, but config only accepts Closed
+            "assignees": [],
+        },
+    }
+
+    def view(_cfg, task_id):
+        if task_id in tasks:
+            return tasks[task_id]
+        raise RuntimeError(f"backlog task {task_id}: Task {task_id} not found.")
+
+    monkeypatch.setattr(tasksctl, "view_task_json", view)
+
+    # Done is NOT complete under this config; Closed (archived) is.
+    gate = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate.blocked is True
+    assert gate.blocked_on == ["TASK-DEP"]
+
+    tasks["TASK-DEP"]["status"] = "Closed"
+    gate2 = tasksctl.dependency_gate(cfg, "TASK-1")
+    assert gate2.ready is True
+
+    # view_assignment uses the same predicate (not a hardcoded "done").
+    assert tasksctl.task_is_complete(cfg, {"status": "Closed"}) is True
+    assert tasksctl.task_is_complete(cfg, {"status": "Done"}) is False
+    assert tasksctl.task_is_complete(cfg, {"status": "closed"}) is True  # casefold
+
+    view_open = tasksctl.view_assignment(cfg, "0.0", "TASK-1")
+    assert view_open.kind == "open"
+
+    tasks["TASK-1"]["status"] = "Closed"
+    view_done = tasksctl.view_assignment(cfg, "0.0", "TASK-1")
+    assert view_done.kind == "done"
+
+    # Default config still treats Done as complete (regression).
+    cfg_default = load_config(write_config(tmp_path, f"""
+session_name: demo2
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert tasksctl.task_is_complete(cfg_default, {"status": "Done"}) is True
+    assert tasksctl.task_is_complete(cfg_default, {"status": "Closed"}) is False
+
+
 def test_tasks_status_labels_blocked_candidates(tmp_path: Path, monkeypatch, capsys):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
@@ -1833,7 +2012,7 @@ windows:
     )
     tasksctl.status(cfg)
     out = capsys.readouterr().out
-    assert "candidates (2; ready 1, blocked 1)" in out
+    assert "candidates (2; showing 2: ready 1, blocked 1)" in out
     assert "TASK-1 - Ready (To Do; ready)" in out
     assert "TASK-2 - Blocked (To Do; blocked: missing dependency ids: TASK-MISSING)" in out
 
@@ -2569,7 +2748,7 @@ windows:
     assert state["assignments"]["0.0"]["assignee"] == "aiswarm:demo:0.0"
     assert "recovered_at" in state["assignments"]["0.0"]
     assert len(list_calls) == len(cfg.tasks.ingest)
-    assert detail_calls == ["TASK-99"]
+    assert detail_calls == []
 
 
 def test_recover_assignments_dry_run_does_not_save(tmp_path: Path, monkeypatch):
@@ -2592,7 +2771,7 @@ windows:
         lambda cfg, args, timeout=30.0: subprocess.CompletedProcess(
             args,
             returncode=0,
-            stdout='{"kind":"task-list","tasks":[{"id":"TASK-99","title":"Recovered","status":"In Progress"}]}',
+            stdout='{"kind":"task-list","tasks":[{"id":"TASK-99","title":"Recovered","status":"In Progress","assignees":["aiswarm:demo:0.0"]}]}',
             stderr="",
         ),
     )
@@ -2698,3 +2877,74 @@ windows:
     assert state["assignments"]["0.0"]["task_id"] == "TASK-88"
     assert "claimed_at" in state["assignments"]["0.0"]
     assert "recovered_at" not in state["assignments"]["0.0"]
+
+
+def test_broadcast_via_log_filtering_and_warning(tmp_path: Path, monkeypatch, capsys):
+    from common import init_comms_db, log_broadcast
+    from pane_worker import _drain_comms
+    from cli import main as cli_main
+
+    # 1. Test warning when sending to a target pane not in config
+    cfg_file = write_config(tmp_path, """
+session_name: demo_warning
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+""")
+    monkeypatch.setenv("AISWARM_CONFIG", str(cfg_file))
+    
+    try:
+        cli_main(["send", "0.9", "hello"])
+    except SystemExit:
+        pass
+    out, err = capsys.readouterr()
+    assert "Warning: recipient pane '0.9' is not present in the config" in err
+
+    # 2. Test log_broadcast filtering under _drain_comms
+    sess = "demo_warning"
+    init_comms_db(sess)
+
+    db_path = Path("/tmp/nudge-swarm") / sess / "comms.db"
+    if db_path.exists():
+        try:
+            db_path.unlink()
+        except OSError:
+            pass
+    init_comms_db(sess)
+
+    # Let's write the specs for 0.0 (monitored agent) and 0.1 (nonmonitored agent)
+    spec_0_0 = {
+        "session": sess, "pane": "0.0", "target": f"{sess}:0.0",
+        "agent": "claude", "monitor": True
+    }
+    spec_0_1 = {
+        "session": sess, "pane": "0.1", "target": f"{sess}:0.1",
+        "agent": "codex", "monitor": False
+    }
+
+    log_broadcast(sess, "monitored only msg", include_nonmonitored=False)
+    
+    delivered = []
+    def mock_send(target, msg, simulate=False):
+        delivered.append((target, msg))
+    monkeypatch.setattr("pane_worker._send_message", mock_send)
+
+    _drain_comms(sess, f"{sess}:0.0", "0.0", spec=spec_0_0)
+    assert len(delivered) == 1
+    assert delivered[0] == (f"{sess}:0.0", "monitored only msg")
+
+    delivered.clear()
+    _drain_comms(sess, f"{sess}:0.1", "0.1", spec=spec_0_1)
+    assert len(delivered) == 0
+
+    log_broadcast(sess, "all agents msg", include_nonmonitored=True)
+
+    delivered.clear()
+    _drain_comms(sess, f"{sess}:0.1", "0.1", spec=spec_0_1)
+    assert len(delivered) == 1
+    assert delivered[0] == (f"{sess}:0.1", "all agents msg")

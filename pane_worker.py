@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import socket as _socket
 import subprocess
 import sys
 import threading
@@ -16,9 +15,10 @@ _ROOT_DIR = Path(__file__).resolve().parent
 _TMUX_SEND = _ROOT_DIR / "tmux-send"
 try:
     sys.path.insert(0, str(_ROOT_DIR / "swarm"))
-    from common import get_cached_provider_usage
+    from common import get_cached_provider_usage, query_monitor_socket
 except Exception:
     get_cached_provider_usage = None
+    from common import query_monitor_socket
 
 _quota_refresh: set[str] = set()
 _quota_lock = threading.Lock()
@@ -46,51 +46,87 @@ def _normalise_target(target: str) -> str:
     return f"{session}:{pane if '.' in pane else pane + '.0'}"
 
 
+def load_spec(path: Path, cached: tuple[int, dict | None] | None) -> tuple[dict | None, tuple[int, dict | None] | None]:
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return None, None
+    if cached and cached[0] == mtime:
+        return cached[1], cached
+    try:
+        spec = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        spec = None
+    return spec, (mtime, spec)
+
+
 def _query_socket(path: str) -> dict:
     try:
-        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as sock:
-            sock.settimeout(2)
-            sock.connect(path); sock.sendall(b"status")
-            chunks = []
-            while chunk := sock.recv(4096): chunks.append(chunk)
-        return json.loads(b"".join(chunks))
-    except Exception:
+        session, pane = path.removeprefix("/tmp/").removesuffix(".sock").split("_", 1)
+    except ValueError:
         return {}
+    return query_monitor_socket(session, pane)
 
 
-def _send_message(target: str, msg: str) -> None:
-    if os.environ.get("BABYSIT_DRY_RUN") == "1": return
+def _send_message(target: str, msg: str, simulate: bool = False) -> None:
+    if simulate: return
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
-def _drain_comms(session: str, target: str, pane: str) -> None:
+def _drain_comms(session: str, target: str, pane: str, simulate: bool = False, spec: dict | None = None) -> None:
     try:
         from common import (advance_broadcast_cursor, advance_cursor, get_pending_broadcasts,
                             get_pending_events, log_ack)
+        if spec is None:
+            stem = f"babysit-{pane.replace('.', '-')}"
+            spec_path = Path("/tmp/nudge-swarm") / session / f"{stem}.json"
+            if spec_path.exists():
+                try:
+                    spec = json.loads(spec_path.read_text())
+                except Exception:
+                    pass
+
         pending = get_pending_events(session, pane)
         for eid, *_rest, payload, _meta in pending:
-            _send_message(target, payload); log_ack(session, pane, eid, pane, target)
+            _send_message(target, payload, simulate); log_ack(session, pane, eid, pane, target)
         if pending: advance_cursor(session, pane, pending[-1][0])
         bcasts = get_pending_broadcasts(session, pane)
-        for eid, *_rest, payload, _meta in bcasts:
-            _send_message(target, payload); log_ack(session, pane, eid, "__broadcast__", target)
+        for eid, *_rest, payload, meta in bcasts:
+            if spec is not None:
+                agent = spec.get("agent")
+                if not agent:
+                    continue
+                monitor = spec.get("monitor")
+                if monitor is None:
+                    monitor = True
+                include_nonmonitored = False
+                if meta:
+                    try:
+                        meta_dict = json.loads(meta) if isinstance(meta, str) else meta
+                        if isinstance(meta_dict, dict):
+                            include_nonmonitored = meta_dict.get("include_nonmonitored", False)
+                    except Exception:
+                        pass
+                if not include_nonmonitored and not monitor:
+                    continue
+            _send_message(target, payload, simulate); log_ack(session, pane, eid, "__broadcast__", target)
         if bcasts: advance_broadcast_cursor(session, pane, bcasts[-1][0])
     except Exception as exc:
         print(f"comms error {session}:{pane}: {exc}", flush=True)
 
 
 def _deliver(session: str, target: str, pane: str, msg: str, etype: str = "babysit",
-             via_log: bool | None = None) -> None:
-    if os.environ.get("BABYSIT_DRY_RUN") == "1": return
+             via_log: bool | None = None, simulate: bool = False) -> None:
+    if simulate: return
     if via_log is None: via_log = os.environ.get("BABYSIT_VIA_LOG", "1") == "1"
     if via_log:
         try:
             from common import log_send
             log_send(session, pane, msg, sender="babysitter", etype=etype)
-            _drain_comms(session, target, pane)
+            _drain_comms(session, target, pane, simulate)
             return
         except Exception: pass
-    _send_message(target, msg)
+    _send_message(target, msg, simulate)
 
 
 def _log_nudge(session: str, target: str, reason: str, msg: str) -> None:
@@ -160,17 +196,18 @@ class PaneWorker:
         self.last_poll = now_f
         self.state_file = spec.get("state_file") or self.state_file
         target = str(spec.get("target") or self.target); self.target = target
+        simulate = bool(spec.get("simulate", False))
         _ensure_quota_refresh(str(spec.get("agent") or ""), int(spec.get("quota_probe_secs", 300)))
         if self.initial_comms:
-            _drain_comms(self.session, target, self.pane)
+            _drain_comms(self.session, target, self.pane, simulate=simulate, spec=spec)
             self.initial_comms = False
         state = _query_socket(f"/tmp/{self.session}_{self.pane}.sock").get("state", "")
         long_prompt = str(spec.get("long_prompt") or ""); short_prompt = str(spec.get("short_prompt") or long_prompt)
-        if state in ("idle", "rate_limited", ""): self.nonidle_since = 0
+        if state in ("idle", ""): self.nonidle_since = 0
         elif not self.nonidle_since: self.nonidle_since = now
         force_at = self.nonidle_since + int(spec.get("max_nonidle_secs", 1800)) if long_prompt and self.nonidle_since else 0
         if state == "idle":
-            _drain_comms(self.session, target, self.pane)
+            _drain_comms(self.session, target, self.pane, simulate=simulate, spec=spec)
             if long_prompt or short_prompt:
                 self._quota(spec, now_f)
                 if not self.next_nudge_at:
@@ -179,15 +216,15 @@ class PaneWorker:
                     msg, reason, etype = short_prompt, "idle", "babysit"
                     if int(spec.get("clear_every") or 0) and self.nudge_count and self.nudge_count % int(spec["clear_every"]) == 0:
                         _log_nudge(self.session, target, "clear", "/clear")
-                        _deliver(self.session, target, self.pane, "/clear", "clear", spec.get("via_log", True))
+                        _deliver(self.session, target, self.pane, "/clear", "clear", spec.get("via_log", True), simulate)
                         _log_nudge(self.session, target, "restore", long_prompt)
-                        _deliver(self.session, target, self.pane, long_prompt, "babysit_restore", spec.get("via_log", True))
+                        _deliver(self.session, target, self.pane, long_prompt, "babysit_restore", spec.get("via_log", True), simulate)
                         msg = ""
                 else:
                     msg = ""
                 if msg:
                     _log_nudge(self.session, target, reason, msg)
-                    _deliver(self.session, target, self.pane, msg, etype, spec.get("via_log", True))
+                    _deliver(self.session, target, self.pane, msg, etype, spec.get("via_log", True), simulate)
                 if msg or (self.next_nudge_at and now >= self.next_nudge_at):
                     self.pct_at_nudge = self.current_pct; self.nudge_sent_ts = now_f; self.nudge_count += 1
                     self.next_nudge_at = now + self._next_wait(spec, now_f)
@@ -199,7 +236,7 @@ class PaneWorker:
             return
         if force_at and now >= force_at:
             _log_nudge(self.session, target, f"forced_{state or 'unknown'}", short_prompt)
-            _deliver(self.session, target, self.pane, short_prompt, "babysit_forced", spec.get("via_log", True))
+            _deliver(self.session, target, self.pane, short_prompt, "babysit_forced", spec.get("via_log", True), simulate)
             self.nonidle_since = now; self.nudge_count += 1; self.next_nudge_at = now + interval
         _write_state(self.state_file, target, interval, state, f"wait_{state or 'unknown'}", 0,
                      self.nonidle_since, now + poll, force_at, self.next_nudge_at)
@@ -215,6 +252,7 @@ def main() -> int:
     worker = PaneWorker(session, pane, os.environ.get("BABYSIT_STATE_FILE"))
     spec = {"target": target, "interval_secs": interval, "long_prompt": long, "short_prompt": short,
             "clear_every": int(os.environ.get("BABYSIT_CLEAR_EVERY", 0)), "agent": os.environ.get("BABYSIT_AGENT", ""),
+            "monitor": os.environ.get("BABYSIT_MONITOR", "1") == "1",
             "quota_probe_secs": int(os.environ.get("BABYSIT_STATS_EVERY", 300)),
             "ema_alpha": float(os.environ.get("BABYSIT_EMA_ALPHA", .30)), "ema_safety": float(os.environ.get("BABYSIT_EMA_SAFETY", .92)),
             "ema_k_var": float(os.environ.get("BABYSIT_EMA_K_VAR", 0)), "ema_warmup": int(os.environ.get("BABYSIT_EMA_WARMUP", 3)),
@@ -224,10 +262,12 @@ def main() -> int:
     if worker.state_file:
         state_path = Path(worker.state_file)
         spec_path = state_path.with_name(state_path.name.replace(".state.json", ".json"))
+    spec_cache = None
     while True:
-        if spec_path and spec_path.exists():
-            try: spec = {**spec, **json.loads(spec_path.read_text())}
-            except (OSError, json.JSONDecodeError): pass
+        if spec_path:
+            loaded, spec_cache = load_spec(spec_path, spec_cache)
+            if loaded is not None:
+                spec = {**spec, **loaded}
         worker.tick(spec); time.sleep(1)
 
 

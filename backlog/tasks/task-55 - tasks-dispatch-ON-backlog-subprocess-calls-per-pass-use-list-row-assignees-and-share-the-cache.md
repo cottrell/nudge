@@ -3,9 +3,11 @@ id: TASK-55
 title: >-
   tasks dispatch: O(N) backlog subprocess calls per pass; use list-row assignees
   and share the cache
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - 'aiswarm:nudge:0.2'
 created_date: '2026-07-29 15:48'
+updated_date: '2026-07-29 15:53'
 labels: []
 dependencies: []
 priority: high
@@ -26,3 +28,9 @@ Each dispatch pass still spawns ~225ms `backlog` subprocesses proportional to ta
 - [ ] #4 tasks status only dependency-gates the tasks it displays
 - [ ] #5 test_swarm.py counts backlog invocations per pass and locks the bound
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Claimed by aiswarm tasks dispatcher for pane 0.2 (session nudge).
+<!-- SECTION:NOTES:END -->
