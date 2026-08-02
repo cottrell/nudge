@@ -3144,3 +3144,85 @@ windows:
     assert len(edit_calls) == 1
     assert len(detail_calls) <= 3, f"expected O(K) detail fetches, got {detail_calls}"
     assert len(calls) <= 5, f"expected O(ingest + K) total backlog calls, got {calls}"
+
+
+def test_todo_task_assigned_to_our_pane_is_dispatched_as_new_claim(tmp_path: Path, monkeypatch):
+    """Verify that a task in 'To Do' status already assigned to one of our panes is NOT recovered,
+    but is instead treated as a claim candidate, dispatched with the full prompt, and set to In Progress.
+    """
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    monkeypatch.setattr(
+        type(cfg),
+        "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+
+    calls = []
+
+    def mock_run_backlog(cfg, args, timeout=30.0):
+        calls.append(tuple(args))
+        if list(args[:2]) == ["task", "list"]:
+            rows = [{
+                "id": "TASK-123",
+                "title": "Assigned To Do task",
+                "status": "To Do",
+                "priority": "high",
+                "assignees": ["aiswarm:demo:0.0"]
+            }]
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"kind": "task-list", "tasks": rows}), ""
+            )
+        if list(args[:2]) == ["task", "edit"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "task" and len(args) >= 3 and args[2] == "--json":
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({
+                    "kind": "task",
+                    "task": {
+                        "id": "TASK-123",
+                        "title": "Assigned To Do task",
+                        "status": "To Do",
+                        "priority": "high",
+                        "assignees": ["aiswarm:demo:0.0"],
+                        "dependencies": [],
+                    }
+                }), ""
+            )
+        raise AssertionError(f"unexpected backlog args: {args}")
+
+    monkeypatch.setattr(tasksctl, "_run_backlog", mock_run_backlog)
+    monkeypatch.setattr(tasksctl, "pane_has_pending", lambda c, p: False)
+    monkeypatch.setattr(tasksctl, "query_monitor_state", lambda s, p: "idle")
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: "evt-123")
+
+    state = tasksctl.load_state(cfg)
+    assert not state.get("assignments")
+
+    # Recovery should NOT find it because it's 'To Do'
+    state = tasksctl.recover_assignments_from_backlog(cfg, state)
+    assert not state.get("assignments")
+
+    # Now dispatch once
+    actions = tasksctl.dispatch_once(cfg, dry_run=False)
+
+    # It should have claimed TASK-123 and transitioned it to In Progress
+    edit_calls = [c for c in calls if c[:2] == ("task", "edit")]
+    assert len(edit_calls) == 1
+    # Check that it claimed the task for pane 0.0 with status "In Progress"
+    assert "In Progress" in edit_calls[0]
+    assert "aiswarm:demo:0.0" in edit_calls[0]

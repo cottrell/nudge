@@ -1135,6 +1135,8 @@ def recover_assignments_from_backlog(
     )
     found: dict[str, BacklogTask] = {}
     for task in tasks:
+        if task.status.strip().lower() == "to do":
+            continue
         for assignee in task.assignees:
             pane = wanted.get(assignee)
             if pane is not None and pane not in found:
@@ -1190,8 +1192,22 @@ def _claim_new_onto_free(
             break
         task: BacklogTask | None = None
         task_full: dict | None = None
+        pane_assignee = claim_assignee(cfg, pane).strip().lower()
         while candidates:
-            candidate = candidates.pop(0)
+            candidate_idx = -1
+            for idx, c in enumerate(candidates):
+                c_assignees = {a.strip().lower() for a in c.assignees}
+                if pane_assignee in c_assignees:
+                    candidate_idx = idx
+                    break
+            if candidate_idx == -1:
+                for idx, c in enumerate(candidates):
+                    if not c.assignees:
+                        candidate_idx = idx
+                        break
+            if candidate_idx == -1:
+                break
+            candidate = candidates.pop(candidate_idx)
             try:
                 full = _task_or_none(cfg, candidate.id, cache)
             except Exception as e:
@@ -1334,7 +1350,13 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
         state = load_state(cfg)
     # unassigned_only filter uses list-row assignees; no detail fetch needed here.
     if cfg.tasks.unassigned_only:
-        candidates = [t for t in tasks if not t.assignees]
+        our_assignees = {claim_assignee(cfg, pane_spec.pane).strip().lower() for pane_spec in cfg.task_panes}
+        candidates = []
+        for t in tasks:
+            if not t.assignees:
+                candidates.append(t)
+            elif t.status.strip().lower() == "to do" and any(a.strip().lower() in our_assignees for a in t.assignees):
+                candidates.append(t)
     else:
         candidates = list(tasks)
     actions.extend(
