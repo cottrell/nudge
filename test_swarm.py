@@ -3226,3 +3226,85 @@ windows:
     # Check that it claimed the task for pane 0.0 with status "In Progress"
     assert "In Progress" in edit_calls[0]
     assert "aiswarm:demo:0.0" in edit_calls[0]
+
+
+def test_claim_matches_later_preassigned_pane_before_unmatched_pane(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f'''\
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge: {{agent: claude, monitor: true, tasks: {{enabled: true}}}}
+'''))
+    candidates = [tasksctl.BacklogTask(
+        "TASK-61", "Later pane", "To Do", assignees=["aiswarm:demo:0.4"]
+    )]
+    details = {
+        "TASK-61": {
+            "id": "TASK-61", "title": "Later pane", "status": "To Do",
+            "assignees": ["aiswarm:demo:0.4"], "dependencies": [],
+        }
+    }
+    monkeypatch.setattr(tasksctl, "free_task_panes", lambda c, s: ["0.2", "0.4", "0.5"])
+    monkeypatch.setattr(tasksctl, "_task_or_none", lambda c, tid, cache: details[tid])
+
+    actions = tasksctl._claim_new_onto_free(
+        cfg, {"assignments": {}}, True, candidates=candidates
+    )
+
+    assert [(a["task_id"], a["pane"]) for a in actions] == [("TASK-61", "0.4")]
+
+
+def test_claim_prioritizes_preassigned_before_unassigned_with_max_inflight(
+    tmp_path: Path, monkeypatch
+):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f'''\
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+  max_inflight: 2
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge: {{agent: claude, monitor: true, tasks: {{enabled: true}}}}
+'''))
+    candidates = [
+        tasksctl.BacklogTask("TASK-U", "Unassigned", "To Do", priority="HIGH"),
+        tasksctl.BacklogTask("TASK-4", "Pane four", "To Do", assignees=["aiswarm:demo:0.4"]),
+        tasksctl.BacklogTask("TASK-5", "Pane five", "To Do", assignees=["aiswarm:demo:0.5"]),
+    ]
+    details = {
+        task.id: {
+            "id": task.id, "title": task.title, "status": "To Do",
+            "assignees": task.assignees, "dependencies": [],
+        }
+        for task in candidates
+    }
+    monkeypatch.setattr(tasksctl, "free_task_panes", lambda c, s: ["0.2", "0.4", "0.5"])
+    monkeypatch.setattr(tasksctl, "_task_or_none", lambda c, tid, cache: details[tid])
+    monkeypatch.setattr(
+        tasksctl, "claim_task",
+        lambda c, tid, pane, dry_run=False: tasksctl.claim_assignee(c, pane),
+    )
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda *a, **k: "evt")
+
+    dry_actions = tasksctl._claim_new_onto_free(
+        cfg, {"assignments": {}}, True, candidates=candidates
+    )
+    live_actions = tasksctl._claim_new_onto_free(
+        cfg, {"assignments": {}}, False, candidates=candidates
+    )
+
+    expected = [
+        ("TASK-4", "0.4"), ("TASK-5", "0.5")
+    ]
+    assert [(a["task_id"], a["pane"]) for a in dry_actions] == expected
+    assert [(a["task_id"], a["pane"]) for a in live_actions] == expected

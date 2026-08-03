@@ -1187,6 +1187,15 @@ def _claim_new_onto_free(
     max_n = cfg.tasks.max_inflight
     inflight = len(state.get("assignments") or {})
     cache = cache if cache is not None else {}
+    preassigned = {
+        assignee.strip().lower()
+        for task in candidates
+        for assignee in task.assignees
+    }
+    free.sort(
+        key=lambda pane: claim_assignee(cfg, pane).strip().lower()
+        not in preassigned
+    )
     for pane in free:
         if max_n and inflight >= max_n:
             break
@@ -1247,7 +1256,7 @@ def _claim_new_onto_free(
             task_full = full
             break
         if task is None:
-            break
+            continue
         try:
             body = (
                 format_task_snapshot(task_full)
@@ -1306,6 +1315,8 @@ def _claim_new_onto_free(
                 "chase": False,
             }
         )
+        if dry_run:
+            inflight += 1
     return actions
 
 
