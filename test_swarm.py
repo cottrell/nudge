@@ -158,6 +158,106 @@ windows:
     babysitctl.stop_workers(cfg, dry_run=False)
 
 
+def test_restart_worker_preserves_runtime_and_comms_state(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f'''
+session_name: demo_restart
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+'''))
+    monkeypatch.setattr(
+        type(cfg), "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    cfg.runtime_dir.mkdir(parents=True)
+    old_pid, new_pid = 123, 456
+    babysitctl.supervisor_pid_path(cfg).write_text(f"{old_pid}\n")
+    babysitctl.pid_path(cfg, "0.0").write_text(f"{old_pid}\n")
+    babysitctl.spec_path(cfg, "0.0").write_text('{"long_prompt":"keep"}\n')
+    (cfg.runtime_dir / "tasks").mkdir()
+    (cfg.runtime_dir / "tasks" / "enabled.json").write_text('{"enabled":true}\n')
+    (cfg.runtime_dir / "tasks" / "state.json").write_text(
+        '{"assignments":{"0.0":{"task_id":"TASK-1"}}}\n'
+    )
+    comms = cfg.runtime_dir / "comms.db"
+    monkeypatch.setattr(common, "_comms_db_path", lambda session: comms)
+    delivered = common.log_send(cfg.session_name, "0.0", "already delivered")
+    common.advance_cursor(cfg.session_name, "0.0", delivered)
+    pending = common.log_send(cfg.session_name, "0.0", "deliver after restart")
+    preserved = {
+        path: path.read_bytes()
+        for path in (
+            babysitctl.spec_path(cfg, "0.0"),
+            cfg.runtime_dir / "tasks" / "enabled.json",
+            cfg.runtime_dir / "tasks" / "state.json",
+            comms,
+        )
+    }
+    running = iter([True, False, False, True])
+    monkeypatch.setattr(babysitctl, "process_running", lambda pid: next(running))
+    monkeypatch.setattr(
+        babysitctl, "_process_argv",
+        lambda pid: [sys.executable, str(babysitctl.ROOT_DIR / "session_worker.py"), str(cfg.path)],
+    )
+    killed = []
+    monkeypatch.setattr(babysitctl.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(
+        babysitctl, "_start_supervisor",
+        lambda c, dry_run: babysitctl.supervisor_pid_path(c).write_text(f"{new_pid}\n"),
+    )
+    monkeypatch.setattr(babysitctl, "write_runtime_map", lambda c: None)
+
+    babysitctl.restart_worker(cfg)
+
+    assert killed == [(old_pid, babysitctl.signal.SIGTERM)]
+    assert babysitctl.supervisor_pid_path(cfg).read_text() == f"{new_pid}\n"
+    assert babysitctl.pid_path(cfg, "0.0").read_text() == f"{new_pid}\n"
+    assert {path: path.read_bytes() for path in preserved} == preserved
+    assert common.get_cursors(cfg.session_name)["0.0"] == delivered
+    assert [event[0] for event in common.get_pending_events(cfg.session_name, "0.0")] == [pending]
+
+
+@pytest.mark.parametrize("case", ["missing", "malformed", "stale", "unexpected"])
+def test_restart_worker_fails_safely_for_invalid_pid_state(tmp_path: Path, monkeypatch, case):
+    cfg = load_config(write_config(tmp_path, '''
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge: {agent: claude, monitor: true}
+'''))
+    monkeypatch.setattr(
+        type(cfg), "runtime_dir",
+        property(lambda self: tmp_path / "rt" / self.session_name),
+    )
+    cfg.runtime_dir.mkdir(parents=True)
+    if case != "missing":
+        babysitctl.supervisor_pid_path(cfg).write_text(
+            "garbage\n" if case == "malformed" else "123\n"
+        )
+    monkeypatch.setattr(babysitctl, "process_running", lambda pid: case != "stale")
+    monkeypatch.setattr(
+        babysitctl, "_process_argv",
+        lambda pid: [sys.executable, "/some/other/process.py", str(cfg.path)],
+    )
+    monkeypatch.setattr(
+        babysitctl.os, "kill", lambda *a: pytest.fail("invalid PID state was signalled")
+    )
+
+    expected = {"missing": "missing", "malformed": "malformed", "stale": "stale",
+                "unexpected": "not the session worker"}[case]
+    with pytest.raises(RuntimeError, match=expected):
+        babysitctl.restart_worker(cfg)
+
+
 def test_tasks_status_tolerates_garbage_pid_file(tmp_path: Path, monkeypatch, capsys):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
@@ -1459,6 +1559,23 @@ def test_cli_stop_dispatches_to_babysit_and_tmux_stop(monkeypatch):
         ("workers", "agent_grid", "False"),
         ("tmux", "agent_grid", "False"),
     ]
+
+
+def test_cli_worker_restart_does_not_stop_tmux(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        babysitctl, "restart_worker",
+        lambda cfg, dry_run=False: calls.append((cfg.session_name, dry_run)),
+    )
+    monkeypatch.setattr(
+        swarm_cli, "_stop_tmux_session",
+        lambda *a, **k: pytest.fail("worker restart touched tmux"),
+    )
+
+    rc = swarm_cli.main(["worker", "restart", "examples/swarm-grid.yaml", "-D"])
+
+    assert rc == 0
+    assert calls == [("agent_grid", True)]
 
 
 def test_cli_babysit_status_dispatches(monkeypatch):

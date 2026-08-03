@@ -214,6 +214,7 @@ Common workflow:
   aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker)
   aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (idle if empty)
+  aiswarm worker restart              Reload worker code without touching tmux panes
   aiswarm stop                        Tear down workers + tmux session
 
 Config (when path omitted):

@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -54,6 +55,36 @@ def _read_pid(path: Path) -> int:
         return int(path.read_text().strip() or "0")
     except (OSError, ValueError):
         return 0
+
+
+def _process_argv(pid: int) -> list[str]:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError as e:
+        raise RuntimeError(f"cannot inspect session worker pid {pid}: {e}") from e
+    return [part.decode(errors="replace") for part in raw.split(b"\0") if part]
+
+
+def _validate_supervisor_pid(cfg: SwarmConfig) -> int:
+    path = supervisor_pid_path(cfg)
+    if not path.exists():
+        raise RuntimeError(f"session worker pid file is missing: {path}")
+    pid = _read_pid(path)
+    if pid <= 0:
+        raise RuntimeError(f"session worker pid file is malformed: {path}")
+    if not process_running(pid):
+        raise RuntimeError(f"session worker pid is stale: {pid}")
+    argv = _process_argv(pid)
+    expected_worker = (ROOT_DIR / "session_worker.py").resolve()
+    expected_config = cfg.path.resolve()
+    expected = [expected_worker, expected_config]
+    actual = [Path(arg).resolve() for arg in argv[1:]]
+    if actual != expected:
+        raise RuntimeError(
+            f"pid {pid} is not the session worker for {cfg.session_name}: "
+            f"argv={argv!r}"
+        )
+    return pid
 
 
 def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int,
@@ -170,6 +201,30 @@ def _apply(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, include_comms
 
 def ensure_workers(cfg: SwarmConfig, dry_run: bool) -> None:
     _apply(cfg, dry_run, False, True, "session worker")
+
+
+def restart_worker(cfg: SwarmConfig, dry_run: bool = False) -> None:
+    pid = _validate_supervisor_pid(cfg)
+    if dry_run:
+        print(f"would restart session worker for {cfg.session_name} pid={pid}")
+        return
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + 10
+    while process_running(pid) and time.monotonic() < deadline:
+        time.sleep(.05)
+    if process_running(pid):
+        raise RuntimeError(f"session worker pid {pid} did not stop within 10 seconds")
+    supervisor_pid_path(cfg).unlink(missing_ok=True)
+    _start_supervisor(cfg, dry_run=False)
+    new_pid = _read_pid(supervisor_pid_path(cfg))
+    if new_pid <= 0 or not process_running(new_pid):
+        raise RuntimeError(f"replacement session worker failed to start for {cfg.session_name}")
+    for pane in cfg.panes:
+        legacy = pid_path(cfg, pane.pane)
+        if legacy.exists():
+            legacy.write_text(f"{new_pid}\n")
+    write_runtime_map(cfg)
+    print(f"Restarted session worker for {cfg.session_name} pid={new_pid}")
 
 
 def apply_babysit(cfg: SwarmConfig, dry_run: bool, no_action: bool = False) -> None:

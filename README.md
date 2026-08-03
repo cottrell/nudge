@@ -180,6 +180,12 @@ Notes:
   tasks matching `tasks.ingest` (default: `To Do` + `In Progress`), claims them, and delivers a prompt via
   the durable log to free monitored panes (tasks enabled by default; opt out with
   `nudge.tasks.enabled: false`).
+- `tasks stop` / `tasks start` only toggle that group; they do not restart the shared
+  worker or reload edited Python code. Use `aiswarm worker restart` to load current
+  installed or editable-source code without stopping tmux panes, agents, or monitors.
+- `worker restart` preserves pane specs, enabled group flags, task assignment state,
+  and the durable comms database/cursors; it validates the recorded worker process
+  before terminating it.
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json` (path via `aiswarm this`)
 - tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`

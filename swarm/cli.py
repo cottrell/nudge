@@ -292,6 +292,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_optional_config(stop_p)
     stop_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned stop actions without changing tmux or workers")
 
+    worker_p = sub.add_parser(
+        "worker", help="Manage the shared session worker without touching tmux panes"
+    )
+    worker_sub = worker_p.add_subparsers(dest="worker_command", required=True)
+    worker_restart = worker_sub.add_parser(
+        "restart", help="Restart the shared comms/babysit/tasks worker in place"
+    )
+    _add_optional_config(worker_restart)
+    worker_restart.add_argument(
+        "-D", "--dry-run", action="store_true",
+        help="Validate the recorded worker PID and print the restart action",
+    )
+
     clear_p = sub.add_parser("clear-comms", help="Clear the event log for a session (destructive)")
     _add_optional_config(clear_p)
     clear_p.add_argument("-y", "--yes", action="store_true", help="Skip 'y' confirmation")
@@ -420,8 +433,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tasks_sub = tasks_p.add_subparsers(dest="tasks_command", required=True)
     for name, help_text in (
-        ("start", "Start the tasks dispatcher process for this swarm"),
-        ("stop", "Stop the tasks dispatcher process"),
+        ("start", "Enable the tasks group (does not reload the shared worker)"),
+        ("stop", "Disable the tasks group (does not stop the shared worker)"),
         ("status", "Show dispatcher status, assignments, and candidate tasks"),
         ("once", "Run a single claim/dispatch pass (no long-running process)"),
     ):
@@ -706,6 +719,12 @@ def main(argv: list[str] | None = None) -> int:
             swarm_tasks.stop_dispatcher(cfg, args.dry_run)
             swarm_babysit.stop_workers(cfg, args.dry_run)
             _stop_tmux_session(cfg.session_name, args.dry_run)
+            return 0
+
+        if args.command == "worker":
+            cfg = _cfg_from_args(args)
+            if args.worker_command == "restart":
+                swarm_babysit.restart_worker(cfg, args.dry_run)
             return 0
 
         if args.command == "clear-comms":
