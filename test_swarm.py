@@ -387,6 +387,39 @@ def test_agents_block_upsert_and_remove():
     assert "# Project" in removed
 
 
+def test_agents_block_upsert_idempotency_with_following_backlog_block():
+    block = swarm_init.agent_block("demo")
+    initial_text = "# Project\n\n" + block + "\n<!-- BACKLOG.MD GUIDELINES START -->\nx\n<!-- BACKLOG.MD GUIDELINES END -->\n"
+    text = initial_text
+    for _ in range(5):
+        text, action = swarm_init.upsert_agents_text(text, block)
+        assert action == "unchanged"
+        assert text == initial_text
+        assert text.endswith("<!-- BACKLOG.MD GUIDELINES END -->\n")
+        assert not text.endswith("\n\n")
+
+    backlog_only = "# Project\n\n<!-- BACKLOG.MD GUIDELINES START -->\nx\n<!-- BACKLOG.MD GUIDELINES END -->\n"
+    text, action = swarm_init.upsert_agents_text(backlog_only, block)
+    assert action == "updated"
+    assert swarm_init.BLOCK_START in text
+    assert "<!-- BACKLOG.MD GUIDELINES START -->" in text
+    for _ in range(3):
+        next_text, next_action = swarm_init.upsert_agents_text(text, block)
+        assert next_action == "unchanged"
+        assert next_text == text
+
+    block_b = swarm_init.agent_block("beta")
+    updated_text, update_action = swarm_init.upsert_agents_text(text, block_b)
+    assert update_action == "updated"
+    assert "/tmp/nudge-swarm/beta/" in updated_text
+    assert "<!-- BACKLOG.MD GUIDELINES START -->" in updated_text
+    for _ in range(3):
+        t, a = swarm_init.upsert_agents_text(updated_text, block_b)
+        assert a == "unchanged"
+        assert t == updated_text
+
+
+
 def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     def fake_which(command):
         return f"/usr/bin/{command}"

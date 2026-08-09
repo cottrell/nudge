@@ -51,19 +51,19 @@ def upsert_agents_text(text: str, block: str) -> tuple[str, str]:
         if end_at < len(text) and text[end_at] == "\n":
             end_at += 1
         head = text[:start].rstrip()
-        tail = text[end_at:].lstrip("\n")
-        parts = [p for p in (head, block.rstrip("\n"), tail) if p]
-        new = "\n\n".join(parts) + "\n"
+        tail = text[end_at:].strip()
+        parts = [p for p in (head, block.strip(), tail) if p]
+        new = ("\n\n".join(parts) + "\n") if parts else ""
         return new, "unchanged" if new == text else "updated"
 
     cleaned = _strip_legacy_swarm(text) if "## Swarm" in text else text
     cleaned = cleaned.rstrip()
-    new = (cleaned + "\n\n" + block) if cleaned else block
+    new = (cleaned + "\n\n" + block.strip()) if cleaned else block.strip()
     if not new.endswith("\n"):
         new += "\n"
     if not had_content:
         return new, "created"
-    return new, "updated"
+    return new, "unchanged" if new == text else "updated"
 
 
 def remove_agents_text(text: str) -> tuple[str, bool]:
