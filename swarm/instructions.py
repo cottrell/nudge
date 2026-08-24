@@ -44,6 +44,7 @@ aiswarm babysit start        # optional idle prompt loops
 aiswarm tasks start          # poll backlog → free panes (idle if empty)
 aiswarm status --brief
 aiswarm send 0.2 "msg"       # durable poke via log
+aiswarm send any "msg"       # one eligible idle pane claims it
 aiswarm babysit stop
 aiswarm tasks stop
 aiswarm stop                 # workers + session teardown
@@ -53,7 +54,7 @@ aiswarm stop                 # workers + session teardown
 
 | Channel | Use for | Not for |
 |---|---|---|
-| `aiswarm send` / log | Short poke, wake, done-ping | Large diffs, long reports |
+| `aiswarm send` / log | Short poke, wake, or single-consumer `any` work | Large diffs, long reports |
 | Backlog task | Goal, AC, notes, final-summary, Done | Live streaming chat |
 | Pane attach / capture | Human debug | Agent waiting on a peer |
 | babysit | Periodic continue / clear nudges | Assigning real work units |
@@ -211,7 +212,7 @@ Common workflow:
   aiswarm init <name>                 Create .aiswarm/config.yaml + AGENTS block
   aiswarm start                       Start session, monitors, comms workers
   aiswarm status --brief              Pane states
-  aiswarm send <pane> "msg"           Durable message via log (delivered on idle)
+  aiswarm send <pane|any> "msg"       Durable message via log (delivered on idle)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker)
   aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (idle if empty)
   aiswarm worker restart              Reload worker code without touching tmux panes

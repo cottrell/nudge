@@ -760,9 +760,11 @@ def _print_log_event(
 
 def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pending: bool = False) -> None:
     try:
-        from .common import get_cursors, get_events, get_pending_events, get_pending_broadcasts
+        from .common import (get_cursors, get_events, get_pending_any,
+                             get_pending_broadcasts, get_pending_events)
     except ImportError:
-        from common import get_cursors, get_events, get_pending_events, get_pending_broadcasts
+        from common import (get_cursors, get_events, get_pending_any,
+                            get_pending_broadcasts, get_pending_events)
     curs = get_cursors(cfg.session_name)
     if curs:
         print("cursors:")
@@ -787,6 +789,7 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
             try:
                 bcasts = get_pending_events(cfg.session_name, "__broadcast__")
                 print(f"  __broadcast__ pending: {len(bcasts)}")
+                print(f"  __any__ pending: {len(get_pending_any(cfg.session_name))}")
             except Exception:
                 pass
             print("  Run with --pane X.Y for per-pane pending")

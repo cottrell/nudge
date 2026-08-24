@@ -319,15 +319,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     send_p = sub.add_parser(
         "send",
-        help="Send a message to one pane via the event log (delivered on idle)",
+        help="Send to one pane, or any eligible pane, via the event log",
         description=(
-            "Send a message to a single pane via the event log (instead of direct "
-            "tmux-send). Message is delivered when the pane is idle."
+            "Send via the durable event log (instead of direct tmux-send). Target a "
+            "pane, or use 'any' to let one eligible idle pane claim the message."
         ),
         epilog=(
             "examples:\n"
             "  aiswarm send 0.0 hello\n"
             '  aiswarm send 0.2 "do the thing"\n'
+            '  aiswarm send any "pick this up when free"\n'
             "  aiswarm send -c .aiswarm/config.yaml 0.1 hi there\n"
             "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path"
         ),
@@ -352,8 +353,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         metavar=("PANE", "MESSAGE"),
         help=(
-            "PANE id (e.g. 0.2) then MESSAGE words. "
-            "Legacy: optional leading CONFIG path before PANE"
+            "PANE id (e.g. 0.2), or 'any', then MESSAGE words. "
+            "Legacy: optional leading CONFIG path before the target"
         ),
     )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
@@ -682,15 +683,16 @@ def main(argv: list[str] | None = None) -> int:
             cfg = load_config(explicit)
             msg = " ".join(msg_parts)
             try:
-                from .common import log_send
+                from .common import log_any, log_send
             except ImportError:
-                from common import log_send
-            if target not in [p.pane for p in cfg.panes]:
+                from common import log_any, log_send
+            if target not in [p.pane for p in cfg.panes] and target != "any":
                 print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
             if args.dry_run:
                 print(f"would log-send session={cfg.session_name} target={target} msg={msg}")
             else:
-                eid = log_send(cfg.session_name, target, msg, sender="cli send")
+                eid = (log_any(cfg.session_name, msg, sender="cli send") if target == "any"
+                       else log_send(cfg.session_name, target, msg, sender="cli send"))
                 print(f"log-sent id={eid} session={cfg.session_name} target={target}")
             return 0
 

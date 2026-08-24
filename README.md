@@ -53,6 +53,7 @@ Resolution order for commands that need a config:
 aiswarm init myproject          # writes .aiswarm/config.yaml + prompts (commit if team-shared)
 aiswarm start                   # no path needed inside the project
 aiswarm send 0.0 "hello"        # same
+aiswarm send any "check tests"  # one eligible idle pane receives it
 aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)
 ```
 
@@ -112,6 +113,7 @@ aiswarm status --brief -w
 aiswarm broadcast "AGENTS.md updated; please re-read it."
 aiswarm broadcast --via-log "use durable log"    # write to event log instead of direct send
 aiswarm send 0.0 "hello via log"                 # durable, delivered on idle
+aiswarm send any "investigate the failure"       # durable, exactly one idle pane
 aiswarm log --pending
 aiswarm cursors
 aiswarm clear-comms -y
@@ -121,6 +123,12 @@ aiswarm av-usage
 ```
 
 Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged. Direct/manual sends still work with `tmux-send`; prefer it (or the log commands) over raw `tmux send-keys`.
+
+`send any` is the single-consumer counterpart to broadcast. It queues immediately,
+even when all panes are busy; the always-running comms worker atomically routes it
+to exactly one idle monitored pane. Panes holding local Backlog task assignments
+are skipped. This does not require `aiswarm tasks start`, and it does not add task
+completion or chase semantics.
 
 ### Agent-to-agent handoff (do not stream peer panes)
 

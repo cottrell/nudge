@@ -65,10 +65,11 @@ def _send_message(target: str, msg: str, simulate: bool = False) -> None:
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
-def _drain_comms(session: str, target: str, pane: str, simulate: bool = False, spec: dict | None = None) -> None:
+def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
+                 spec: dict | None = None, claim_any_message: bool = False) -> None:
     try:
-        from common import (advance_broadcast_cursor, advance_cursor, get_pending_broadcasts,
-                            get_pending_events, log_ack)
+        from common import (advance_broadcast_cursor, advance_cursor, claim_any,
+                            get_pending_broadcasts, get_pending_events, log_ack)
         if spec is None:
             stem = f"babysit-{pane.replace('.', '-')}"
             spec_path = Path("/tmp/nudge-swarm") / session / f"{stem}.json"
@@ -78,6 +79,8 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False, s
                 except Exception:
                     pass
 
+        if claim_any_message and not simulate:
+            claim_any(session, pane)
         pending = get_pending_events(session, pane)
         for eid, *_rest, payload, _meta in pending:
             _send_message(target, payload, simulate); log_ack(session, pane, eid, pane, target)
@@ -200,7 +203,8 @@ class PaneWorker:
         elif not self.nonidle_since: self.nonidle_since = now
         force_at = self.nonidle_since + int(spec.get("max_nonidle_secs", 1800)) if long_prompt and self.nonidle_since else 0
         if state == "idle":
-            _drain_comms(self.session, target, self.pane, simulate=simulate, spec=spec)
+            _drain_comms(self.session, target, self.pane, simulate=simulate, spec=spec,
+                         claim_any_message=True)
             if long_prompt or short_prompt:
                 self._quota(spec, now_f)
                 if not self.next_nudge_at:

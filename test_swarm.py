@@ -1,4 +1,5 @@
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import random
@@ -1302,6 +1303,71 @@ def test_comms_helpers(tmp_path: Path):
         if db.exists():
             db.unlink()
         # also remove parent if empty? skip
+
+
+def test_any_message_waits_for_idle_worker_and_delivers_once(monkeypatch):
+    sess = f"test_any_idle_{os.getpid()}_{random.randrange(1_000_000)}"
+    sent = []
+    try:
+        common.log_any(sess, "voice note", sender="voice-mcp")
+        worker = babysit_worker.PaneWorker(sess, "0.0")
+        states = iter(["working", "idle", "idle"])
+        monkeypatch.setattr(
+            babysit_worker, "query_monitor_socket", lambda *_: {"state": next(states)}
+        )
+        monkeypatch.setattr(
+            babysit_worker, "_send_message", lambda target, msg, simulate=False: sent.append((target, msg))
+        )
+        spec = {"target": f"{sess}:0.0", "interval_secs": 5, "monitor": True}
+
+        worker.tick(spec, 10)
+        assert common.get_pending_any(sess)
+        assert sent == []
+
+        worker.tick(spec, 16)
+        assert common.get_pending_any(sess) == []
+        assert sent == [(f"{sess}:0.0", "voice note")]
+        types = [row[4] for row in common.get_events(sess)]
+        assert types == ["any", "any-delivery", "ack"]
+
+        worker.tick(spec, 22)
+        assert sent == [(f"{sess}:0.0", "voice note")]
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_any_message_claim_is_atomic():
+    sess = f"test_any_atomic_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        queued = common.log_any(sess, "one consumer")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda pane: common.claim_any(sess, pane), ["0.0", "0.1"]))
+        assert sum(result is not None for result in results) == 1
+        events = common.get_events(sess)
+        deliveries = [row for row in events if row[4] == "any-delivery"]
+        assert len(deliveries) == 1
+        meta = json.loads(deliveries[0][6])
+        assert meta["queue_event_id"] == queued
+        assert meta["selected_pane"] in {"0.0", "0.1"}
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_any_message_skips_pane_with_task_assignment():
+    sess = f"test_any_task_{os.getpid()}_{random.randrange(1_000_000)}"
+    runtime = Path("/tmp/nudge-swarm") / sess
+    try:
+        tasks = runtime / "tasks"
+        tasks.mkdir(parents=True)
+        (tasks / "state.json").write_text(
+            '{"assignments":{"0.0":{"task_id":"TASK-1"}}}\n'
+        )
+        common.log_any(sess, "unassigned work")
+        assert common.claim_any(sess, "0.0") is None
+        assert common.get_pending_any(sess)
+        assert common.claim_any(sess, "0.1") is not None
+    finally:
+        shutil.rmtree(runtime, ignore_errors=True)
 
 
 def test_usage_scraper_timeout_cleans_exact_tmux_session(monkeypatch, tmp_path: Path):
@@ -3137,6 +3203,12 @@ windows:
         pass
     out, err = capsys.readouterr()
     assert "Warning: recipient pane '0.9' is not present in the config" in err
+
+    cli_main(["send", "any", "voice note"])
+    out, err = capsys.readouterr()
+    assert "target=any" in out
+    assert "Warning" not in err
+    assert common.get_pending_any("demo_warning")[0][4] == "voice note"
 
     # 2. Test log_broadcast filtering under _drain_comms
     sess = "demo_warning"

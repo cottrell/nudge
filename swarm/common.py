@@ -659,6 +659,14 @@ def init_comms_db(session_name: str) -> Path:
                 last_id INTEGER NOT NULL DEFAULT 0
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS any_claims (
+                queue_event_id INTEGER PRIMARY KEY,
+                pane TEXT NOT NULL,
+                claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                delivery_event_id INTEGER NOT NULL
+            )
+        """)
     return db
 
 def log_send(session_name: str, recipient: str, payload: str, sender: str = None,
@@ -682,6 +690,65 @@ def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = 
     # or we can enumerate panes here. Start simple.
     log_send(session_name, "__broadcast__", message, sender, "broadcast",
              meta={"include_nonmonitored": include_nonmonitored})
+
+
+def log_any(session_name: str, message: str, sender: str = None) -> int:
+    """Queue a message for exactly one eligible idle pane."""
+    return log_send(session_name, "__any__", message, sender, "any")
+
+
+def pane_has_task_assignment(session_name: str, pane: str) -> bool:
+    path = Path("/tmp/nudge-swarm") / session_name / "tasks" / "state.json"
+    try:
+        state = json.loads(path.read_text() or "{}")
+    except (OSError, json.JSONDecodeError):
+        return False
+    return pane in (state.get("assignments") or {})
+
+
+def claim_any(session_name: str, pane: str) -> int | None:
+    """Atomically route the oldest unclaimed any event to pane."""
+    if pane_has_task_assignment(session_name, pane):
+        return None
+    db = init_comms_db(session_name)
+    with _sqlite3.connect(str(db), timeout=30) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT e.id, e.sender, e.payload, e.meta FROM events e "
+            "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
+            "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
+            "ORDER BY e.id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        queue_id, sender, payload, raw_meta = row
+        try:
+            meta = json.loads(raw_meta) if raw_meta else {}
+        except (TypeError, json.JSONDecodeError):
+            meta = {}
+        meta.update({"queue_event_id": queue_id, "selected_pane": pane})
+        cur = conn.execute(
+            "INSERT INTO events (recipient, sender, type, payload, meta) VALUES (?,?,?,?,?)",
+            (pane, sender or "any-dispatch", "any-delivery", payload, json.dumps(meta)),
+        )
+        delivery_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO any_claims (queue_event_id, pane, delivery_event_id) VALUES (?,?,?)",
+            (queue_id, pane, delivery_id),
+        )
+        return delivery_id
+
+
+def get_pending_any(session_name: str):
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return []
+    with _sqlite3.connect(str(db)) as conn:
+        return conn.execute(
+            "SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta FROM events e "
+            "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
+            "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL ORDER BY e.id"
+        ).fetchall()
 
 
 def log_ack(session_name: str, pane: str, acked_event_id: int,
@@ -803,6 +870,7 @@ def clear_comms(session_name: str, confirm: bool = False):
     db = _comms_db_path(session_name)
     if db.exists():
         with _sqlite3.connect(str(db)) as conn:
+            conn.execute("DELETE FROM any_claims")
             conn.execute("DELETE FROM events")
             conn.execute("DELETE FROM cursors")
         # VACUUM cannot run inside a transaction
