@@ -3,13 +3,14 @@ id: doc-5
 title: 'Voice, subscription and agent communications research'
 type: other
 created_date: '2026-08-27 10:42'
-updated_date: '2026-08-27 10:43'
+updated_date: '2026-08-27 10:44'
 tags:
   - voice
   - architecture
   - mcp
   - subscriptions
   - comms
+  - mobile-web
 ---
 # Voice, subscription and agent communications research
 
@@ -147,3 +148,41 @@ Deferred. It requires streaming audio, VAD, interruption, partial transcripts, b
 - Redis Streams documentation.
 - LibreChat speech and MCP configuration documentation.
 - Telegram Bot API and Discord message/voice-message documentation.
+## Phone-first web UI over official CLI sessions
+
+A browser conversation UI may replace muxpod as the phone interaction layer without replacing tmux, nudge, or official provider CLIs. This is materially different from Open WebUI/LibreChat: the backend is a PTY attached to the real CLI, not an API model endpoint.
+
+```text
+phone browser
+  -> project/session picker
+  -> chat view or raw terminal
+  -> tmux-backed official provider CLI
+  -> CLI transcript and/or nudge conversational mailbox
+```
+
+The browser can add push-to-talk dictation through the Web Speech API or ordinary phone keyboard dictation, and read selected responses using browser/device speech synthesis. Browser SpeechRecognition may use a platform service and has uneven browser support, so it must be tested on the actual phone; it is not automatically local. SpeechSynthesis generally uses device voices. A local Whisper/Piper fallback can remain optional.
+
+Relevant existing projects found:
+
+- Agent Tmux Web: private mobile browser control surface for tmux-backed CLIs; explicitly hosts no AI service, sends keys to tmux, captures output, switches sessions and supports phone-oriented TTY/raw views.
+- AgentDeck: xterm.js/node-pty/tmux transport plus an optional structured chat view derived from official CLI transcript files; supports mobile tabs, session history, send/interrupt and resume for several CLIs.
+- agmux: tmux-backed browser PTYs, readiness detection, inactive-session restoration and task-provider hooks; broader and less phone/chat focused.
+- WeTTY/ttyd/xterm.js: generic browser terminal building blocks, credible fallback if agent-specific products impose too much workflow.
+
+This surface could offer two modes:
+
+1. Direct session mode: choose a project/session, dictate into the actual CLI, and listen to selected transcript messages.
+2. Routed conversation mode: speak naturally to one nudge router, which records conversation IDs and dispatches to swarms; later explicitly retrieve and discuss replies without selecting a pane.
+
+Direct mode solves cramped phone tmux interaction immediately. Routed mode solves session selection and asynchronous correlation. They can coexist, with a raw terminal escape hatch for permissions, pickers and unusual TUI states.
+
+Evaluation should prefer adopting or lightly extending an existing browser-over-tmux project. Required checks include phone UX, voice input/output, generic Grok/GPT/Gemini/Codex CLI support, transcript extraction versus fragile screen scraping, existing nudge session discovery, authentication, private IPv6/mesh access, disconnect recovery, and ease of removal. Do not expose a terminal-control service directly to the public internet.
+
+Sources:
+
+- https://github.com/antonlobanovskiy/agent-tmux-web
+- https://github.com/AliceLJY/agentdeck
+- https://github.com/rjprins/agmux
+- https://github.com/butlerx/wetty
+- https://github.com/xtermjs/xterm.js
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API
