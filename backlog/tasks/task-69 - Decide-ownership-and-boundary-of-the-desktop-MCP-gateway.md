@@ -4,6 +4,7 @@ title: Decide ownership and boundary of the desktop MCP gateway
 status: To Do
 assignee: []
 created_date: '2026-08-27 10:10'
+updated_date: '2026-08-27 10:43'
 labels:
   - architecture
   - mcp
@@ -11,6 +12,10 @@ dependencies: []
 references:
   - ~/dev/local-mcp/README.md
   - ~/dev/local-mcp/server.py
+documentation:
+  - >-
+    backlog/docs/architecture/voice-agent-comms/doc-5 -
+    Voice-subscription-and-agent-communications-research.md
 priority: medium
 type: spike
 ---

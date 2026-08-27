@@ -4,7 +4,7 @@ title: Evaluate mobile voice-to-swarm and asynchronous backtalk
 status: To Do
 assignee: []
 created_date: '2026-08-27 10:10'
-updated_date: '2026-08-27 10:40'
+updated_date: '2026-08-27 10:43'
 labels:
   - voice
   - mcp
@@ -15,6 +15,10 @@ references:
   - 'https://docs.x.ai/grok/connectors'
   - 'https://openclaw.ai/'
   - 'https://docs.ntfy.sh/'
+documentation:
+  - >-
+    backlog/docs/architecture/voice-agent-comms/doc-5 -
+    Voice-subscription-and-agent-communications-research.md
 priority: high
 type: spike
 ---
