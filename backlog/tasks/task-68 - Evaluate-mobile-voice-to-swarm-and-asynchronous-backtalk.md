@@ -4,7 +4,7 @@ title: Evaluate mobile voice-to-swarm and asynchronous backtalk
 status: To Do
 assignee: []
 created_date: '2026-08-27 10:10'
-updated_date: '2026-08-27 10:14'
+updated_date: '2026-08-27 10:39'
 labels:
   - voice
   - mcp
@@ -33,4 +33,5 @@ Research and prototype the lowest-friction conversational round trip for capturi
 - [ ] #4 A minimal end-to-end experiment submits one phone-originated task and later pulls the correlated result into a user-initiated Grok or ChatGPT conversation
 - [ ] #5 The design does not emit unsolicited mobile notifications or speech; the user explicitly asks to check, continue, or retrieve replies
 - [ ] #6 A recommendation explicitly states whether OpenClaw should be adopted, borrowed from, or deferred
+- [ ] #7 Every candidate path has an auth audit stating the exact executable or surface, credential source, subscription entitlement and quota bucket, provider support status, and fallback behavior; claims that a subscription works require an end-to-end test proving no API key or PAYG endpoint was used and no silent fallback occurred
 <!-- AC:END -->
