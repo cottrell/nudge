@@ -37,6 +37,11 @@ workflows; works standalone.
 - **Prefer portable, inspectable mechanisms.** Use ordinary processes, files,
   SQLite, YAML, tmux, and provider CLIs. Keep state and routing understandable
   from the command line and avoid making one model vendor the center.
+- **Treat only the official CLI as durable subscription access.** If a provider
+  lets a user log in and run its CLI, nudge may operate that CLI as a black box.
+  Do not make subscription OAuth, reusable auth tokens, API-compatible
+  endpoints, embedded runtimes, or third-party bridges architectural
+  dependencies; assume those paths can disappear even when they work today.
 - **Coordinate without owning the work.** Backlog and git hold durable intent and
   results; nudge wakes and routes workers. The harness should not become the only
   place where a task, decision, or result exists.
