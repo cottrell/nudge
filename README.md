@@ -20,6 +20,27 @@ with agents by hand (Claude, Codex, Grok, …), and where idle-gated comms /
 babysit / tasks keep things moving when you step back. Personal multi-agent
 workflows; works standalone.
 
+## Design philosophy
+
+- **Agents choose their isolation.** The shared project checkout is the default,
+  not a restriction. An agent or human may use a branch, worktree, or other
+  isolation when the task benefits from it; nudge does not make one worktree per
+  agent part of the swarm model.
+- **Keep the exit cheap.** It should be easy to stop using nudge, replace one of
+  its parts, or operate the underlying sessions by hand. Repositories, commits,
+  Backlog tasks, tmux sessions, and agent-native sessions remain useful without
+  nudge.
+- **Compose optional layers.** Tmux lifecycle, activity monitoring, durable
+  messaging, babysit loops, task dispatch, and quota hints can be used
+  independently. Nudge should not become a mandatory control plane merely
+  because one feature is useful.
+- **Prefer portable, inspectable mechanisms.** Use ordinary processes, files,
+  SQLite, YAML, tmux, and provider CLIs. Keep state and routing understandable
+  from the command line and avoid making one model vendor the center.
+- **Coordinate without owning the work.** Backlog and git hold durable intent and
+  results; nudge wakes and routes workers. The harness should not become the only
+  place where a task, decision, or result exists.
+
 Primary workflow is the installed `aiswarm` command. From a repo checkout,
 `python -m swarm.cli` or `python swarm/cli.py` also works.
 
