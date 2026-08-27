@@ -3,7 +3,7 @@ id: doc-5
 title: 'Voice, subscription and agent communications research'
 type: other
 created_date: '2026-08-27 10:42'
-updated_date: '2026-08-27 10:57'
+updated_date: '2026-08-27 11:36'
 tags:
   - voice
   - architecture
@@ -12,6 +12,7 @@ tags:
   - comms
   - mobile-web
   - tmux
+  - security
 ---
 # Voice, subscription and agent communications research
 
@@ -220,3 +221,12 @@ Recommended sequence:
 5. Test backgrounding, reconnect, duplicate turn IDs, microphone permission and audio playback on the actual phone.
 
 Gemini's estimate of 100-150 backend lines is plausible for a disposable audio echo or one-shot prompt demo, not for reliable multi-session conversation. VAD itself is available through `@ricky0123/vad-web`; the complexity lies in mobile lifecycle and trustworthy agent-response extraction.
+## Agent Tmux Web trial security note (2026-08-27)
+
+Trial source: `~/dev/agent-tmux-web` at upstream commit `aa13d56d8901ac2ec11784ba30941cf6a6d4115d` (v0.1.26). Production build started as transient user service `agent-tmux-web-trial.service` on `[::]:16174`, with mandatory random token and Codex app-server autostart disabled. It discovered existing nudge-created tmux sessions without recreating them. HTTP API returned 401 without the token and 200 with it.
+
+Treat the token as a remote-shell credential. The application is not nudge-scoped: authenticated callers can inspect and type into all tmux sessions owned by the Unix user, create or destroy sessions, upload files, attach raw terminals and invoke configured CLI launchers. Yggdrasil provides an encrypted mesh path and difficult-to-guess cryptographic addressing, but does not replace application authorization; any reachable mesh peer may attempt the service. Do not expose this service directly to the public internet.
+
+Current trial URL is HTTP. Phone keyboard dictation should remain available because it belongs to the phone keyboard, but browser `getUserMedia`, Web Speech recognition and in-page VAD generally require a trusted secure context. Add trusted HTTPS before evaluating in-page microphone features. Query-string tokens are convenient but can remain in history/screenshots; prefer a future login/session cookie or header flow if the trial is retained.
+
+Dependency audit initially found a high-severity runtime `ws` issue; the local trial updated `ws` to 8.21.3. Remaining audit findings are primarily build/development dependencies, so the trial uses the compiled production server rather than Vite development mode. Upstream tests pass 269/270 after the local dependency update; the one failure is its source-registry dependency manifest expecting the original `ws` entry.
