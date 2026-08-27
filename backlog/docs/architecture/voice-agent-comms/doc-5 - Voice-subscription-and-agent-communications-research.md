@@ -3,7 +3,7 @@ id: doc-5
 title: 'Voice, subscription and agent communications research'
 type: other
 created_date: '2026-08-27 10:42'
-updated_date: '2026-08-27 10:44'
+updated_date: '2026-08-27 10:57'
 tags:
   - voice
   - architecture
@@ -11,6 +11,7 @@ tags:
   - subscriptions
   - comms
   - mobile-web
+  - tmux
 ---
 # Voice, subscription and agent communications research
 
@@ -186,3 +187,36 @@ Sources:
 - https://github.com/butlerx/wetty
 - https://github.com/xtermjs/xterm.js
 - https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API
+## Exact browser-to-tmux communication choices
+
+Tmux is a byte transport, not a conversational protocol. Sending input is straightforward; identifying a clean completed reply is the hard boundary.
+
+### Input path
+
+For an existing nudge pane, the browser sends `{conversation_id, turn_id, swarm, pane, text}` to the local web backend. The backend appends through `aiswarm send` so nudge can retain the message and deliver it when the pane is idle. Raw interactive controls such as permission prompts can use the existing safe tmux-send wrapper or an attached PTY path. Do not use raw `tmux send-keys` from application code.
+
+### Output option 1: raw terminal stream
+
+Attach or capture the pane and stream terminal bytes to xterm.js. This is generic and gives exact visibility, but ANSI/TUI redraws are not a reliable assistant-message boundary and should not be fed blindly to TTS. Best for the first direct-control prototype and as an escape hatch.
+
+### Output option 2: provider transcript adapter
+
+Read the official CLI's local conversation/session record and emit structured user/assistant messages. AgentDeck uses this pattern. It gives the best chat and TTS experience but requires a small adapter per provider and may break when provider storage formats change. The adapter remains optional; raw terminal access must still work.
+
+### Output option 3: explicit nudge reply
+
+Include a reply address such as `browser:<conversation_id>` and ask the receiving agent to send its final conversational response back through the nudge mailbox. This is provider-neutral and durable, but depends on agent cooperation until reply tooling is installed automatically. Backlog remains the result channel for tracked work; the mailbox reply is the short conversational response.
+
+### Output option 4: idle plus capture heuristic
+
+Record pane output before sending, wait for the monitor to transition working then idle, capture the delta and attempt to extract the answer. This is acceptable only as a disposable prototype. Quiet commands, redraws, permissions and truncated scrollback make it unsuitable as the durable protocol.
+
+Recommended sequence:
+
+1. Prototype direct mode with selected existing pane, `aiswarm send`, monitor state and raw browser output.
+2. Add browser push-to-talk or VAD and local/platform STT; keep text visible and editable before automatic sending initially.
+3. Add selected-response speech synthesis only after obtaining structured reply text through a transcript adapter or explicit mailbox reply.
+4. Add barge-in by stopping browser audio and cancelling only the current browser speech playback; do not interrupt the underlying coding agent unless the user explicitly requests it.
+5. Test backgrounding, reconnect, duplicate turn IDs, microphone permission and audio playback on the actual phone.
+
+Gemini's estimate of 100-150 backend lines is plausible for a disposable audio echo or one-shot prompt demo, not for reliable multi-session conversation. VAD itself is available through `@ricky0123/vad-web`; the complexity lies in mobile lifecycle and trustworthy agent-response extraction.

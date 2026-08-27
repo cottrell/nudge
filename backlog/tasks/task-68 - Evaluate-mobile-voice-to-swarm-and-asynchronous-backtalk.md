@@ -4,7 +4,7 @@ title: Evaluate mobile voice-to-swarm and asynchronous backtalk
 status: To Do
 assignee: []
 created_date: '2026-08-27 10:10'
-updated_date: '2026-08-27 10:44'
+updated_date: '2026-08-27 10:57'
 labels:
   - voice
   - mcp
@@ -40,4 +40,5 @@ Research and prototype the lowest-friction conversational round trip for capturi
 - [ ] #7 Every candidate path has an auth audit stating the exact executable or surface, credential source, subscription entitlement and quota bucket, provider support status, and fallback behavior; claims that a subscription works require an end-to-end test proving no API key or PAYG endpoint was used and no silent fallback occurred
 - [ ] #8 Architecture may rely on subscription access only through the provider official CLI after normal user login; subscription OAuth, reusable auth tokens, API-compatible endpoints, embedded runtimes, connector entitlements, and third-party subscription bridges are treated as non-durable experiments and must remain optional and replaceable
 - [ ] #9 A phone-first browser UI over real tmux-backed official CLIs is evaluated separately from API-model chat frontends, including Agent Tmux Web, AgentDeck and a generic xterm.js option; the assessment covers direct session switching, structured chat rendering, voice dictation and selected-response playback
+- [ ] #10 A minimal custom browser prototype defines and tests an explicit tmux request/reply boundary: safe nudge input delivery, raw terminal fallback, and either provider transcript extraction or an explicit mailbox reply before enabling automatic TTS
 <!-- AC:END -->
