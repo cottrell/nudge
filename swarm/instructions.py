@@ -164,6 +164,7 @@ nudge:
 
 ```bash
 aiswarm tasks start
+aiswarm tasks start --for 1h   # optional; auto-stop the group after an hour
 aiswarm tasks status
 aiswarm tasks once -D      # dry-run: resolved config + planned claims
 aiswarm tasks stop
@@ -180,7 +181,8 @@ aiswarm tasks stop
   slot.
 - The dispatcher never dumps the whole To Do list onto one pane or queues another task on a pane
   while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
-  `aiswarm start` alone does not start dispatching.
+  `aiswarm start` alone does not start dispatching. `aiswarm tasks start --for 1h` (also `30m`,
+  `90s`, or seconds) auto-stops the group; `tasks stop` or a later untimed start clears the timer.
 - **Claim pool:** with `unassigned_only` (default), only unassigned tasks. Assignees in
   `tasks.skip_assignees` (default `human`) are **not** claimed/reclaimed — leave for people.
   Empty `skip_assignees: []` disables that skip. Swarm owners are `aiswarm:<session>:<pane>` only;

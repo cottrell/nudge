@@ -267,6 +267,7 @@ windows:
 
 ```bash
 aiswarm tasks start
+aiswarm tasks start --for 1h   # optional; auto-stop after an hour
 aiswarm tasks status
 aiswarm tasks once
 aiswarm tasks stop
