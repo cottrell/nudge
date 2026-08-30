@@ -27,8 +27,23 @@ def pane_spec(cfg, pane: str, cache: dict | None = None) -> dict | None:
     return spec
 
 
-def tasks_enabled(cfg) -> bool:
-    return (cfg.runtime_dir / "tasks" / "enabled.json").exists()
+def expire_timed_groups(cfg, now: float | None = None) -> None:
+    try:
+        from babysitctl import expire_if_due as expire_babysit
+        from tasksctl import expire_if_due as expire_tasks
+    except ImportError:
+        from babysitctl import expire_if_due as expire_babysit
+        from tasksctl import expire_if_due as expire_tasks
+    expire_babysit(cfg, now)
+    expire_tasks(cfg, now)
+
+
+def tasks_enabled(cfg, now: float | None = None) -> bool:
+    try:
+        from tasksctl import is_group_enabled
+    except ImportError:
+        from tasksctl import is_group_enabled
+    return is_group_enabled(cfg, now)
 
 
 def main() -> int:
@@ -56,6 +71,7 @@ def main() -> int:
         except OSError:
             pass
         now = time.time()
+        expire_timed_groups(cfg, now)
         for pane, worker in workers.items():
             try:
                 spec = pane_spec(cfg, pane, spec_cache)

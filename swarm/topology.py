@@ -32,7 +32,7 @@ try:
         desired_spec as babysit_desired_spec,
         supervisor_pid_path,
     )
-    from .tasksctl import enabled_path as tasks_enabled_path, worker_state_path
+    from .tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
 except ImportError:
     # direct script fallback
     from common import (
@@ -56,7 +56,7 @@ except ImportError:
         desired_spec as babysit_desired_spec,
         supervisor_pid_path,
     )
-    from tasksctl import enabled_path as tasks_enabled_path, worker_state_path
+    from tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -364,7 +364,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         ]
         rows = []
 
-    tasks_enabled = tasks_enabled_path(cfg).exists()
+    tasks_enabled = tasks_group_enabled(cfg)
     tasks_pid_file = supervisor_pid_path(cfg)
     tasks_worker = "stopped"
     if tasks_pid_file.exists():

@@ -29,6 +29,52 @@ AGENT_STATS_CMD: dict[str, str | None] = {
     "vibe":    None,
 }
 PANE_RE = re.compile(r"^(\d+)\.(\d+)$")
+_DURATION_PARTS = re.compile(r"(\d+)([hms])")
+
+
+def parse_duration(text: str) -> int:
+    """Parse a duration to whole seconds. Accepts 3600, 1h, 30m, 90s, 1h30m."""
+    raw = (text or "").strip().lower()
+    if not raw:
+        raise ValueError("duration is empty")
+    if raw.isdigit():
+        secs = int(raw)
+    else:
+        parts = _DURATION_PARTS.findall(raw)
+        glued = "".join(n + u for n, u in parts)
+        if not parts or glued != raw:
+            raise ValueError(f"invalid duration: {text!r} (use 1h, 30m, 90s, 1h30m, or seconds)")
+        secs = 0
+        for n, u in parts:
+            secs += int(n) * (3600 if u == "h" else 60 if u == "m" else 1)
+    if secs <= 0:
+        raise ValueError("duration must be positive")
+    return secs
+
+
+def load_until(path: Path) -> float | None:
+    try:
+        data = json.loads(path.read_text() or "{}")
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or "until" not in data:
+        return None
+    try:
+        return float(data["until"])
+    except (TypeError, ValueError):
+        return None
+
+
+def write_until(path: Path, until: float | None) -> None:
+    if until is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"until": until}) + "\n")
+
+
+def format_until(until: float) -> str:
+    return datetime.fromtimestamp(until).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------------------------------------------------------------------------

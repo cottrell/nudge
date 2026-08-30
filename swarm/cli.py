@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 
 # Relative imports (for `python -m swarm.cli`) with bare fallback for direct
 # script execution or the installed `aiswarm` entrypoint.
@@ -15,7 +16,7 @@ try:
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
     from . import instructions as swarm_instructions
-    from .common import build_this_text, load_config, looks_like_config_path
+    from .common import build_this_text, load_config, looks_like_config_path, parse_duration
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
@@ -23,7 +24,7 @@ except ImportError:
     import tasksctl as swarm_tasks
     import init as swarm_init
     import instructions as swarm_instructions
-    from common import build_this_text, load_config, looks_like_config_path
+    from common import build_this_text, load_config, looks_like_config_path, parse_duration
 
 CONFIG_ARG_HELP = (
     "YAML config path (optional). Default: $AISWARM_CONFIG or walk-up "
@@ -35,6 +36,20 @@ def _cfg_from_args(args) -> object:
     """Load SwarmConfig from optional args.config / args.config_file."""
     explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
     return load_config(explicit)
+
+
+def _duration_arg(text: str) -> int:
+    try:
+        return parse_duration(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+
+
+def _until_from_args(args) -> float | None:
+    duration = getattr(args, "for_duration", None)
+    if duration is None:
+        return None
+    return time.time() + duration
 
 
 def _add_optional_config(parser: argparse.ArgumentParser) -> None:
@@ -427,6 +442,13 @@ def build_parser() -> argparse.ArgumentParser:
             sp.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing workers; start still writes runtime notes")
             if name == "start":
                 sp.add_argument("--no-action", action="store_true", help="Start the worker loops but do not deliver any prompts (simulate loops)")
+                sp.add_argument(
+                    "--for",
+                    dest="for_duration",
+                    type=_duration_arg,
+                    metavar="DURATION",
+                    help="Run babysit prompts for a duration (1h, 30m, 90s, or seconds) then auto-stop",
+                )
 
     tasks_p = sub.add_parser(
         "tasks",
@@ -448,6 +470,14 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Print planned claims/dispatches without editing backlog or sending",
             )
+            if name == "start":
+                sp.add_argument(
+                    "--for",
+                    dest="for_duration",
+                    type=_duration_arg,
+                    metavar="DURATION",
+                    help="Run the tasks group for a duration (1h, 30m, 90s, or seconds) then auto-stop",
+                )
 
     return parser
 
@@ -746,7 +776,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "tasks":
             cfg = _cfg_from_args(args)
             if args.tasks_command == "start":
-                swarm_tasks.start_dispatcher(cfg, getattr(args, "dry_run", False))
+                swarm_tasks.start_dispatcher(
+                    cfg, getattr(args, "dry_run", False), until=_until_from_args(args),
+                )
             elif args.tasks_command == "stop":
                 swarm_tasks.stop_dispatcher(cfg, getattr(args, "dry_run", False))
             elif args.tasks_command == "once":
@@ -760,7 +792,9 @@ def main(argv: list[str] | None = None) -> int:
         cfg = _cfg_from_args(args)
         if args.babysit_command == "start":
             no_action = getattr(args, "no_action", False)
-            swarm_babysit.apply_babysit(cfg, args.dry_run, no_action)
+            swarm_babysit.apply_babysit(
+                cfg, args.dry_run, no_action, until=_until_from_args(args),
+            )
         elif args.babysit_command == "stop":
             swarm_babysit.disable_babysit(cfg, args.dry_run)
         else:

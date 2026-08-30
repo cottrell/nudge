@@ -113,6 +113,7 @@ start for monitored panes. Babysit is **not** turned on by `start`.
 ```bash
 # 3. Turn on babysit for panes that have `babysit.enabled: true` in the YAML
 aiswarm babysit start
+aiswarm babysit start --for 1h   # auto-stop the prompt group after an hour
 # aiswarm babysit stop    turns babysit back off; swarm/monitors/comms stay up
 ```
 
@@ -121,6 +122,7 @@ aiswarm babysit start
 #     Monitored panes: tasks enabled by default (opt out: nudge.tasks.enabled: false)
 #     Dispatcher is off until you start it; -D prints fully resolved defaults
 aiswarm tasks start
+aiswarm tasks start --for 30m   # auto-stop the tasks group after 30 minutes
 aiswarm tasks status
 aiswarm tasks once -D   # dry-run: resolved config + planned claims
 aiswarm tasks stop
@@ -206,7 +208,8 @@ Notes:
 - One monitor per `monitor: true` pane (started by `start`)
 - `start` ensures one Python `session_worker.py` for the swarm; it multiplexes base comms/message delivery for monitored panes.
 - `babysit start` enables the babysit prompt group (nudges etc.) for panes with `babysit.enabled: true`.
-  It does not affect the base comms worker loop.
+  It does not affect the base comms worker loop. `--for 1h` (also `30m`, `90s`, or seconds)
+  auto-disables that group when the deadline passes; `babysit stop` clears any timer.
 - `session_worker.py` is the one process shown in `ps` for a swarm, not one Python process per pane.
   It handles comms for every configured pane and enables babysit prompts only for panes in that group.
   `pane_worker.py` is retained as a compatibility entrypoint; `babysit.py` was renamed in this release.
@@ -215,7 +218,9 @@ Notes:
   the durable log to free monitored panes (tasks enabled by default; opt out with
   `nudge.tasks.enabled: false`).
 - `tasks stop` / `tasks start` only toggle that group; they do not restart the shared
-  worker or reload edited Python code. Use `aiswarm worker restart` to load current
+  worker or reload edited Python code. `tasks start --for 1h` writes a deadline into
+  `tasks/enabled.json`; the session worker drops the group when it expires, and
+  `tasks stop` removes the timer. Use `aiswarm worker restart` to load current
   installed or editable-source code without stopping tmux panes, agents, or monitors.
 - `worker restart` preserves pane specs, enabled group flags, task assignment state,
   and the durable comms database/cursors; it validates the recorded worker process

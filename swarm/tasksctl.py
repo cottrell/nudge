@@ -35,6 +35,8 @@ try:
         query_monitor_state as shared_query_monitor_state,
         write_runtime_map,
         monitor_socket_path,
+        format_until,
+        load_until,
     )
 except ImportError:
     from common import (
@@ -49,6 +51,8 @@ except ImportError:
         query_monitor_state as shared_query_monitor_state,
         write_runtime_map,
         monitor_socket_path,
+        format_until,
+        load_until,
     )
 
 # Priority order for dispatch (matches backlog high/medium/low).
@@ -119,6 +123,23 @@ def spec_path(cfg: SwarmConfig) -> Path:
 def enabled_path(cfg: SwarmConfig) -> Path:
     """Flag consumed by the session worker; tasks is a loop group, not a process."""
     return tasks_runtime_dir(cfg) / "enabled.json"
+
+
+def expire_if_due(cfg: SwarmConfig, now: float | None = None) -> bool:
+    path = enabled_path(cfg)
+    until = load_until(path)
+    if until is None:
+        return False
+    if (time.time() if now is None else now) < until:
+        return False
+    path.unlink(missing_ok=True)
+    print(f"tasks group expired for {cfg.session_name}", flush=True)
+    return True
+
+
+def is_group_enabled(cfg: SwarmConfig, now: float | None = None) -> bool:
+    expire_if_due(cfg, now)
+    return enabled_path(cfg).exists()
 
 
 def process_running(pid: int) -> bool:
@@ -1378,16 +1399,17 @@ def dispatch_once(cfg: SwarmConfig, dry_run: bool = False) -> list[dict]:
     return actions
 
 
-def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
+def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False, until: float | None = None) -> None:
     validate_tasks_config(cfg)
     tasks_runtime_dir(cfg).mkdir(parents=True, exist_ok=True)
     wanted = desired_spec(cfg)
+    extra = f" until {format_until(until)}" if until is not None else ""
     if dry_run:
         print(
             f"would enable tasks group in session worker session={cfg.session_name} "
             f"panes={[p.pane for p in cfg.task_panes]} "
             f"backlog_dir={cfg.tasks.backlog_dir} "
-            f"ingest={cfg.tasks.ingest}"
+            f"ingest={cfg.tasks.ingest}{extra}"
         )
         print_effective_tasks(cfg)
         return
@@ -1398,9 +1420,12 @@ def start_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
         import babysitctl
     babysitctl.ensure_workers(cfg, dry_run=False)
     spec_path(cfg).write_text(json.dumps(wanted, indent=2) + "\n")
-    enabled_path(cfg).write_text(json.dumps({"enabled": True}) + "\n")
+    payload = {"enabled": True}
+    if until is not None:
+        payload["until"] = until
+    enabled_path(cfg).write_text(json.dumps(payload) + "\n")
     write_runtime_map(cfg)
-    print(f"Enabled tasks group in session worker for {cfg.session_name}")
+    print(f"Enabled tasks group in session worker for {cfg.session_name}{extra}")
 
 
 def stop_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
@@ -1413,7 +1438,8 @@ def stop_dispatcher(cfg: SwarmConfig, dry_run: bool = False) -> None:
 
 def status(cfg: SwarmConfig) -> None:
     t = cfg.tasks
-    enabled = enabled_path(cfg).exists()
+    enabled = is_group_enabled(cfg)
+    until = load_until(enabled_path(cfg)) if enabled else None
     try:
         from .babysitctl import supervisor_pid_path
     except ImportError:
@@ -1427,6 +1453,8 @@ def status(cfg: SwarmConfig) -> None:
         tasks_state = "OFF (tasks enabled but session worker is dead — restart with: aiswarm tasks start)"
     else:
         tasks_state = "OFF (tasks group disabled — aiswarm tasks start)"
+    if until is not None:
+        tasks_state += f"  until {format_until(until)}"
     print(f"tasks:   {tasks_state}")
     print(f"session: {cfg.session_name}")
     print(f"config:  {cfg.path}")

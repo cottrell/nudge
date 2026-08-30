@@ -758,8 +758,144 @@ windows:
     assert tasksctl.enabled_path(cfg).exists()
     assert tasksctl.spec_path(cfg).exists()
     assert not tasksctl.pid_path(cfg).exists()
+    assert json.loads(tasksctl.enabled_path(cfg).read_text()) == {"enabled": True}
     tasksctl.stop_dispatcher(cfg)
     assert not tasksctl.enabled_path(cfg).exists()
+
+
+def test_parse_duration_units_and_bare_seconds():
+    assert common.parse_duration("3600") == 3600
+    assert common.parse_duration("1h") == 3600
+    assert common.parse_duration("30m") == 1800
+    assert common.parse_duration("90s") == 90
+    assert common.parse_duration("1h30m") == 5400
+    assert common.parse_duration(" 2H ") == 7200
+    with pytest.raises(ValueError):
+        common.parse_duration("")
+    with pytest.raises(ValueError):
+        common.parse_duration("0")
+    with pytest.raises(ValueError):
+        common.parse_duration("1d")
+    with pytest.raises(ValueError):
+        common.parse_duration("h1")
+
+
+def test_tasks_start_for_duration_expires_and_stop_clears(monkeypatch, tmp_path: Path):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    monkeypatch.setattr(tasksctl, "validate_tasks_config", lambda cfg: None)
+    monkeypatch.setattr(tasksctl, "write_runtime_map", lambda cfg: None)
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda cfg, dry_run: None)
+
+    tasksctl.start_dispatcher(cfg, until=1_000.0)
+    data = json.loads(tasksctl.enabled_path(cfg).read_text())
+    assert data["enabled"] is True
+    assert data["until"] == 1_000.0
+    assert tasksctl.is_group_enabled(cfg, now=999.0) is True
+    assert tasksctl.is_group_enabled(cfg, now=1_000.0) is False
+    assert not tasksctl.enabled_path(cfg).exists()
+
+    tasksctl.start_dispatcher(cfg, until=2_000.0)
+    tasksctl.start_dispatcher(cfg)  # untimed start overwrites the timer
+    assert json.loads(tasksctl.enabled_path(cfg).read_text()) == {"enabled": True}
+    tasksctl.stop_dispatcher(cfg)
+    assert not tasksctl.enabled_path(cfg).exists()
+
+
+def test_babysit_start_for_duration_expires_and_stop_clears(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          babysit:
+            enabled: true
+            interval_secs: 321
+            prompt: "please continue"
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(babysitctl, "_start_supervisor", lambda cfg, dry_run: None)
+    monkeypatch.setattr(babysitctl, "write_runtime_map", lambda cfg: None)
+
+    babysitctl.apply_babysit(cfg, dry_run=False, until=1_000.0)
+    spec = json.loads(babysitctl.spec_path(cfg, "0.0").read_text())
+    assert spec["long_prompt"] == "please continue"
+    assert json.loads(babysitctl.until_path(cfg).read_text()) == {"until": 1_000.0}
+    assert babysitctl.expire_if_due(cfg, now=999.0) is False
+    assert babysitctl.until_path(cfg).exists()
+
+    assert babysitctl.expire_if_due(cfg, now=1_000.0) is True
+    spec = json.loads(babysitctl.spec_path(cfg, "0.0").read_text())
+    assert not spec.get("long_prompt")
+    assert not babysitctl.until_path(cfg).exists()
+
+    babysitctl.apply_babysit(cfg, dry_run=False, until=2_000.0)
+    babysitctl.apply_babysit(cfg, dry_run=False)  # untimed start drops the timer
+    assert not babysitctl.until_path(cfg).exists()
+    spec = json.loads(babysitctl.spec_path(cfg, "0.0").read_text())
+    assert spec["long_prompt"] == "please continue"
+
+    babysitctl.apply_babysit(cfg, dry_run=False, until=3_000.0)
+    babysitctl.disable_babysit(cfg, dry_run=False)
+    assert not babysitctl.until_path(cfg).exists()
+
+    babysitctl.apply_babysit(cfg, dry_run=False, until=4_000.0)
+    babysitctl.stop_workers(cfg, dry_run=False)
+    assert not babysitctl.until_path(cfg).exists()
+
+
+def test_session_worker_expire_timed_groups(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
+    calls: list[str] = []
+    monkeypatch.setattr(babysitctl, "expire_if_due", lambda cfg, now=None: calls.append("babysit") or False)
+    monkeypatch.setattr(tasksctl, "expire_if_due", lambda cfg, now=None: calls.append("tasks") or False)
+    session_worker.expire_timed_groups(cfg, now=1_000.0)
+    assert calls == ["babysit", "tasks"]
+
+
+def test_cli_start_for_passes_until(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(time, "time", lambda: 1_000.0)
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(
+        tasksctl,
+        "start_dispatcher",
+        lambda cfg, dry_run=False, until=None: calls.append(("tasks", until)),
+    )
+    monkeypatch.setattr(
+        babysitctl,
+        "apply_babysit",
+        lambda cfg, dry_run, no_action=False, until=None: calls.append(("babysit", until)),
+    )
+    assert swarm_cli.main(["tasks", "start", "examples/swarm-grid.yaml", "--for", "1h"]) == 0
+    assert swarm_cli.main(["babysit", "start", "examples/swarm-grid.yaml", "--for", "30m"]) == 0
+    assert calls == [("tasks", 4_600.0), ("babysit", 2_800.0)]
 
 
 def test_pane_worker_ema_spec_controls_next_wait():
@@ -2941,7 +3077,11 @@ def test_cli_tasks_once_and_status_dispatch(monkeypatch):
         lambda cfg, dry_run=False: calls.append(("once", cfg, dry_run)) or [{"task_id": "TASK-1"}],
     )
     monkeypatch.setattr(tasksctl, "status", lambda cfg: calls.append(("status", cfg)))
-    monkeypatch.setattr(tasksctl, "start_dispatcher", lambda cfg, dry_run=False: calls.append(("start", cfg, dry_run)))
+    monkeypatch.setattr(
+        tasksctl,
+        "start_dispatcher",
+        lambda cfg, dry_run=False, until=None: calls.append(("start", cfg, dry_run, until)),
+    )
     monkeypatch.setattr(tasksctl, "stop_dispatcher", lambda cfg, dry_run=False: calls.append(("stop", cfg, dry_run)))
     assert swarm_cli.main(["tasks", "once", "examples/swarm-grid.yaml", "-D"]) == 0
     assert swarm_cli.main(["tasks", "status", "examples/swarm-grid.yaml"]) == 0
@@ -2950,7 +3090,7 @@ def test_cli_tasks_once_and_status_dispatch(monkeypatch):
     assert calls == [
         ("once", "CFG", True),
         ("status", "CFG"),
-        ("start", "CFG", True),
+        ("start", "CFG", True, None),
         ("stop", "CFG", False),
     ]
 

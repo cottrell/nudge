@@ -11,9 +11,15 @@ import time
 from pathlib import Path
 
 try:
-    from .common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map
+    from .common import (
+        ROOT_DIR, SwarmConfig, babysit_runtime_paths, format_until, load_until,
+        write_runtime_map, write_until,
+    )
 except ImportError:
-    from common import ROOT_DIR, SwarmConfig, babysit_runtime_paths, write_runtime_map
+    from common import (
+        ROOT_DIR, SwarmConfig, babysit_runtime_paths, format_until, load_until,
+        write_runtime_map, write_until,
+    )
 
 
 def pid_path(cfg: SwarmConfig, pane: str) -> Path:
@@ -38,6 +44,11 @@ def supervisor_pid_path(cfg: SwarmConfig) -> Path:
 
 def supervisor_log_path(cfg: SwarmConfig) -> Path:
     return cfg.runtime_dir / "session_worker.log"
+
+
+def until_path(cfg: SwarmConfig) -> Path:
+    # Underscore so this is not matched by the babysit-*.json pane-spec glob.
+    return cfg.runtime_dir / "babysit_until.json"
 
 
 def process_running(pid: int) -> bool:
@@ -176,7 +187,8 @@ def _retire_legacy_workers(cfg: SwarmConfig, dry_run: bool) -> None:
 
 
 def _apply(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, include_comms: bool,
-           label: str, no_action: bool = False) -> None:
+           label: str, no_action: bool = False, quiet: bool = False,
+           until: float | None = None) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     wanted = _wanted(cfg, include_babysit, include_comms, no_action)
     for pane, spec in wanted.items():
@@ -196,7 +208,9 @@ def _apply(cfg: SwarmConfig, dry_run: bool, include_babysit: bool, include_comms
         for pane in wanted:
             pid_path(cfg, pane).write_text(pid)
     write_runtime_map(cfg)
-    print(f"{'Planned' if dry_run else 'Started'} {label} for {cfg.session_name}")
+    extra = f" until {format_until(until)}" if include_babysit and until is not None else ""
+    if not quiet:
+        print(f"{'Planned' if dry_run else 'Started'} {label} for {cfg.session_name}{extra}")
 
 
 def ensure_workers(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -227,13 +241,30 @@ def restart_worker(cfg: SwarmConfig, dry_run: bool = False) -> None:
     print(f"Restarted session worker for {cfg.session_name} pid={new_pid}")
 
 
-def apply_babysit(cfg: SwarmConfig, dry_run: bool, no_action: bool = False) -> None:
+def apply_babysit(cfg: SwarmConfig, dry_run: bool, no_action: bool = False,
+                  until: float | None = None) -> None:
     label = "session worker (with babysit prompts, simulate mode)" if no_action else "session worker (with babysit prompts)"
-    _apply(cfg, dry_run, True, True, label, no_action)
+    _apply(cfg, dry_run, True, True, label, no_action, until=until)
+    if not dry_run:
+        write_until(until_path(cfg), until)
 
 
-def disable_babysit(cfg: SwarmConfig, dry_run: bool) -> None:
-    _apply(cfg, dry_run, False, True, "session worker (babysit prompts disabled)")
+def disable_babysit(cfg: SwarmConfig, dry_run: bool, quiet: bool = False) -> None:
+    _apply(cfg, dry_run, False, True, "session worker (babysit prompts disabled)", quiet=quiet)
+    if not dry_run:
+        write_until(until_path(cfg), None)
+
+
+def expire_if_due(cfg: SwarmConfig, now: float | None = None) -> bool:
+    path = until_path(cfg)
+    until = load_until(path)
+    if until is None:
+        return False
+    if (time.time() if now is None else now) < until:
+        return False
+    disable_babysit(cfg, dry_run=False, quiet=True)
+    print(f"babysit group expired for {cfg.session_name}", flush=True)
+    return True
 
 
 def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
@@ -245,6 +276,7 @@ def stop_workers(cfg: SwarmConfig, dry_run: bool) -> None:
     if pid and process_running(pid):
         os.kill(pid, signal.SIGTERM)
     path.unlink(missing_ok=True)
+    write_until(until_path(cfg), None)
     for pane in cfg.panes:
         pid_path(cfg, pane.pane).unlink(missing_ok=True)
         spec_path(cfg, pane.pane).unlink(missing_ok=True)
@@ -260,6 +292,9 @@ def stop(cfg: SwarmConfig, dry_run: bool) -> None: stop_workers(cfg, dry_run)
 
 
 def status(cfg: SwarmConfig) -> None:
+    until = load_until(until_path(cfg))
+    if until is not None:
+        print(f"babysit until {format_until(until)}")
     try:
         from . import topology
     except ImportError:

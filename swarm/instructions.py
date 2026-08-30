@@ -40,8 +40,8 @@ still be an explicit path such as `nudgeswarm/nudge.yaml`.
 ```bash
 aiswarm init <name>          # once per project
 aiswarm start                # tmux grid + monitors + comms workers
-aiswarm babysit start        # optional idle prompt loops
-aiswarm tasks start          # poll backlog → free panes (idle if empty)
+aiswarm babysit start        # optional idle prompt loops (--for 1h to auto-stop)
+aiswarm tasks start          # poll backlog → free panes (--for 1h to auto-stop)
 aiswarm status --brief
 aiswarm send 0.2 "msg"       # durable poke via log
 aiswarm send any "msg"       # one eligible idle pane claims it
@@ -213,8 +213,8 @@ Common workflow:
   aiswarm start                       Start session, monitors, comms workers
   aiswarm status --brief              Pane states
   aiswarm send <pane|any> "msg"       Durable message via log (delivered on idle)
-  aiswarm babysit start|stop          Optional per-pane idle nudges (session worker)
-  aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (idle if empty)
+  aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)
+  aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (--for 1h)
   aiswarm worker restart              Reload worker code without touching tmux panes
   aiswarm stop                        Tear down workers + tmux session
 
