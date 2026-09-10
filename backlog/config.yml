@@ -9,6 +9,7 @@ auto_open_browser: false
 default_port: 6420
 remote_operations: false
 auto_commit: false
+filesystem_only: false
 bypass_git_hooks: false
 check_active_branches: true
 active_branch_days: 30
