@@ -101,8 +101,19 @@ def test_swarm_init_default_3x2_layout():
     assert 'shell_command: "bash"' not in text
 
 
+def test_swarm_init_1x1_and_4x2_layouts():
+    minimal = swarm_init.config_text("minimal", flavour="1x1")
+    assert minimal.count("agent:") == 1
+    assert "title: codex heavy" in minimal
+
+    full = swarm_init.config_text("full", flavour="4x2")
+    assert full.count("agent:") == 8
+    for agent in ("codex", "claude", "antigravity", "grok"):
+        assert full.count(f"agent: {agent}") == 2
+
+
 def test_swarm_init_interactive_defaults_and_model_override(monkeypatch):
-    monkeypatch.setattr(swarm_init, "_codex_models", lambda: ["terra", "gpt-5.6-luna", "other"])
+    monkeypatch.setattr(swarm_init, "_codex_models", lambda: ["gpt-5.6-terra", "gpt-5.6-luna", "other"])
     answers = iter(["", "3", ""])
     flavour, commands = swarm_init.interactive_config(input_fn=lambda _: next(answers), output_fn=lambda _: None)
     assert flavour == "3x2"

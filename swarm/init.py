@@ -142,7 +142,7 @@ DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
 
 AGENT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m terra",
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra",
     "gemini": "gemini -y",
     "grok": "grok --always-approve -m grok-build",
     "antigravity": "agy --dangerously-skip-permissions",
@@ -159,14 +159,16 @@ AGENT_LIGHT_COMMANDS: dict[str, str] = {
 }
 
 FLAVOUR_AGENTS: dict[str, list[str]] = {
+    "1x1": ["codex"],
     "3x2": ["codex", "claude", "antigravity", "grok"],
+    "4x2": ["codex", "claude", "antigravity", "grok"],
     "2x2": ["codex", "claude"],
     # Usual multi-provider grid + log/shell (gemini kept in AGENT_COMMANDS only;
     # Google-side in demos is antigravity/agy).
     "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
 }
 
-FLAVOURS = ("2x2", "3x2", "demo")
+FLAVOURS = ("1x1", "2x2", "3x2", "4x2", "demo")
 
 
 def _codex_models() -> list[str]:
@@ -202,11 +204,11 @@ def _menu(prompt: str, options: list[str], default: int = 0, input_fn=input, out
 
 
 def interactive_config(input_fn=input, output_fn=print) -> tuple[str, dict[tuple[str, str], str]]:
-    flavour_index = _menu("Choose a swarm flavour:", list(FLAVOURS), 1, input_fn, output_fn)
+    flavour_index = _menu("Choose a swarm flavour:", list(FLAVOURS), 2, input_fn, output_fn)
     commands: dict[tuple[str, str], str] = {}
     codex_models = _codex_models()
     for weight in ("heavy", "light"):
-        default_model = "terra" if weight == "heavy" else "gpt-5.6-luna"
+        default_model = "gpt-5.6-terra" if weight == "heavy" else "gpt-5.6-luna"
         models = [default_model] + [m for m in codex_models if m != default_model]
         selected = _menu(f"Choose Codex {weight} model:", models, 0, input_fn, output_fn)
         model = models[selected]
@@ -258,7 +260,13 @@ LOG_PANE = _operator_pane("log", "aiswarm log -w")
 
 def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None, commands: dict[tuple[str, str], str] | None = None) -> str:
     commands = commands or {}
-    if flavour == "3x2":
+    if flavour == "4x2":
+        panes_block = "".join(
+            _pane_entry(a, w, command=commands.get((a, w)))
+            for a in FLAVOUR_AGENTS["4x2"]
+            for w in ("heavy", "light")
+        )
+    elif flavour == "3x2":
         # codex+claude: heavy+light; antigravity+grok: solo
         panes_block = (
             "".join(_pane_entry(a, w, command=commands.get((a, w))) for a in ["codex", "claude"] for w in ("heavy", "light"))
@@ -271,6 +279,8 @@ def config_text(name: str, agents: list[str] | None = None, flavour: str | None 
             "".join(_pane_entry(a, w, command=commands.get((a, w))) for a in flavour_agents for w in ("heavy", "light"))
             + SHELL_PANE
         )
+    elif flavour == "1x1":
+        panes_block = _pane_entry("codex", "heavy", command=commands.get(("codex", "heavy")))
     elif flavour == "demo":
         # ~4×2 tiled: agent CLIs (tasks-enabled) + log watch + shell
         panes_block = (
