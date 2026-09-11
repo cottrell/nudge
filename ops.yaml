@@ -3,4 +3,4 @@ start_directory: ./
 windows:
   - window_name: backlog-browser
     panes:
-      - backlog browser -p 6423 --no-open
+      - backlog browser -p 6423 --no-open & sleep 0.5 && socat TCP6-LISTEN:6423,ipv6only,fork,reuseaddr TCP4:127.0.0.1:6423
