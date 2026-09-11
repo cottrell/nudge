@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from pathlib import Path
 
 BLOCK_START = "<!-- AISWARM/NUDGE GUIDELINES START -->"
@@ -166,14 +169,62 @@ FLAVOUR_AGENTS: dict[str, list[str]] = {
 FLAVOURS = ("2x2", "3x2", "demo")
 
 
-def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False) -> str:
+def _codex_models() -> list[str]:
+    if not shutil.which("codex"):
+        return []
+    try:
+        proc = subprocess.run(
+            ["codex", "debug", "models", "--bundled"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        data = json.loads(proc.stdout)
+        return [m["slug"] for m in data.get("models", []) if m.get("slug")]
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
+        return []
+
+
+def _menu(prompt: str, options: list[str], default: int = 0, input_fn=input, output_fn=print) -> int:
+    output_fn(prompt)
+    for i, option in enumerate(options, 1):
+        marker = " (default)" if i - 1 == default else ""
+        output_fn(f"  {i}. {option}{marker}")
+    while True:
+        answer = input_fn(f"Select [Enter={default + 1}]: ").strip()
+        if not answer:
+            return default
+        try:
+            selected = int(answer) - 1
+        except ValueError:
+            selected = -1
+        if 0 <= selected < len(options):
+            return selected
+        output_fn(f"Choose a number from 1 to {len(options)}.")
+
+
+def interactive_config(input_fn=input, output_fn=print) -> tuple[str, dict[tuple[str, str], str]]:
+    flavour_index = _menu("Choose a swarm flavour:", list(FLAVOURS), 1, input_fn, output_fn)
+    commands: dict[tuple[str, str], str] = {}
+    codex_models = _codex_models()
+    for weight in ("heavy", "light"):
+        default_model = "terra" if weight == "heavy" else "gpt-5.6-luna"
+        models = [default_model] + [m for m in codex_models if m != default_model]
+        selected = _menu(f"Choose Codex {weight} model:", models, 0, input_fn, output_fn)
+        model = models[selected]
+        command = f"codex --dangerously-bypass-approvals-and-sandbox -m {model}"
+        if weight == "light" and model == "gpt-5.6-luna":
+            command += " -c model_reasoning_effort=low"
+        commands[("codex", weight)] = command
+    return FLAVOURS[flavour_index], commands
+
+
+def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, command: str | None = None) -> str:
     if weight == "light":
-        cmd = AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
+        cmd = command or AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
         title = f"{agent} light"
         interval = 1800
         clear_every = "\n            clear_every: 6"
     else:
-        cmd = AGENT_COMMANDS.get(agent, agent)
+        cmd = command or AGENT_COMMANDS.get(agent, agent)
         title = f"{agent} heavy" if weight == "heavy" else agent
         interval = 7200
         clear_every = "\n            clear_every: 1"
@@ -205,18 +256,19 @@ DEMO_SHELL_PANE = _operator_pane("shell", "env PS1='$ ' bash --norc --noprofile"
 LOG_PANE = _operator_pane("log", "aiswarm log -w")
 
 
-def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None) -> str:
+def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None, commands: dict[tuple[str, str], str] | None = None) -> str:
+    commands = commands or {}
     if flavour == "3x2":
         # codex+claude: heavy+light; antigravity+grok: solo
         panes_block = (
-            "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
+            "".join(_pane_entry(a, w, command=commands.get((a, w))) for a in ["codex", "claude"] for w in ("heavy", "light"))
             + _pane_entry("antigravity", "solo")
             + _pane_entry("grok", "solo")
         )
     elif flavour == "2x2":
         flavour_agents = FLAVOUR_AGENTS["2x2"]
         panes_block = (
-            "".join(_pane_entry(a, w) for a in flavour_agents for w in ("heavy", "light"))
+            "".join(_pane_entry(a, w, command=commands.get((a, w))) for a in flavour_agents for w in ("heavy", "light"))
             + SHELL_PANE
         )
     elif flavour == "demo":
@@ -254,7 +306,10 @@ windows:
 {panes_block}"""
 
 
-def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[str] | None = None, flavour: str | None = None) -> None:
+def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[str] | None = None, flavour: str | None = None, interactive: bool = False) -> None:
+    commands = None
+    if interactive:
+        flavour, commands = interactive_config()
     root_path = Path(root).resolve()
     # Consumer harness dir (not the aiswarm Python package). Default discovery: .aiswarm/config.yaml
     aiswarm_dir = root_path / ".aiswarm"
@@ -263,7 +318,7 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
     agents_path = root_path / "AGENTS.md"
 
     files = {
-        config_path: config_text(name, agents, flavour=flavour),
+        config_path: config_text(name, agents, flavour=flavour, commands=commands),
         prompts_dir / "worker_long.md": (
             "Continue the assigned work. Read AGENTS.md; for swarm ops run "
             "`aiswarm instructions overview` (and handoff/tasks as needed). "

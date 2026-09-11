@@ -101,6 +101,18 @@ def test_swarm_init_default_3x2_layout():
     assert 'shell_command: "bash"' not in text
 
 
+def test_swarm_init_interactive_defaults_and_model_override(monkeypatch):
+    monkeypatch.setattr(swarm_init, "_codex_models", lambda: ["terra", "gpt-5.6-luna", "other"])
+    answers = iter(["", "3", ""])
+    flavour, commands = swarm_init.interactive_config(input_fn=lambda _: next(answers), output_fn=lambda _: None)
+    assert flavour == "3x2"
+    assert commands[("codex", "heavy")].endswith("-m other")
+    assert commands[("codex", "light")].endswith("-m gpt-5.6-luna -c model_reasoning_effort=low")
+    text = swarm_init.config_text("demo", flavour=flavour, commands=commands)
+    assert 'shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m other"' in text
+    assert "model_reasoning_effort=low" in text
+
+
 def test_swarm_init_demo_flavour_layout():
     text = swarm_init.config_text("aiswarm-demo", flavour="demo")
     assert "session_name: aiswarm-demo" in text

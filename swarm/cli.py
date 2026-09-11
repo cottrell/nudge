@@ -266,9 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
     init_p.add_argument("--agents", default="codex,claude,antigravity,grok", help="Comma-separated list of agents (repeats allowed), default codex,claude,antigravity,grok")
+    init_p.add_argument("-i", "--interactive", action="store_true", help="Choose flavour and available Codex models interactively")
+    init_p.add_argument("-y", "--yes", action="store_true", help="Use current defaults without prompting")
     init_p.add_argument(
         "--flavour",
-        default="3x2",
+        default=None,
         choices=["2x2", "3x2", "demo"],
         help="Pane layout: 3x2 (default heavy/light grid), 2x2, or demo (agents + log -w + shell; no gemini)",
     )
@@ -534,7 +536,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "init":
             agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-            swarm_init.init(args.name, args.root, args.dry_run, agents, flavour=args.flavour)
+            if args.interactive and args.yes:
+                raise ValueError("--interactive and --yes cannot be combined")
+            flavour = None if args.interactive else (args.flavour or "3x2")
+            swarm_init.init(args.name, args.root, args.dry_run, agents, flavour=flavour, interactive=args.interactive)
             return 0
 
         if args.command == "start":
