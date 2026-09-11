@@ -3,7 +3,7 @@ windows:
   - window_name: grid
     layout: tiled
     panes:
-      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox"
+      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m terra"
         nudge:
           title: codex heavy
           agent: codex
@@ -16,7 +16,7 @@ windows:
             clear_every: 1
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
-      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4-mini"
+      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-luna -c model_reasoning_effort=low"
         nudge:
           title: codex light
           agent: codex
