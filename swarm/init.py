@@ -139,7 +139,7 @@ DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
 
 AGENT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox",
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m terra",
     "gemini": "gemini -y",
     "grok": "grok --always-approve -m grok-build",
     "antigravity": "agy --dangerously-skip-permissions",
@@ -149,7 +149,7 @@ AGENT_COMMANDS: dict[str, str] = {
 
 AGENT_LIGHT_COMMANDS: dict[str, str] = {
     "claude": "claude --dangerously-skip-permissions --model haiku",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4-mini",
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-luna -c model_reasoning_effort=low",
     "gemini": "gemini -y -m gemini-2.5-flash",
     "grok": "grok --always-approve",
     "antigravity": "agy --dangerously-skip-permissions --model mini",
