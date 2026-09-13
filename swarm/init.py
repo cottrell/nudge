@@ -264,7 +264,14 @@ windows:
 {panes_block}"""
 
 
-def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[str] | None = None, flavour: str | None = None) -> None:
+def init(
+    name: str,
+    root: str | Path = ".",
+    dry_run: bool = False,
+    agents: list[str] | None = None,
+    flavour: str | None = None,
+    force: bool = False,
+) -> None:
     root_path = Path(root).resolve()
     # Consumer harness dir (not the aiswarm Python package). Default discovery: .aiswarm/config.yaml
     aiswarm_dir = root_path / ".aiswarm"
@@ -283,15 +290,17 @@ def init(name: str, root: str | Path = ".", dry_run: bool = False, agents: list[
     }
 
     for path, content in files.items():
-        if path.exists():
+        if path.exists() and not force:
             print(f"exists: {path}")
             continue
         if dry_run:
-            print(f"would create: {path}")
+            action = "overwrite" if path.exists() else "create"
+            print(f"would {action}: {path}")
             continue
+        action = "overwritten" if path.exists() else "created"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
-        print(f"created: {path}")
+        print(f"{action}: {path}")
 
     write_agents_block(agents_path, name, dry_run=dry_run)
 

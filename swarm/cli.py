@@ -272,6 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["1x1", "2x2", "3x2", "4x2", "demo"],
         help="Pane layout: 3x2 (default), 1x1, 2x2, 4x2, or demo (agents + log -w + shell)",
     )
+    init_p.add_argument("-f", "--force", action="store_true", help="Overwrite existing configuration and prompt files")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     start_p = sub.add_parser("start", help="Start the swarm (tmux session, monitors, titles, commands, and comms workers)")
@@ -534,7 +535,14 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "init":
             agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-            swarm_init.init(args.name, args.root, args.dry_run, agents, flavour=args.flavour or "3x2")
+            swarm_init.init(
+                args.name,
+                args.root,
+                args.dry_run,
+                agents,
+                flavour=args.flavour or "3x2",
+                force=args.force,
+            )
             return 0
 
         if args.command == "start":

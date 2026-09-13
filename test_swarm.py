@@ -149,6 +149,26 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "Do NOT raw `tmux send-keys`" in agents
 
 
+def test_swarm_init_force_overwrites_existing_files(tmp_path: Path):
+    swarm_init.init("demo", tmp_path)
+    cfg_path = tmp_path / ".aiswarm" / "config.yaml"
+    long_prompt_path = tmp_path / ".aiswarm" / "prompts" / "worker_long.md"
+
+    # Modify initial files
+    cfg_path.write_text("custom: config\n")
+    long_prompt_path.write_text("custom prompt\n")
+
+    # Without force, existing files are preserved
+    swarm_init.init("demo", tmp_path, force=False)
+    assert cfg_path.read_text() == "custom: config\n"
+    assert long_prompt_path.read_text() == "custom prompt\n"
+
+    # With force, existing files are overwritten
+    swarm_init.init("demo", tmp_path, force=True)
+    assert "session_name: demo" in cfg_path.read_text()
+    assert "Continue the assigned work" in long_prompt_path.read_text()
+
+
 def test_babysit_stop_workers_tolerates_empty_pid_file(tmp_path: Path, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
