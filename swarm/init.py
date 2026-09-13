@@ -160,27 +160,41 @@ FLAVOUR_AGENTS: dict[str, list[str]] = {
     "3x2": ["codex", "claude", "antigravity", "grok"],
     "4x2": ["codex", "claude", "antigravity", "grok"],
     "2x2": ["codex", "claude"],
+    "babysit": ["codex", "claude"],
     # Usual multi-provider grid + log/shell (gemini kept in AGENT_COMMANDS only;
     # Google-side in demos is antigravity/agy).
     "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
 }
 
-FLAVOURS = ("1x1", "2x2", "3x2", "4x2", "demo")
+FLAVOURS = ("1x1", "2x2", "3x2", "4x2", "babysit", "demo")
 
 
-def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False) -> str:
+def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babysit: bool = False) -> str:
     if weight == "light":
         cmd = AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
         title = f"{agent} light"
+        interval = 1800
+        clear_every = "\n            clear_every: 6"
     else:
         cmd = AGENT_COMMANDS.get(agent, agent)
         title = f"{agent} heavy" if weight == "heavy" else agent
+        interval = 7200
+        clear_every = "\n            clear_every: 1"
     tasks_block = "\n          tasks:\n            enabled: true" if tasks else ""
+    babysit_block = (
+        f"""\n          babysit:
+            enabled: false
+            interval_secs: {interval}{clear_every}
+            long_prompt_file: prompts/worker_long.md
+            short_prompt_file: prompts/worker_short.txt"""
+        if babysit
+        else ""
+    )
     return f"""      - shell_command: "{cmd}"
         nudge:
           title: {title}
           agent: {agent}
-          monitor: true{tasks_block}
+          monitor: true{babysit_block}{tasks_block}
 """
 
 
@@ -220,6 +234,12 @@ def config_text(name: str, agents: list[str] | None = None, flavour: str | None 
         )
     elif flavour == "1x1":
         panes_block = _pane_entry("codex", "heavy")
+    elif flavour == "babysit":
+        # Example 2x2 layout with explicit babysit blocks included as reference
+        panes_block = (
+            "".join(_pane_entry(a, w, babysit=True) for a in FLAVOUR_AGENTS["babysit"] for w in ("heavy", "light"))
+            + SHELL_PANE
+        )
     elif flavour == "demo":
         # ~4×2 tiled: agent CLIs (tasks-enabled) + log watch + shell
         panes_block = (

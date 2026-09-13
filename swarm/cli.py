@@ -269,8 +269,8 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument(
         "--flavour",
         default=None,
-        choices=["1x1", "2x2", "3x2", "4x2", "demo"],
-        help="Pane layout: 3x2 (default), 1x1, 2x2, 4x2, or demo (agents + log -w + shell)",
+        choices=["1x1", "2x2", "3x2", "4x2", "babysit", "demo"],
+        help="Pane layout: 3x2 (default), 1x1, 2x2, 4x2, babysit (2x2 with explicit babysit prompts), or demo (agents + log -w + shell)",
     )
     init_p.add_argument("-f", "--force", action="store_true", help="Overwrite existing configuration and prompt files")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")

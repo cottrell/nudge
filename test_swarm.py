@@ -130,6 +130,15 @@ def test_swarm_init_demo_flavour_layout():
     assert "PS1=" in text
 
 
+def test_swarm_init_babysit_flavour_layout():
+    text = swarm_init.config_text("babysit-demo", flavour="babysit")
+    assert "session_name: babysit-demo" in text
+    assert text.count("babysit:") == 4
+    assert text.count("long_prompt_file: prompts/worker_long.md") == 4
+    assert text.count("short_prompt_file: prompts/worker_short.txt") == 4
+    assert "title: shell" in text
+
+
 def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     swarm_init.init("demo", tmp_path)
     assert (tmp_path / ".aiswarm" / "config.yaml").exists()
