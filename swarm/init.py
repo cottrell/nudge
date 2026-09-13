@@ -172,24 +172,15 @@ def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False) -> st
     if weight == "light":
         cmd = AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
         title = f"{agent} light"
-        interval = 1800
-        clear_every = "\n            clear_every: 6"
     else:
         cmd = AGENT_COMMANDS.get(agent, agent)
         title = f"{agent} heavy" if weight == "heavy" else agent
-        interval = 7200
-        clear_every = "\n            clear_every: 1"
     tasks_block = "\n          tasks:\n            enabled: true" if tasks else ""
     return f"""      - shell_command: "{cmd}"
         nudge:
           title: {title}
           agent: {agent}
-          monitor: true
-          babysit:
-            enabled: false
-            interval_secs: {interval}{clear_every}
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt{tasks_block}
+          monitor: true{tasks_block}
 """
 
 
