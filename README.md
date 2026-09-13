@@ -56,6 +56,7 @@ aiswarm                      # workflow cheat sheet
 aiswarm instructions         # agent guides index
 aiswarm instructions overview
 aiswarm this                 # this swarm: config + runtime.json path
+aiswarm sessions             # provider session IDs (resume after a crash)
 aiswarm <command> --help     # flags
 ```
 
@@ -227,6 +228,9 @@ Notes:
   before terminating it.
 - `start`, `babysit start`, and `tasks start` write runtime files under `/tmp/nudge-swarm/<session>/`
 - runtime map: `/tmp/nudge-swarm/<session>/runtime.json` (path via `aiswarm this`)
+- provider session IDs: `aiswarm sessions` (also `session-ids.json` next to the
+  config and under the runtime dir). Claude and Grok are launched with
+  `--session-id`; live panes are matched by PID / open files, not newest-cwd.
 - tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`
 
 ## Tasks dispatcher (backlog → free panes)

@@ -262,6 +262,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_optional_config(this_p)
 
+    sessions_p = sub.add_parser(
+        "sessions",
+        help="Show provider session IDs for this swarm (for resume after a crash)",
+    )
+    _add_optional_config(sessions_p)
+    sessions_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Print records as JSON",
+    )
+    sessions_p.add_argument(
+        "--no-refresh",
+        action="store_true",
+        help="Do not re-discover from live pane PIDs",
+    )
+
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
@@ -531,6 +547,28 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "this":
             print(build_this_text(_cfg_from_args(args)).rstrip())
+            return 0
+
+        if args.command == "sessions":
+            cfg = _cfg_from_args(args)
+            try:
+                from .session_ids import format_records, load_records, refresh_records
+            except ImportError:
+                from session_ids import format_records, load_records, refresh_records
+            if args.no_refresh:
+                records = load_records(cfg)
+            else:
+                records = refresh_records(cfg, swarm_topology.collect_pane_pids(cfg))
+            if args.json:
+                print(json.dumps(
+                    {
+                        "session_name": cfg.session_name,
+                        "panes": {p: r.as_dict() for p, r in records.items()},
+                    },
+                    indent=2,
+                ))
+            else:
+                print(format_records(cfg, records))
             return 0
 
         if args.command == "init":

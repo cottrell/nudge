@@ -6,3 +6,5 @@ nudge.log
 *.pyc
 __pycache__/
 scratch/
+session-ids.json
+.aiswarm/session-ids.json

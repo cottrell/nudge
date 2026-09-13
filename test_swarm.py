@@ -33,6 +33,7 @@ from common import (
     resolve_config_path,
 )
 import tasksctl
+import session_ids
 
 
 def write_config(tmp_path: Path, body: str) -> Path:
@@ -152,6 +153,7 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "`/tmp/nudge-swarm/demo/runtime.json`" in agents
     assert "self-awareness" not in agents
     assert "aiswarm this" in agents
+    assert "aiswarm sessions" in agents
     assert "Swarm CLI: `aiswarm`" in agents
     assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
@@ -644,23 +646,29 @@ windows:
     monkeypatch.setattr(swarm_apply, "setup_grid", lambda cfg, dry_run: calls.append(("grid", cfg.session_name, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda cfg, pane, agent, dry_run: calls.append(("monitor", pane, agent, str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", pane, title, str(dry_run))))
-    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", pane, title, command, str(dry_run))) or True)
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
+    monkeypatch.setattr(swarm_apply, "collect_pane_pids", lambda cfg: {})
+    monkeypatch.setattr(session_ids, "new_session_id", lambda: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
     monkeypatch.setattr(swarm_start.time, "sleep", lambda *_: None)
     monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
     monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
 
     swarm_start.start(cfg, dry_run=False)
 
-    assert calls == [
-        ("grid", "demo", "False"),
-        ("monitor", "0.0", "claude", "False"),
-        ("title", "0.0", "claude", "False"),
-        ("command", "0.0", "claude", "claude", "False"),
-        ("title", "0.1", "codex", "False"),
-        ("command", "0.1", "codex", "codex", "False"),
-        ("runtime_map", "demo"),
-    ]
+    assert calls[0] == ("grid", "demo", "False")
+    assert calls[1] == ("monitor", "0.0", "claude", "False")
+    assert calls[2] == ("title", "0.0", "claude", "False")
+    assert calls[3] == (
+        "command",
+        "0.0",
+        "claude",
+        "claude --session-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "False",
+    )
+    assert calls[4] == ("title", "0.1", "codex", "False")
+    assert calls[5] == ("command", "0.1", "codex", "codex", "False")
+    assert calls[6] == ("runtime_map", "demo")
 
 
 def test_start_dry_run_writes_runtime_notes(monkeypatch, tmp_path: Path):
@@ -679,8 +687,9 @@ windows:
     monkeypatch.setattr(swarm_apply, "setup_grid", lambda cfg, dry_run: calls.append(("grid", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda cfg, pane, agent, dry_run: calls.append(("monitor", str(dry_run))))
     monkeypatch.setattr(swarm_apply, "ensure_title", lambda cfg, pane, title, dry_run: calls.append(("title", str(dry_run))))
-    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))))
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda cfg, pane, title, command, dry_run: calls.append(("command", str(dry_run))) or True)
     monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: calls.append(("runtime_map", cfg.session_name)))
+    monkeypatch.setattr(swarm_apply, "collect_pane_pids", lambda cfg: {})
     monkeypatch.setattr(babysitctl, "apply_babysit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected babysit apply")))
     monkeypatch.setattr(babysitctl, "ensure_workers", lambda *args, **kwargs: None)
 
@@ -3710,3 +3719,185 @@ windows:
     ]
     assert [(a["task_id"], a["pane"]) for a in dry_actions] == expected
     assert [(a["task_id"], a["pane"]) for a in live_actions] == expected
+
+
+def _write_proc_pid(proc_root: Path, pid: int, argv: list[str], children: list[int] | None = None) -> None:
+    pdir = proc_root / str(pid)
+    task = pdir / "task" / str(pid)
+    task.mkdir(parents=True)
+    (pdir / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    (task / "children").write_text(" ".join(str(c) for c in (children or [])) + "\n")
+    (pdir / "fd").mkdir()
+
+
+def test_mint_claude_and_grok_session_ids(monkeypatch):
+    monkeypatch.setattr(session_ids, "new_session_id", lambda: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    cmd, sid, src = session_ids.mint_launch_command("claude", "claude --dangerously-skip-permissions")
+    assert sid == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert src == "minted"
+    assert cmd.endswith("--session-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+    cmd, sid, src = session_ids.mint_launch_command(
+        "grok", "grok --always-approve -m grok-build"
+    )
+    assert sid == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert "--session-id" in cmd
+
+
+def test_mint_skips_when_resume_or_id_already_present():
+    cmd, sid, src = session_ids.mint_launch_command(
+        "claude", "claude --session-id 11111111-1111-4111-8111-111111111111"
+    )
+    assert cmd == "claude --session-id 11111111-1111-4111-8111-111111111111"
+    assert sid == "11111111-1111-4111-8111-111111111111"
+    assert src == "argv"
+
+    cmd, sid, src = session_ids.mint_launch_command("grok", "grok -r 11111111-1111-4111-8111-111111111111")
+    assert sid == "11111111-1111-4111-8111-111111111111"
+    assert src == "argv"
+
+    cmd, sid, src = session_ids.mint_launch_command("codex", "codex --dangerously-bypass-approvals-and-sandbox")
+    assert cmd == "codex --dangerously-bypass-approvals-and-sandbox"
+    assert sid is None
+
+
+def test_discover_does_not_use_newest_cwd_file(tmp_path: Path):
+    home = tmp_path / "home"
+    proc = tmp_path / "proc"
+    sid_old = "00000000-0000-4000-8000-000000000001"
+    sid_live = "00000000-0000-4000-8000-000000000002"
+    grok_dir = home / ".grok"
+    grok_dir.mkdir(parents=True)
+    (grok_dir / "active_sessions.json").write_text(json.dumps([
+        {"session_id": sid_old, "pid": 11, "cwd": "/proj"},
+        {"session_id": sid_live, "pid": 22, "cwd": "/proj"},
+    ]))
+    # Newest on-disk session is the *other* pane — must not win.
+    sess = grok_dir / "sessions" / "%2Fproj"
+    (sess / sid_old).mkdir(parents=True)
+    (sess / sid_live).mkdir(parents=True)
+    (sess / sid_old / "events.jsonl").write_text("old\n")
+    newer = sess / sid_live / "events.jsonl"
+    newer.write_text("live\n")
+    os.utime(sess / sid_old / "events.jsonl", (1, 9_999_999_999))
+
+    _write_proc_pid(proc, 10, ["bash"], children=[22])
+    _write_proc_pid(proc, 22, ["grok", "--always-approve"])
+
+    sid, source, pid = session_ids.discover_session_id("grok", 10, home=home, proc_root=proc)
+    assert sid == sid_live
+    assert source == "active_sessions"
+    assert pid == 22
+
+
+def test_discover_claude_pid_file_and_grok_fd(tmp_path: Path):
+    home = tmp_path / "home"
+    proc = tmp_path / "proc"
+    claude_sid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    grok_sid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    cdir = home / ".claude" / "sessions"
+    cdir.mkdir(parents=True)
+    (cdir / "31.json").write_text(json.dumps({"pid": 31, "sessionId": claude_sid}))
+
+    _write_proc_pid(proc, 30, ["bash"], children=[31])
+    _write_proc_pid(proc, 31, ["claude", "--dangerously-skip-permissions"])
+    sid, source, pid = session_ids.discover_session_id("claude", 30, home=home, proc_root=proc)
+    assert (sid, source, pid) == (claude_sid, "pid_file", 31)
+
+    events = home / ".grok" / "sessions" / "%2Fproj" / grok_sid / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text("{}\n")
+    _write_proc_pid(proc, 40, ["bash"], children=[41])
+    _write_proc_pid(proc, 41, ["grok", "--always-approve"])
+    fd = proc / "41" / "fd" / "5"
+    fd.symlink_to(events)
+    sid, source, pid = session_ids.discover_session_id("grok", 40, home=home, proc_root=proc)
+    assert (sid, source, pid) == (grok_sid, "proc_fd", 41)
+
+
+def test_discover_agy_and_codex_from_open_files(tmp_path: Path):
+    home = tmp_path / "home"
+    proc = tmp_path / "proc"
+    agy_sid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    db = home / ".gemini" / "antigravity-cli" / "conversations" / f"{agy_sid}.db"
+    db.parent.mkdir(parents=True)
+    db.write_bytes(b"sqlite")
+    _write_proc_pid(proc, 50, ["bash"], children=[51])
+    _write_proc_pid(proc, 51, ["agy", "--dangerously-skip-permissions"])
+    (proc / "51" / "fd" / "8").symlink_to(db)
+    sid, source, pid = session_ids.discover_session_id("antigravity", 50, home=home, proc_root=proc)
+    assert (sid, source, pid) == (agy_sid, "proc_fd", 51)
+
+    codex_sid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    rollout = home / ".codex" / "sessions" / "2026" / "09" / f"rollout-2026-09-13-{codex_sid}.jsonl"
+    other = home / ".codex" / "sessions" / "2026" / "09" / "rollout-2026-09-13-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.jsonl"
+    rollout.parent.mkdir(parents=True)
+    other.write_text("newer-other-pane\n")
+    os.utime(other, (1, 9_999_999_999))
+    rollout.write_text("this-pane\n")
+    _write_proc_pid(proc, 60, ["bash"], children=[61])
+    _write_proc_pid(proc, 61, ["codex"])
+    (proc / "61" / "fd" / "9").symlink_to(rollout)
+    sid, source, pid = session_ids.discover_session_id("codex", 60, home=home, proc_root=proc)
+    assert (sid, source, pid) == (codex_sid, "proc_fd", 61)
+
+
+def test_refresh_records_and_runtime_map(tmp_path: Path, monkeypatch):
+    cfg = load_config(write_config(tmp_path, """
+session_name: sidtest
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: grok --always-approve
+        nudge: {agent: grok, monitor: true}
+      - shell_command: claude
+        nudge: {agent: claude, monitor: true}
+"""))
+    monkeypatch.setattr(session_ids, "new_session_id", lambda: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    cmd, sid, src = session_ids.mint_launch_command("claude", "claude")
+    recs = {
+        "0.1": session_ids.make_record("0.1", "claude", sid, src),
+    }
+    session_ids.save_records(cfg, recs)
+    home = tmp_path / "home"
+    proc = tmp_path / "proc"
+    grok_sid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    grok_dir = home / ".grok"
+    grok_dir.mkdir(parents=True)
+    (grok_dir / "active_sessions.json").write_text(json.dumps([
+        {"session_id": grok_sid, "pid": 71, "cwd": str(tmp_path)},
+    ]))
+    _write_proc_pid(proc, 70, ["bash"], children=[71])
+    _write_proc_pid(proc, 71, ["grok", "--always-approve"])
+    records = session_ids.refresh_records(
+        cfg, {"0.0": 70, "0.1": 80}, home=home, proc_root=proc
+    )
+    assert records["0.0"].session_id == grok_sid
+    assert records["0.0"].source == "active_sessions"
+    assert records["0.1"].session_id == sid
+    data = build_runtime_map(cfg)
+    assert data["panes"]["0.0"]["session"]["id"] == grok_sid
+    assert data["panes"]["0.1"]["session"]["id"] == sid
+    text = session_ids.format_records(cfg, records)
+    assert "grok -r" in text
+    assert "claude -r" in text
+
+
+def test_cli_sessions_no_refresh(tmp_path: Path, capsys):
+    cfg_path = write_config(tmp_path, """
+session_name: sidcli
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: grok
+        nudge: {agent: grok, monitor: true}
+""")
+    cfg = load_config(cfg_path)
+    rec = session_ids.make_record(
+        "0.0", "grok", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "minted"
+    )
+    session_ids.save_records(cfg, {"0.0": rec})
+    assert swarm_cli.main(["sessions", "--no-refresh", "-c", str(cfg_path)]) == 0
+    out = capsys.readouterr().out
+    assert "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" in out
+    assert "grok -r" in out

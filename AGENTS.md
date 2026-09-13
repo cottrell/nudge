@@ -93,6 +93,7 @@ Read workflow first:
 - `aiswarm instructions overview` — required agent briefing
 - `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
 - `aiswarm this` — this swarm's config + runtime.json path
+- `aiswarm sessions` — provider session IDs for crash resume
 
 After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
 

@@ -617,6 +617,15 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
             }
         entry["tasks"] = {"enabled": pane.tasks_enabled}
         panes_map[pane.pane] = entry
+    sid_path = cfg.runtime_dir / "session-ids.json"
+    if sid_path.is_file():
+        try:
+            stored = json.loads(sid_path.read_text() or "{}")
+            for pane_id, rec in (stored.get("panes") or {}).items():
+                if pane_id in panes_map and isinstance(rec, dict):
+                    panes_map[pane_id]["session"] = rec
+        except (OSError, json.JSONDecodeError):
+            pass
     tdir = cfg.runtime_dir / "tasks"
     t = cfg.tasks
     tasks_info = {

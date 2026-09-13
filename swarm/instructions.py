@@ -71,6 +71,9 @@ aiswarm stop                 # workers + session teardown
   `pane_worker.py` is only a compatibility entrypoint; `babysit.py` is no longer an entrypoint.
 - Session identity / runtime map path: `aiswarm this` (resolves config; points at
   `/tmp/nudge-swarm/<session>/runtime.json` written on start).
+- Provider conversation IDs: `aiswarm sessions`. Claude/Grok get `--session-id` at
+  launch; others are bound via the pane PID (not newest-file-in-cwd). Resume with
+  the printed command after a crash.
 
 ### Next guides
 
@@ -225,6 +228,7 @@ Config (when path omitted):
 
 Instructions (workflow for agents):
   aiswarm this                        This swarm: config + runtime.json path
+  aiswarm sessions                    Provider session IDs for crash resume
   aiswarm instructions                List guides
   aiswarm instructions overview       Start here
   aiswarm instructions handoff        Peer send + backlog + done-ping
@@ -244,6 +248,7 @@ def index() -> str:
         "Start here:",
         "  aiswarm instructions overview     Required first read for swarm workflow",
         "  aiswarm this                      This swarm: config + runtime.json path",
+        "  aiswarm sessions                  Provider session IDs for crash resume",
         "  aiswarm <command> --help          Flags and options",
         "",
         "Guides:",

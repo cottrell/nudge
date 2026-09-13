@@ -33,6 +33,7 @@ try:
         supervisor_pid_path,
     )
     from .tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
+    from .session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
 except ImportError:
     # direct script fallback
     from common import (
@@ -57,6 +58,7 @@ except ImportError:
         supervisor_pid_path,
     )
     from tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
+    from session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -184,6 +186,31 @@ def ensure_monitor(cfg: SwarmConfig, pane: str, agent: str, dry_run: bool) -> No
     subprocess.run([str(ROOT_DIR / "attach.sh"), f"{cfg.session_name}:{pane}", agent], check=True, text=True)
 
 
+def pane_pid(cfg: SwarmConfig, pane: str) -> int | None:
+    proc = run(
+        "tmux",
+        "display-message",
+        "-p",
+        "-t",
+        f"{cfg.session_name}:{pane}",
+        "#{pane_pid}",
+        check=False,
+    )
+    raw = (proc.stdout or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return None
+
+
+def collect_pane_pids(cfg: SwarmConfig) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for pane in cfg.panes:
+        pid = pane_pid(cfg, pane.pane)
+        if pid is not None:
+            out[pane.pane] = pid
+    return out
+
+
 def pane_current_command(cfg: SwarmConfig, pane: str) -> str:
     raw = run("tmux", "display-message", "-p", "-t", f"{cfg.session_name}:{pane}", "#{pane_current_command}").stdout.strip()
     if not raw:
@@ -229,15 +256,16 @@ def shell_prefixed_command(title: str, command: str) -> str:
     return f"export PS1={prefix}\"$PS1\"; {command}"
 
 
-def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_run: bool) -> None:
+def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_run: bool) -> bool:
     command = shell_prefixed_command(title, command)
     if dry_run:
         print(f"would start command in {cfg.session_name}:{pane}: {command}")
-        return
+        return True
     current = pane_current_command(cfg, pane)
     if current and current not in SHELL_NAMES:
-        return
+        return False
     subprocess.run([str(ROOT_DIR / "tmux-send"), "--no-prefix", f"{cfg.session_name}:{pane}", command], check=True, text=True)
+    return True
 
 
 
@@ -302,9 +330,25 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
             ensure_monitor(cfg, pane.pane, pane.agent, dry_run)
     if not dry_run:
         time.sleep(0.2)
+    records = load_records(cfg)
     for pane in cfg.panes:
         ensure_title(cfg, pane.pane, pane.title, dry_run)
-        ensure_command(cfg, pane.pane, pane.title, pane.command, dry_run)
+        command = pane.command
+        minted = None
+        mint_source = ""
+        if pane.agent:
+            command, minted, mint_source = mint_launch_command(pane.agent, pane.command)
+        launched = ensure_command(cfg, pane.pane, pane.title, command, dry_run)
+        if minted and (dry_run or launched):
+            records[pane.pane] = merge_record(
+                records.get(pane.pane),
+                make_record(pane.pane, pane.agent, minted, mint_source or "minted"),
+            )
+    if records:
+        save_records(cfg, records)
+    if not dry_run:
+        time.sleep(0.3)
+        refresh_records(cfg, collect_pane_pids(cfg))
     write_runtime_map(cfg)
 
 
