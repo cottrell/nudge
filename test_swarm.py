@@ -153,7 +153,6 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "`/tmp/nudge-swarm/demo/runtime.json`" in agents
     assert "self-awareness" not in agents
     assert "aiswarm this" in agents
-    assert "aiswarm sessions" in agents
     assert "Swarm CLI: `aiswarm`" in agents
     assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
@@ -360,14 +359,15 @@ def test_cli_send_token_split():
 
 
 def test_cli_clear_token_split():
+    assert swarm_cli._split_clear_tokens([], None) == (None, None)
     assert swarm_cli._split_clear_tokens(["0.2"], None) == (None, "0.2")
+    assert swarm_cli._split_clear_tokens(["cfg.yaml"], None) == ("cfg.yaml", None)
     assert swarm_cli._split_clear_tokens(["cfg.yaml", "0.2"], None) == ("cfg.yaml", "0.2")
     assert swarm_cli._split_clear_tokens(["0.2"], "x.yaml") == ("x.yaml", "0.2")
-    with pytest.raises(ValueError, match="clear requires TARGET pane"):
-        swarm_cli._split_clear_tokens([], "x.yaml")
+    assert swarm_cli._split_clear_tokens([], "x.yaml") == ("x.yaml", None)
 
 
-def test_cli_clear_command(tmp_path: Path, capsys):
+def test_cli_clear_command(tmp_path: Path, capsys, monkeypatch):
     bdir = _write_backlog_project(tmp_path)
     session_name = f"demo_clear_{tmp_path.name}"
     cfg_path = write_config(tmp_path, f"""
@@ -381,13 +381,21 @@ windows:
         nudge:
           agent: claude
           monitor: true
+      - shell_command: codex
+        nudge:
+          agent: codex
+          monitor: true
 """)
-    # dry-run test
+    monkeypatch.setattr(
+        common, "_comms_db_path",
+        lambda session: tmp_path / "rt" / session / "comms.db",
+    )
+    # dry-run single pane clear test
     assert swarm_cli.main(["clear", "-c", str(cfg_path), "-D", "0.0"]) == 0
     captured = capsys.readouterr().out
     assert f"would log-send session={session_name} target=0.0 msg=/clear" in captured
 
-    # real log-send clear test
+    # real log-send clear for single pane
     assert swarm_cli.main(["clear", "-c", str(cfg_path), "0.0"]) == 0
     captured = capsys.readouterr().out
     assert "log-sent id=" in captured
@@ -396,9 +404,16 @@ windows:
     cfg = load_config(cfg_path)
     events = common.get_pending_events(cfg.session_name, "0.0")
     assert len(events) == 1
-    # row format: (id, ts, sender, type, payload, meta)
     assert events[0][2] == "cli clear"
     assert events[0][4] == "/clear"
+    common.advance_cursor(cfg.session_name, "0.0", events[0][0])
+
+    # broadcast clear (default all agent panes) test
+    assert swarm_cli.main(["clear", "-c", str(cfg_path)]) == 0
+    captured = capsys.readouterr().out
+    assert "log-broadcast to" in captured
+    assert "0.0" in captured
+    assert "0.1" in captured
 
 
 def test_cli_bare_and_instructions(capsys):

@@ -393,13 +393,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     clear_p = sub.add_parser(
         "clear",
-        help="Send '/clear' to target pane via the event log",
-        description="Send '/clear' to target pane via the event log.",
+        help="Send '/clear' to all agent panes (or target pane) via the event log",
+        description="Send '/clear' to all agent panes by default, or a specific target pane, via the event log.",
         epilog=(
             "examples:\n"
-            "  aiswarm clear 0.0\n"
+            "  aiswarm clear           # broadcasts /clear to all agent panes\n"
+            "  aiswarm clear 0.0       # sends /clear to pane 0.0\n"
             "  aiswarm clear -c .aiswarm/config.yaml 0.1\n"
-            "  aiswarm clear ./swarm.yaml 0.0   # legacy: leading config path"
+            "  aiswarm clear ./swarm.yaml   # legacy: optional leading config path"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -412,9 +413,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     clear_p.add_argument(
         "tokens",
-        nargs="+",
+        nargs="*",
         metavar=("PANE"),
-        help="PANE id (e.g. 0.2). Legacy: optional leading CONFIG path before the target",
+        help="Optional PANE id (e.g. 0.2). If omitted, broadcasts /clear to all agent panes.",
+    )
+    clear_p.add_argument(
+        "-A",
+        "--include-nonmonitored",
+        action="store_true",
+        help="When clearing all panes, also include agent panes with monitor=false",
     )
     clear_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
 
@@ -539,17 +546,17 @@ def _split_send_tokens(tokens: list[str], config_file: str | None) -> tuple[str 
     return None, tokens[0], tokens[1:]
 
 
-def _split_clear_tokens(tokens: list[str], config_file: str | None) -> tuple[str | None, str]:
-    """Return (explicit_config, target)."""
+def _split_clear_tokens(tokens: list[str], config_file: str | None) -> tuple[str | None, str | None]:
+    """Return (explicit_config, target_or_none)."""
     if config_file:
-        if len(tokens) < 1:
-            raise ValueError("clear requires TARGET pane")
-        return config_file, tokens[0]
-    if len(tokens) >= 2 and looks_like_config_path(tokens[0]):
-        return tokens[0], tokens[1]
-    if len(tokens) < 1:
-        raise ValueError("clear requires TARGET pane (optional leading CONFIG)")
-    return None, tokens[0]
+        return config_file, tokens[0] if tokens else None
+    if tokens:
+        if len(tokens) >= 2 and looks_like_config_path(tokens[0]):
+            return tokens[0], tokens[1]
+        if len(tokens) == 1 and looks_like_config_path(tokens[0]):
+            return tokens[0], None
+        return None, tokens[0]
+    return None, None
 
 
 def _split_broadcast_words(words: list[str], config_file: str | None) -> tuple[str | None, str]:
@@ -818,6 +825,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             cfg = load_config(explicit)
             msg = "/clear"
+            if target is None:
+                swarm_topology.broadcast(
+                    cfg,
+                    msg,
+                    include_nonmonitored=args.include_nonmonitored,
+                    dry_run=args.dry_run,
+                    via_log=True,
+                )
+                return 0
+
             try:
                 from .common import log_any, log_send
             except ImportError:
