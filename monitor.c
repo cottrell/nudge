@@ -86,7 +86,6 @@ static double monotonic_now(void) {
 }
 
 static void refresh_state_locked(void) {
-    if (!strcmp(g_agent, "grok")) return;
     if (g_state != ST_WORKING) return;
     if (g_last_ingest_at.tv_sec == 0) return;
     double last_ingest = (double)g_last_ingest_at.tv_sec + (double)g_last_ingest_at.tv_nsec / 1000000000.0;

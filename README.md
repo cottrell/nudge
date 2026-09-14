@@ -399,10 +399,12 @@ Defaults:
 - `MONITOR_STATE_LOG=1` writes transitions to `/tmp/<session>_<window-pane>.state.log`
 - `MONITOR_IDLE_SECS` controls the quiet period before `idle` (default: 10)
 
-The monitor deliberately reports activity, not semantic agent status: for all
-agents except `grok`, any pane output means `working` until the quiet timeout,
-while `grok` still relies on parsing OSC terminal-title updates where title
-`grok` means `idle` and any other title means `working`.
+The monitor deliberately reports activity, not semantic agent status: any pane
+output means `working` until the quiet timeout. `grok` additionally parses OSC
+terminal-title updates as a fast path — title exactly `grok` flips to `idle`
+immediately — but newer grok builds can leave a task-description title (e.g.
+`"TASK-123 ... - grok"`) in place after finishing instead of reverting to
+`grok`, so the quiet-timeout fallback is what actually clears those panes.
 
 ## Rough edges / limitations
 
