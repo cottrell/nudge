@@ -391,6 +391,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
 
+    clear_p = sub.add_parser(
+        "clear",
+        help="Send '/clear' to target pane via the event log",
+        description="Send '/clear' to target pane via the event log.",
+        epilog=(
+            "examples:\n"
+            "  aiswarm clear 0.0\n"
+            "  aiswarm clear -c .aiswarm/config.yaml 0.1\n"
+            "  aiswarm clear ./swarm.yaml 0.0   # legacy: leading config path"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    clear_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    clear_p.add_argument(
+        "tokens",
+        nargs="+",
+        metavar=("PANE"),
+        help="PANE id (e.g. 0.2). Legacy: optional leading CONFIG path before the target",
+    )
+    clear_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
+
     avu_p = sub.add_parser("av-usage", help="Agentsview usage (global by default; provide a swarm config to limit to its agents)")
     avu_p.add_argument("config", nargs="?", default=None, help=CONFIG_ARG_HELP + " (limits report to its agents when given)")
     avu_p.add_argument(
@@ -510,6 +537,19 @@ def _split_send_tokens(tokens: list[str], config_file: str | None) -> tuple[str 
     if len(tokens) < 2:
         raise ValueError("send requires TARGET and MESSAGE (optional leading CONFIG)")
     return None, tokens[0], tokens[1:]
+
+
+def _split_clear_tokens(tokens: list[str], config_file: str | None) -> tuple[str | None, str]:
+    """Return (explicit_config, target)."""
+    if config_file:
+        if len(tokens) < 1:
+            raise ValueError("clear requires TARGET pane")
+        return config_file, tokens[0]
+    if len(tokens) >= 2 and looks_like_config_path(tokens[0]):
+        return tokens[0], tokens[1]
+    if len(tokens) < 1:
+        raise ValueError("clear requires TARGET pane (optional leading CONFIG)")
+    return None, tokens[0]
 
 
 def _split_broadcast_words(words: list[str], config_file: str | None) -> tuple[str | None, str]:
@@ -769,6 +809,26 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 eid = (log_any(cfg.session_name, msg, sender="cli send") if target == "any"
                        else log_send(cfg.session_name, target, msg, sender="cli send"))
+                print(f"log-sent id={eid} session={cfg.session_name} target={target}")
+            return 0
+
+        if args.command == "clear":
+            explicit, target = _split_clear_tokens(
+                args.tokens, getattr(args, "config_file", None)
+            )
+            cfg = load_config(explicit)
+            msg = "/clear"
+            try:
+                from .common import log_any, log_send
+            except ImportError:
+                from common import log_any, log_send
+            if target not in [p.pane for p in cfg.panes] and target != "any":
+                print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
+            if args.dry_run:
+                print(f"would log-send session={cfg.session_name} target={target} msg={msg}")
+            else:
+                eid = (log_any(cfg.session_name, msg, sender="cli clear") if target == "any"
+                       else log_send(cfg.session_name, target, msg, sender="cli clear"))
                 print(f"log-sent id={eid} session={cfg.session_name} target={target}")
             return 0
 

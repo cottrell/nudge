@@ -359,6 +359,48 @@ def test_cli_send_token_split():
     assert swarm_cli._split_send_tokens(["0.2", "hi"], "x.yaml") == ("x.yaml", "0.2", ["hi"])
 
 
+def test_cli_clear_token_split():
+    assert swarm_cli._split_clear_tokens(["0.2"], None) == (None, "0.2")
+    assert swarm_cli._split_clear_tokens(["cfg.yaml", "0.2"], None) == ("cfg.yaml", "0.2")
+    assert swarm_cli._split_clear_tokens(["0.2"], "x.yaml") == ("x.yaml", "0.2")
+    with pytest.raises(ValueError, match="clear requires TARGET pane"):
+        swarm_cli._split_clear_tokens([], "x.yaml")
+
+
+def test_cli_clear_command(tmp_path: Path, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    session_name = f"demo_clear_{tmp_path.name}"
+    cfg_path = write_config(tmp_path, f"""
+session_name: {session_name}
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+""")
+    # dry-run test
+    assert swarm_cli.main(["clear", "-c", str(cfg_path), "-D", "0.0"]) == 0
+    captured = capsys.readouterr().out
+    assert f"would log-send session={session_name} target=0.0 msg=/clear" in captured
+
+    # real log-send clear test
+    assert swarm_cli.main(["clear", "-c", str(cfg_path), "0.0"]) == 0
+    captured = capsys.readouterr().out
+    assert "log-sent id=" in captured
+    assert "target=0.0" in captured
+
+    cfg = load_config(cfg_path)
+    events = common.get_pending_events(cfg.session_name, "0.0")
+    assert len(events) == 1
+    # row format: (id, ts, sender, type, payload, meta)
+    assert events[0][2] == "cli clear"
+    assert events[0][4] == "/clear"
+
+
 def test_cli_bare_and_instructions(capsys):
     assert swarm_cli.main([]) == 0
     bare = capsys.readouterr().out
