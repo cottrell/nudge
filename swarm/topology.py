@@ -829,14 +829,22 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
             except Exception:
                 pass
         else:
-            print("pending summary (use --pane for details):")
-            try:
-                bcasts = get_pending_events(cfg.session_name, "__broadcast__")
-                print(f"  __broadcast__ pending: {len(bcasts)}")
-                print(f"  __any__ pending: {len(get_pending_any(cfg.session_name))}")
-            except Exception:
-                pass
-            print("  Run with --pane X.Y for per-pane pending")
+            found = False
+            for pane_spec in cfg.panes:
+                for eid, ts, snd, typ, pay, meta in get_pending_events(cfg.session_name, pane_spec.pane):
+                    _print_log_event(eid, ts, pane_spec.pane, snd, typ, pay, meta)
+                    found = True
+                try:
+                    for eid, ts, snd, typ, pay, meta in get_pending_broadcasts(cfg.session_name, pane_spec.pane):
+                        _print_log_event(eid, ts, pane_spec.pane, snd, typ, pay, meta, via="broadcast")
+                        found = True
+                except Exception:
+                    pass
+            for eid, ts, snd, typ, pay, meta in get_pending_any(cfg.session_name):
+                _print_log_event(eid, ts, "__any__", snd, typ, pay, meta)
+                found = True
+            if not found:
+                print("(no pending events)")
     else:
         evs = get_events(cfg.session_name, pane, limit)
         if not evs:

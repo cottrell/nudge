@@ -3424,6 +3424,32 @@ windows:
     assert "recovered_at" not in state["assignments"]["0.0"]
 
 
+def test_log_pending_without_pane_prints_entries(tmp_path: Path, monkeypatch, capsys):
+    cfg_file = write_config(tmp_path, """
+session_name: pending_display
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+      - shell_command: codex
+        nudge:
+          agent: codex
+          monitor: true
+""")
+    monkeypatch.setenv("AISWARM_CONFIG", str(cfg_file))
+    common.log_send("pending_display", "0.0", "first pending")
+    common.log_send("pending_display", "0.1", "second pending")
+    swarm_cli.main(["log", "--pending"])
+    out, _ = capsys.readouterr()
+    assert "first pending" in out
+    assert "second pending" in out
+    assert "pending summary" not in out
+
+
 def test_broadcast_via_log_filtering_and_warning(tmp_path: Path, monkeypatch, capsys):
     from common import init_comms_db, log_broadcast
     from pane_worker import _drain_comms

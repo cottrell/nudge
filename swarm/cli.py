@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_optional_config(log_p)
     log_p.add_argument("--pane", help="Filter to a specific pane e.g. 0.2")
     log_p.add_argument("-n", "--limit", type=int, default=50)
-    log_p.add_argument("--pending", action="store_true", help="Only show unread events for the given --pane (or summarize)")
+    log_p.add_argument("--pending", action="store_true", help="Only show unread events (optionally filtered by --pane)")
     log_p.add_argument("-w", "--watch", action="store_true", help="Refresh the log in place until interrupted")
     log_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds (default: 1)")
 
