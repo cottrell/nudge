@@ -2945,10 +2945,15 @@ windows:
     assert state["assignments"]["0.0"]["healthcheck_restarts"] == 1
     assert "healthcheck" not in state["assignments"]["0.0"]
 
+    backlog_calls = []
+    monkeypatch.setattr(tasksctl, "_run_backlog", lambda cfg, args: backlog_calls.append(args) or type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})())
     state["assignments"]["0.0"]["healthcheck"] = {"nonce": "again", "sent_at": 0}
     tasksctl.chase_assigned(cfg, state)
     assert respawns == [(cfg, "0.0")]
     assert state["assignments"]["0.0"].get("healthcheck_exhausted_at")
+    assert state["assignments"]["0.0"].get("triage_task_created") is True
+    assert len(backlog_calls) == 1
+    assert backlog_calls[0][:3] == ["task", "create", "Triage stuck task TASK-9 on pane 0.0"]
 
 
 def test_claim_logs_and_skips_when_task_detail_unavailable(tmp_path: Path, monkeypatch, capsys):

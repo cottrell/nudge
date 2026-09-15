@@ -503,7 +503,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     tasks_p = sub.add_parser(
         "tasks",
-        help="Session task dispatcher: pull work from a source (v1: backlog) and assign to free panes (separate from babysit)",
+        help="Session task dispatcher: pull work from a source (v1: backlog) and assign to free panes (optional require_label filter; unassigned_only by default)",
+        description=(
+            "Session task dispatcher: claims tasks from backlog (e.g. To Do) onto free panes.\n"
+            "By default claims unassigned tasks (unassigned_only: true). Set require_label (e.g. 'auto')\n"
+            "in swarm config to filter claims to specific task tags."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     tasks_sub = tasks_p.add_subparsers(dest="tasks_command", required=True)
     for name, help_text in (

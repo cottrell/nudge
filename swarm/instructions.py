@@ -186,10 +186,14 @@ aiswarm tasks stop
   while it is assigned. Start it explicitly with `aiswarm tasks start` or `aiswarm tasks once`;
   `aiswarm start` alone does not start dispatching. `aiswarm tasks start --for 1h` (also `30m`,
   `90s`, or seconds) auto-stops the group; `tasks stop` or a later untimed start clears the timer.
-- **Claim pool:** with `unassigned_only` (default), only unassigned tasks. Assignees in
+- **Claim pool:** with `unassigned_only` (default), only unassigned tasks are claimed. If `require_label` is set (e.g. `require_label: "auto"`), only tasks with that tag/label are claimed. Assignees in
   `tasks.skip_assignees` (default `human`) are **not** claimed/reclaimed — leave for people.
   Empty `skip_assignees: []` disables that skip. Swarm owners are `aiswarm:<session>:<pane>` only;
   never use model names as assignees.
+- **Stuck / Quota Tasks:** If an agent pane crashes, quotas out, or deadlocks, `tasksctl` continues
+  chasing the assigned task until healthchecks exhaust. To release a stuck task back to the free pool,
+  manually unassign it: `backlog task edit TASK-NN -a "" -s "To Do"`. Or park it for a human:
+  `backlog task edit TASK-NN -a human`.
 - **Dependency gate:** if any dependency is not Done, the task is not claimable/chaseable.
   Assignee on the dep does not matter (In Progress, human, etc.). Link work with
   `backlog task edit TASK-NN --depends-on TASK-BLOCKER`. Park for a human:

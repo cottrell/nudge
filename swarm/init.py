@@ -268,6 +268,8 @@ windows:
             agents = DEFAULT_AGENTS
         panes_block = "".join(_pane_entry(a, "solo") for a in agents)
     return f"""session_name: {name}
+# tasks:
+#   require_label: "auto"     # Optional: only claim backlog tasks tagged with this label
 windows:
   - window_name: grid
     layout: tiled

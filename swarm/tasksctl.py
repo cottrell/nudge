@@ -1034,6 +1034,26 @@ def chase_assigned(
                     continue
                 cur["healthcheck_exhausted_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
                 cur.pop("healthcheck", None)
+                if not cur.get("triage_task_created"):
+                    triage_title = f"Triage stuck task {tid} on pane {pane}"
+                    triage_desc = (
+                        f"Healthcheck budget exhausted for {tid} assigned to pane {pane}.\n\n"
+                        f"Inspect pane {pane} scrollback and backlog task {tid}.\n"
+                        f"If the worker is dead, rate-limited, or stuck, unassign {tid} (backlog task edit {tid} -a \"\" -s \"To Do\") "
+                        f"or take it over."
+                    )
+                    cmd_args = ["task", "create", triage_title, "--desc", triage_desc, "-s", "To Do"]
+                    if cfg.tasks.require_label:
+                        cmd_args.extend(["-l", cfg.tasks.require_label])
+                    try:
+                        res = _run_backlog(cfg, cmd_args)
+                        if res.returncode == 0:
+                            cur["triage_task_created"] = True
+                            print(f"created triage task for stuck {tid} on pane {pane}")
+                        else:
+                            print(f"warning: failed to create triage task for {tid} on pane {pane}: {res.stderr}", file=sys.stderr)
+                    except Exception as e:
+                        print(f"warning: failed to create triage task for {tid} on pane {pane}: {e}", file=sys.stderr)
                 assignments[pane] = cur
                 state["assignments"] = assignments
                 changed = True
