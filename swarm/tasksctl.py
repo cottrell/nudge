@@ -746,6 +746,27 @@ def deliver_task_prompt(
     return None
 
 
+def deliver_clear_prompt(cfg: SwarmConfig, pane: str, *, dry_run: bool) -> int | None:
+    """Send /clear via log (default) or direct tmux-send."""
+    if dry_run:
+        return None
+    if cfg.tasks.via_log:
+        return log_send(
+            cfg.session_name,
+            pane,
+            "/clear",
+            sender="tasks-dispatch",
+            etype="clear",
+            meta={"task_clear": True},
+        )
+    target = f"{cfg.session_name}:{pane}"
+    subprocess.run(
+        [str(ROOT_DIR / "tmux-send"), "--no-prefix", target, "/clear"],
+        check=False,
+    )
+    return None
+
+
 def pane_ready_for_prompt(cfg: SwarmConfig, pane: str) -> bool:
     """True if we may inject a tasks prompt (idle + no pending log)."""
     if pane_has_pending(cfg, pane):
@@ -1112,13 +1133,26 @@ def chase_assigned(
         )
         # Chase uses short prompt (body unused); pass empty to avoid snapshot bloat.
         prompt = build_task_prompt(cfg, task, pane, "", chase=True)
+        idle_chases_next = int(cur.get("idle_chases") or 0) + 1
+        should_clear = (
+            cfg.tasks.clear_every > 0
+            and idle_chases_next > 1
+            and (idle_chases_next % cfg.tasks.clear_every == 0)
+        )
         if dry_run:
             print(f"would chase {tid} -> pane {pane} (still assigned, pane idle)")
-            idle_after = int(cur.get("idle_chases") or 0) + 1
-            if idle_after >= cfg.tasks.healthcheck_chases:
+            if should_clear:
+                print(f"would send /clear to pane {pane} before chase prompt (clear_every={cfg.tasks.clear_every})")
+            if idle_chases_next >= cfg.tasks.healthcheck_chases:
                 print(f"would healthcheck probe {tid} -> pane {pane}")
             event_id = None
         else:
+            if should_clear:
+                try:
+                    deliver_clear_prompt(cfg, pane, dry_run=False)
+                    print(f"cleared pane {pane} before chase prompt (clear_every={cfg.tasks.clear_every})")
+                except Exception as e:
+                    print(f"warning: clear before chase {tid} -> {cfg.session_name}:{pane} failed: {e}", file=sys.stderr)
             event_id = deliver_task_prompt(
                 cfg, pane, prompt, dry_run=False,
                 meta={"task_id": tid, "pane": pane, "chase": True},
@@ -1317,8 +1351,16 @@ def _claim_new_onto_free(
                 f"would claim {task.id} -> pane {pane} assignee={assignee} "
                 f"and deliver via {'log' if cfg.tasks.via_log else 'direct'}"
             )
+            if cfg.tasks.clear_on_claim:
+                print(f"would send /clear to pane {pane} before claim prompt")
             event_id = None
         else:
+            if cfg.tasks.clear_on_claim:
+                try:
+                    deliver_clear_prompt(cfg, pane, dry_run=False)
+                    print(f"cleared pane {pane} before task claim {task.id}")
+                except Exception as e:
+                    print(f"warning: clear before claim {task.id} -> {cfg.session_name}:{pane} failed: {e}", file=sys.stderr)
             assignments = dict(state.get("assignments") or {})
             assignments[pane] = {
                 "task_id": task.id,

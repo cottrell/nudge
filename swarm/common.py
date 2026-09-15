@@ -130,6 +130,8 @@ class TasksSpec:
     # Statuses that count as complete for dependency gates and assignment clear.
     # Compared case-insensitively. Default matches backlog's Done.
     complete_statuses: list[str] = field(default_factory=lambda: ["Done"])
+    clear_on_claim: bool = True
+    clear_every: int = 0  # 0 = disabled (only clear_on_claim if enabled)
 
 
 @dataclass
@@ -343,6 +345,8 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
         healthcheck_max_restarts=max(0, int(raw.get("healthcheck_max_restarts", d.healthcheck_max_restarts))),
         skip_assignees=skip_assignees,
         complete_statuses=complete_statuses,
+        clear_on_claim=bool(raw.get("clear_on_claim", d.clear_on_claim)),
+        clear_every=max(0, int(raw.get("clear_every", d.clear_every))),
     )
 
 
@@ -409,6 +413,8 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
             "healthcheck_max_restarts": t.healthcheck_max_restarts,
             "skip_assignees": list(t.skip_assignees),
             "complete_statuses": list(t.complete_statuses),
+            "clear_on_claim": t.clear_on_claim,
+            "clear_every": t.clear_every,
             "claim_assignee_prefix": t.claim_assignee_prefix,
             "enabled_panes": [p.pane for p in cfg.task_panes],
         },

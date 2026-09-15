@@ -2516,6 +2516,60 @@ windows:
     assert tasksctl.task_is_complete(cfg_default, {"status": "Closed"}) is False
 
 
+def test_tasks_clear_on_claim_and_clear_every_config(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo_clear
+tasks:
+  backlog_dir: "{bdir}"
+  clear_on_claim: true
+  clear_every: 2
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+"""))
+    assert cfg.tasks.clear_on_claim is True
+    assert cfg.tasks.clear_every == 2
+
+    clears = []
+    prompts = []
+    monkeypatch.setattr(tasksctl, "deliver_clear_prompt", lambda c, p, dry_run=False: clears.append(p))
+    monkeypatch.setattr(tasksctl, "deliver_task_prompt", lambda c, p, pr, dry_run=False, meta=None: prompts.append((p, pr)))
+    monkeypatch.setattr(tasksctl, "claim_task", lambda c, tid, p, dry_run=False: f"aiswarm:demo_clear:{p}")
+    monkeypatch.setattr(tasksctl, "pane_ready_for_prompt", lambda c, p: True)
+    monkeypatch.setattr(tasksctl, "chase_due", lambda i, m, now=None: True)
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda c, tid, cache=None: tasksctl.DependencyGate(True, False))
+    monkeypatch.setattr(tasksctl, "list_candidate_tasks", lambda c: [tasksctl.BacklogTask("TASK-100", "Title", "To Do")])
+    monkeypatch.setattr(tasksctl, "_task_or_none", lambda c, tid, cache: {"id": tid, "title": "Title", "status": "In Progress", "assignees": ["aiswarm:demo_clear:0.0"]})
+
+    # Claim should trigger clear_on_claim
+    state = {"assignments": {}}
+    tasksctl._claim_new_onto_free(cfg, state, dry_run=False)
+    assert clears == ["0.0"]
+    assert len(prompts) == 1
+
+    # First chase (idle_chases=1) does not trigger clear_every=2 yet
+    clears.clear()
+    prompts.clear()
+    tasksctl.chase_assigned(cfg, state, dry_run=False)
+    assert clears == []
+    assert len(prompts) == 1
+
+    # Second chase (idle_chases=2) triggers clear_every=2
+    clears.clear()
+    prompts.clear()
+    tasksctl.chase_assigned(cfg, state, dry_run=False)
+    assert clears == ["0.0"]
+    assert len(prompts) == 1
+
+
 def test_tasks_status_labels_blocked_candidates(tmp_path: Path, monkeypatch, capsys):
     bdir = _write_backlog_project(tmp_path)
     cfg = load_config(write_config(tmp_path, f"""
