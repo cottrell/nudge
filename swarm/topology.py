@@ -726,11 +726,11 @@ def av_usage_lines(report: dict, recent_minutes: int = 0, title: str | None = No
     if recent_minutes > 0:
         # fresh fetch for accuracy (cheap)
         try:
-            from .common import get_agent-monitor_recent_tokens
+            from .common import get_agentsview_recent_tokens
         except ImportError:
-            from common import get_agent-monitor_recent_tokens
+            from common import get_agentsview_recent_tokens
         eff = report.get("agents") or []
-        rec = get_agent-monitor_recent_tokens(recent_minutes, agents=eff)
+        rec = get_agentsview_recent_tokens(recent_minutes, agents=eff)
         lines.append(
             f"  recent {recent_minutes}m tokens: {rec.get('total_tokens', 0):,} ({rec.get('events', 0)} events)"
         )
@@ -746,17 +746,17 @@ def print_av_usage(report: dict, recent_minutes: int = 0, title: str | None = No
 def watch_av_usage(agents: list[str] | None, recent_minutes: int = 0, interval: float = 30.0) -> None:
     """Watch loop for av-usage. Re-fetches each cycle so it works with polling."""
     try:
-        from .common import get_swarm_agent-monitor_report
+        from .common import get_swarm_agentsview_report
     except ImportError:
-        from common import get_swarm_agent-monitor_report
+        from common import get_swarm_agentsview_report
     try:
         while True:
-            report = get_swarm_agent-monitor_report(agents)
+            report = get_swarm_agentsview_report(agents)
             eff = report.get("agents") or []
             if agents is not None:
-                title = f"agent-monitor usage limited to swarm agents: {eff}"
+                title = f"agentsview usage limited to swarm agents: {eff}"
             else:
-                title = "agent-monitor global usage (all agents)"
+                title = "agentsview global usage (all agents)"
 
             lines = av_usage_lines(report, recent_minutes, title)
             lines.insert(0, f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}")

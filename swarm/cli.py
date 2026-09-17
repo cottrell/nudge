@@ -738,9 +738,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "av-usage":
             try:
-                from .common import get_agents_from_config, get_swarm_agent-monitor_report
+                from .common import get_agents_from_config, get_swarm_agentsview_report
             except ImportError:
-                from common import get_agents_from_config, get_swarm_agent-monitor_report
+                from common import get_agents_from_config, get_swarm_agentsview_report
             import json as _json
 
             cfg_explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
@@ -758,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
                 except FileNotFoundError:
                     agents = None
 
-            report = get_swarm_agent-monitor_report(agents)
+            report = get_swarm_agentsview_report(agents)
 
             if args.json:
                 if args.watch:
@@ -773,9 +773,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             title = (
-                f"agent-monitor usage limited to swarm agents: {effective}"
+                f"agentsview usage limited to swarm agents: {effective}"
                 if limited
-                else "agent-monitor global usage (all agents)"
+                else "agentsview global usage (all agents)"
             )
             lines = swarm_topology.av_usage_lines(report, recent_minutes=args.recent, title=title)
             print("\n".join(lines))

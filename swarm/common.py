@@ -940,7 +940,7 @@ def clear_comms(session_name: str, confirm: bool = False):
         print(f"cleared comms log for {session_name}")
 
 
-# --- agent-monitor provider usage (task-7) ---
+# --- agentsview provider usage (task-7) ---
 
 import datetime as _dt
 import os as _os
@@ -948,16 +948,16 @@ import subprocess as _subp
 from shutil import which as _which
 
 
-def _agent-monitor_bin() -> str:
+def _agentsview_bin() -> str:
     # Prefer the dev tree build that matches the running server on 8088
     for cand in (
-        "~/dev/agent-monitor/bin/agent-monitor",
-        _os.path.expanduser("~/.local/bin/agent-monitor"),
+        "~/dev/agentsview/bin/agentsview",
+        _os.path.expanduser("~/.local/bin/agentsview"),
     ):
         if _os.path.isfile(cand) and _os.access(cand, _os.X_OK):
             return cand
-    w = _which("agent-monitor")
-    return w or "agent-monitor"
+    w = _which("agentsview")
+    return w or "agentsview"
 
 
 def _model_to_provider(model: str) -> str:
@@ -979,13 +979,13 @@ def _model_to_provider(model: str) -> str:
     return "other"
 
 
-def get_agent-monitor_provider_usage(*, since: str | None = None, until: str | None = None, no_sync: bool = True) -> dict:
-    """Return provider-grouped usage from agent-monitor.
+def get_agentsview_provider_usage(*, since: str | None = None, until: str | None = None, no_sync: bool = True) -> dict:
+    """Return provider-grouped usage from agentsview.
 
-    Uses agent-monitor usage daily --json (correct pricing from model_pricing).
+    Uses agentsview usage daily --json (correct pricing from model_pricing).
     "Provider" here means backend family (claude/codex/gemini/...) derived from model.
     """
-    binp = _agent-monitor_bin()
+    binp = _agentsview_bin()
     argv = [binp, "usage", "daily", "--json"]
     if since:
         argv += ["--since", since]
@@ -996,9 +996,9 @@ def get_agent-monitor_provider_usage(*, since: str | None = None, until: str | N
     try:
         proc = _subp.run(argv, check=False, stdout=_subp.PIPE, stderr=_subp.PIPE, text=True, timeout=30)
     except FileNotFoundError:
-        return {"error": f"agent-monitor CLI not found (tried {binp})"}
+        return {"error": f"agentsview CLI not found (tried {binp})"}
     if proc.returncode != 0:
-        return {"error": (proc.stderr or proc.stdout or "agent-monitor usage failed").strip()[:300]}
+        return {"error": (proc.stderr or proc.stdout or "agentsview usage failed").strip()[:300]}
     try:
         data = json.loads(proc.stdout)
     except Exception as e:
@@ -1027,17 +1027,17 @@ def get_agent-monitor_provider_usage(*, since: str | None = None, until: str | N
     }
 
 
-def get_agent-monitor_today_provider_usage() -> dict:
+def get_agentsview_today_provider_usage() -> dict:
     today = _dt.date.today().isoformat()
-    return get_agent-monitor_provider_usage(since=today, until=today)
+    return get_agentsview_provider_usage(since=today, until=today)
 
 
-def get_agent-monitor_recent_tokens(minutes: int = 5, agents: list[str] | None = None) -> dict:
+def get_agentsview_recent_tokens(minutes: int = 5, agents: list[str] | None = None) -> dict:
     """Query usage_events directly (single SQL + join) for recent token burn.
 
     Groups by the (normalized) agent from sessions. Cheap even for small windows.
     """
-    db_path = _os.path.expanduser("~/.agent-monitor/sessions.db")
+    db_path = _os.path.expanduser("~/.agentsview/sessions.db")
     if not _os.path.exists(db_path):
         return {"error": f"no sessions.db at {db_path}"}
     try:
@@ -1046,7 +1046,7 @@ def get_agent-monitor_recent_tokens(minutes: int = 5, agents: list[str] | None =
         cutoff = _dtm.now(_tz.utc) - _td(minutes=minutes)
         normed = None
         if agents:
-            normed = {normalize_agent-monitor_agent(a) for a in agents}
+            normed = {normalize_agentsview_agent(a) for a in agents}
 
         con = _sqlite3.connect(db_path)
         cur = con.cursor()
@@ -1107,7 +1107,7 @@ def get_agent-monitor_recent_tokens(minutes: int = 5, agents: list[str] | None =
     }
 
 
-# --- config-aware agent-monitor usage (for av-usage <config>) ---
+# --- config-aware agentsview usage (for av-usage <config>) ---
 
 AGENTSVIEW_AGENT_MAP = {
     "antigravity": "antigravity-cli",
@@ -1115,13 +1115,13 @@ AGENTSVIEW_AGENT_MAP = {
 }
 
 
-def normalize_agent-monitor_agent(name: str) -> str:
+def normalize_agentsview_agent(name: str) -> str:
     return AGENTSVIEW_AGENT_MAP.get(name, name)
 
 
-def _read_agent-monitor_auth() -> str | None:
+def _read_agentsview_auth() -> str | None:
     try:
-        text = (Path.home() / ".agent-monitor" / "config.toml").read_text()
+        text = (Path.home() / ".agentsview" / "config.toml").read_text()
         for line in text.splitlines():
             if "auth_token" in line and "=" in line:
                 val = line.split("=", 1)[1].strip().strip('"').strip("'")
@@ -1132,9 +1132,9 @@ def _read_agent-monitor_auth() -> str | None:
     return None
 
 
-def _find_agent-monitor_port() -> int | None:
+def _find_agentsview_port() -> int | None:
     try:
-        d = Path.home() / ".agent-monitor"
+        d = Path.home() / ".agentsview"
         files = sorted(d.glob("server.*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         if files:
             data = json.loads(files[0].read_text())
@@ -1144,14 +1144,14 @@ def _find_agent-monitor_port() -> int | None:
     return None
 
 
-def get_agent-monitor_all_agents() -> list[str]:
-    """Return the complete list of known agents/providers from agent-monitor.
+def get_agentsview_all_agents() -> list[str]:
+    """Return the complete list of known agents/providers from agentsview.
 
     Prefers the /api/v1/agents endpoint (includes all ever seen).
     Falls back to distinct agents from the sessions table in the DB.
     """
-    token = _read_agent-monitor_auth()
-    port = _find_agent-monitor_port()
+    token = _read_agentsview_auth()
+    port = _find_agentsview_port()
     if token and port:
         import urllib.request as _url
         base = f"http://bleepblop:{port}"
@@ -1167,7 +1167,7 @@ def get_agent-monitor_all_agents() -> list[str]:
     # DB fallback
     try:
         import sqlite3 as _sqlite3
-        db_path = _os.path.expanduser("~/.agent-monitor/sessions.db")
+        db_path = _os.path.expanduser("~/.agentsview/sessions.db")
         con = _sqlite3.connect(db_path)
         cur = con.cursor()
         cur.execute("SELECT DISTINCT agent FROM sessions WHERE agent IS NOT NULL ORDER BY agent")
@@ -1178,21 +1178,21 @@ def get_agent-monitor_all_agents() -> list[str]:
         return []
 
 
-def get_agent-monitor_usage_summary(
+def get_agentsview_usage_summary(
     *, agents: list[str] | None = None, since: str | None = None, until: str | None = None
 ) -> dict:
-    """Efficient query against the running agent-monitor server (one roundtrip).
+    """Efficient query against the running agentsview server (one roundtrip).
 
     If agents list given, server-side filter (comma joined). Uses the /api/v1/usage/summary
     which returns agentTotals + daily with agentBreakdowns.
     Falls back to CLI if server not reachable.
     """
-    token = _read_agent-monitor_auth()
-    port = _find_agent-monitor_port()
+    token = _read_agentsview_auth()
+    port = _find_agentsview_port()
     if not token or not port:
         # fallback to CLI path (may do multiple if per-agent needed)
         joined = ",".join(agents) if agents else None
-        return get_agent-monitor_provider_usage(since=since, until=until)  # best effort, unfiltered for now
+        return get_agentsview_provider_usage(since=since, until=until)  # best effort, unfiltered for now
 
     base = f"http://bleepblop:{port}"
     params = {}
@@ -1202,7 +1202,7 @@ def get_agent-monitor_usage_summary(
         params["to"] = until
     if agents:
         # use normalized
-        normed = [normalize_agent-monitor_agent(a) for a in agents]
+        normed = [normalize_agentsview_agent(a) for a in agents]
         params["agent"] = ",".join(normed)
 
     import urllib.request as _url
@@ -1221,11 +1221,11 @@ def get_agent-monitor_usage_summary(
 
 
 def _get_usage_for_agent_via_cli(agent: str, since: str, until: str) -> dict:
-    """Call the agent-monitor binary for a single agent and date range.
+    """Call the agentsview binary for a single agent and date range.
     Returns the totals dict for that agent (or zeros if none).
     """
-    binp = _agent-monitor_bin()
-    if not binp or binp == "agent-monitor" and not _os.path.exists("~/dev/agent-monitor/bin/agent-monitor"):
+    binp = _agentsview_bin()
+    if not binp or binp == "agentsview" and not _os.path.exists("~/dev/agentsview/bin/agentsview"):
         # fallback zeros
         return {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
 
@@ -1250,23 +1250,23 @@ def _get_usage_for_agent_via_cli(agent: str, since: str, until: str) -> dict:
         return {"cost": 0.0, "input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
 
 
-def get_swarm_agent-monitor_report(agents: list[str] | None = None) -> dict:
-    """Return convenient report using global agent-monitor usage data.
+def get_swarm_agentsview_report(agents: list[str] | None = None) -> dict:
+    """Return convenient report using global agentsview usage data.
 
     If agents list is provided, limits to (normalized) those agents.
-    If None/empty, shows *all* known agents from agent-monitor (full global list),
+    If None/empty, shows *all* known agents from agentsview (full global list),
     with usage overlaid (0 for agents with no spend in the window).
-    Uses the agent-monitor CLI binary per-agent for accuracy (the HTTP summary
+    Uses the agentsview CLI binary per-agent for accuracy (the HTTP summary
     sometimes misses data for agents like antigravity-cli).
     """
     today = _dt.date.today().isoformat()
     week_ago = (_dt.date.today() - _dt.timedelta(days=6)).isoformat()
 
     if agents:
-        norm_agents = sorted({normalize_agent-monitor_agent(a) for a in agents})
+        norm_agents = sorted({normalize_agentsview_agent(a) for a in agents})
         display_agents = norm_agents
     else:
-        display_agents = get_agent-monitor_all_agents()
+        display_agents = get_agentsview_all_agents()
 
     # Build per-agent data using CLI (more reliable than current HTTP summary for some agents)
     today_by = {}
@@ -1298,7 +1298,7 @@ def get_swarm_agent-monitor_report(agents: list[str] | None = None) -> dict:
             "by_agent": week_by,
             "totals": sum_by(week_by),
         },
-        "recent": get_agent-monitor_recent_tokens(10, agents=display_agents),
+        "recent": get_agentsview_recent_tokens(10, agents=display_agents),
     }
 
 
