@@ -155,9 +155,14 @@ AGENT_LIGHT_COMMANDS: dict[str, str] = {
     "antigravity": "agy --dangerously-skip-permissions --model mini",
 }
 
+AGENT_MEDIUM_COMMANDS: dict[str, str] = {
+    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-luna -c model_reasoning_effort=medium",
+}
+
 FLAVOUR_AGENTS: dict[str, list[str]] = {
     "1x1": ["codex"],
     "3x2": ["codex", "claude", "antigravity", "grok"],
+    "3x3": ["codex", "claude", "grok", "antigravity"],
     "4x2": ["codex", "claude", "antigravity", "grok"],
     "2x2": ["codex", "claude"],
     "babysit": ["codex", "claude"],
@@ -166,7 +171,7 @@ FLAVOUR_AGENTS: dict[str, list[str]] = {
     "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
 }
 
-FLAVOURS = ("1x1", "2x2", "3x2", "4x2", "babysit", "demo")
+FLAVOURS = ("1x1", "2x2", "3x2", "3x3", "4x2", "babysit", "demo")
 
 
 def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babysit: bool = False) -> str:
@@ -175,6 +180,11 @@ def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babys
         title = f"{agent} light"
         interval = 1800
         clear_every = "\n            clear_every: 6"
+    elif weight == "medium":
+        cmd = AGENT_MEDIUM_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
+        title = f"{agent} medium"
+        interval = 3600
+        clear_every = "\n            clear_every: 3"
     else:
         cmd = AGENT_COMMANDS.get(agent, agent)
         title = f"{agent} heavy" if weight == "heavy" else agent
@@ -225,6 +235,14 @@ def config_text(name: str, agents: list[str] | None = None, flavour: str | None 
             "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
             + _pane_entry("antigravity", "solo")
             + _pane_entry("grok", "solo")
+        )
+    elif flavour == "3x3":
+        # 9-pane layout: 3x codex (heavy, medium, light), 2x claude (heavy, light), grok solo, 3x antigravity solo
+        panes_block = (
+            "".join(_pane_entry("codex", w) for w in ("heavy", "medium", "light"))
+            + "".join(_pane_entry("claude", w) for w in ("heavy", "light"))
+            + _pane_entry("grok", "solo")
+            + "".join(_pane_entry("antigravity", "solo") for _ in range(3))
         )
     elif flavour == "2x2":
         flavour_agents = FLAVOUR_AGENTS["2x2"]

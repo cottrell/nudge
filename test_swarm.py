@@ -102,6 +102,22 @@ def test_swarm_init_default_3x2_layout():
     assert 'shell_command: "bash"' not in text
 
 
+def test_swarm_init_3x3_layout():
+    text = swarm_init.config_text("cd-demo", flavour="3x3")
+    assert text.count("agent:") == 9
+    assert text.count("agent: codex") == 3
+    assert text.count("agent: claude") == 2
+    assert text.count("agent: grok") == 1
+    assert text.count("agent: antigravity") == 3
+    assert "title: codex heavy" in text
+    assert "title: codex medium" in text
+    assert "title: codex light" in text
+    assert "title: claude heavy" in text
+    assert "title: claude light" in text
+    assert "model_reasoning_effort=medium" in text
+    assert "model_reasoning_effort=low" in text
+
+
 def test_swarm_init_1x1_and_4x2_layouts():
     minimal = swarm_init.config_text("minimal", flavour="1x1")
     assert minimal.count("agent:") == 1
