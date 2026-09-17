@@ -254,6 +254,8 @@ tasks:
   require_idle: true
   via_log: true
   max_inflight: 0                 # 0 = unlimited; still one task per free pane
+  clear_on_claim: true            # deliver /clear to pane before sending new task claim
+  clear_every: 0                  # deliver /clear every N chase nudges (0 = disabled)
   complete_statuses: [Done]       # dep gate + assignment clear; case-insensitive
 
 windows:

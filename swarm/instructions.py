@@ -156,6 +156,8 @@ tasks:
   poll_secs: 30
   min_chase_secs: 60    # default = poll_secs; raise to nudge less often
   max_inflight: 2       # 0 = unlimited; still one task per free pane
+  clear_on_claim: true  # default: true (sends /clear before new task prompt)
+  clear_every: 0        # default: 0 (send /clear every N chases; 0 = disabled)
 nudge:
   tasks:
     enabled: false   # opt this pane out
