@@ -161,9 +161,10 @@ completion or chase semantics.
 
 ### Agent-to-agent handoff (do not stream peer panes)
 
-Prefer short `aiswarm send` pokes + durable results in backlog + a short done-ping, instead of attaching to another agent's tmux pane and waiting on its stream.
+Prefer short `aiswarm send` pokes + durable results in backlog + a short done-ping.
+Do not attach to a peer pane. Snapshot with `aiswarm capture`; block in-process with `aiswarm wait` (polls the monitor, one line of output). TUI findings are not done.
 
-See `backlog/docs/doc-2 - Agent-to-agent-handoff-via-send-backlog-and-ping.md` for the full example workflow and message templates.
+See `backlog/docs/doc-2 - Agent-to-agent-handoff-via-send-backlog-and-ping.md` for a longer example.
 
 Status/usage reliability note:
 

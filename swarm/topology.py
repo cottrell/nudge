@@ -269,14 +269,78 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
 
 
 
-def capture_pane(cfg: SwarmConfig, pane: str) -> None:
+def capture_pane_text(cfg: SwarmConfig, pane: str) -> str | None:
     target = f"{cfg.session_name}:{pane}"
     proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
     if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def capture_pane(cfg: SwarmConfig, pane: str) -> None:
+    target = f"{cfg.session_name}:{pane}"
+    text = capture_pane_text(cfg, pane)
+    if text is None:
         print(f"could not capture {target}")
         return
     print(f"--- Capture {target} ---")
-    print(proc.stdout)
+    print(text)
+
+
+def wait_pane(
+    cfg: SwarmConfig,
+    pane: str,
+    *,
+    timeout: float = 120.0,
+    interval: float = 1.0,
+    stable: float | None = None,
+) -> int:
+    """Block until monitor idle, or until capture-pane text is unchanged for `stable` seconds.
+
+    Prints one line. Returns 0 on success, 1 on timeout, 2 on bad pane.
+    """
+    if interval <= 0:
+        raise ValueError("--interval must be > 0")
+    if timeout < 0:
+        raise ValueError("--timeout must be >= 0")
+    if stable is not None and stable <= 0:
+        raise ValueError("--stable must be > 0")
+    if pane not in {p.pane for p in cfg.panes}:
+        print(f"unknown pane {pane}", file=sys.stderr)
+        return 2
+    deadline = None if timeout == 0 else time.monotonic() + timeout
+    last_text: str | None = None
+    stable_since: float | None = None
+    state = "unknown"
+    while True:
+        now = time.monotonic()
+        if stable is not None:
+            text = capture_pane_text(cfg, pane)
+            if text is None:
+                state = "unknown"
+                last_text = None
+                stable_since = None
+            elif text != last_text:
+                last_text = text
+                stable_since = now
+                state = "working"
+            elif stable_since is not None and now - stable_since >= stable:
+                print(f"{pane} stable")
+                return 0
+            else:
+                state = "working"
+        else:
+            state = query_monitor_state(cfg.session_name, pane)
+            if state == "idle":
+                print(f"{pane} idle")
+                return 0
+        if deadline is not None and now >= deadline:
+            print(f"{pane} timeout {state}")
+            return 1
+        sleep_for = interval
+        if deadline is not None:
+            sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
+        time.sleep(sleep_for)
 
 def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_run: bool, via_log: bool = False) -> None:
     if not message.strip():

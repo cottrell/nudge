@@ -173,6 +173,9 @@ def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     assert "aiswarm instructions overview" in agents
     assert ".aiswarm/config.yaml" in agents
     assert "Do NOT raw `tmux send-keys`" in agents
+    assert "`aiswarm capture`" in agents
+    assert "`aiswarm wait`" in agents
+    assert "TUI findings are not done" in agents
 
 
 def test_swarm_init_force_overwrites_existing_files(tmp_path: Path):
@@ -444,23 +447,30 @@ def test_cli_bare_and_instructions(capsys):
     idx = capsys.readouterr().out
     assert "aiswarm instructions overview" in idx
     assert "aiswarm this" in idx
-    assert "handoff" in idx
     assert "tasks" in idx
+    assert "observe" not in idx
+    assert "handoff" not in idx
 
     assert swarm_cli.main(["instructions", "overview"]) == 0
     ov = capsys.readouterr().out
     assert "Do **not** use raw `tmux send-keys`" in ov or "Do **not** use raw" in ov
     assert "aiswarm send" in ov
+    assert "aiswarm wait" in ov
     assert "babysit" in ov
     assert "tasks" in ov
     assert "aiswarm this" in ov
+    assert "TUI findings ≠ done" in ov
     assert "self-awareness" not in ov
+
+    assert swarm_cli.main(["instructions", "observe"]) == 0
+    ob = capsys.readouterr().out
+    assert "aiswarm capture" in ob
+    assert "aiswarm wait" in ob
 
     assert swarm_cli.main(["instructions", "handoff"]) == 0
     hf = capsys.readouterr().out
-    assert "backlog" in hf.lower()
-    assert "send" in hf.lower()
-    assert "Do **not** attach" in hf
+    assert "aiswarm wait" in hf
+    assert "TUI findings are not done" in hf
 
     assert swarm_cli.main(["instructions", "tasks"]) == 0
     ts = capsys.readouterr().out
@@ -470,6 +480,71 @@ def test_cli_bare_and_instructions(capsys):
     assert swarm_cli.main(["instructions", "nope"]) == 1
     err = capsys.readouterr().err
     assert "unknown guide" in err
+
+
+def _demo_one_pane(tmp_path: Path):
+    return load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+
+
+def test_wait_pane_idle_then_timeout(tmp_path: Path, monkeypatch, capsys):
+    cfg = _demo_one_pane(tmp_path)
+    states = ["working", "idle"]
+    monkeypatch.setattr(swarm_apply, "query_monitor_state", lambda *a, **k: states.pop(0) if states else "idle")
+    clock = [0.0]
+    monkeypatch.setattr(swarm_apply.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(swarm_apply.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    assert swarm_apply.wait_pane(cfg, "0.0", timeout=30, interval=1) == 0
+    assert capsys.readouterr().out.strip() == "0.0 idle"
+
+    monkeypatch.setattr(swarm_apply, "query_monitor_state", lambda *a, **k: "working")
+    clock[0] = 0.0
+    assert swarm_apply.wait_pane(cfg, "0.0", timeout=2, interval=1) == 1
+    assert "timeout working" in capsys.readouterr().out
+    assert swarm_apply.wait_pane(cfg, "9.9", timeout=1, interval=1) == 2
+
+
+def test_wait_pane_stable_capture(tmp_path: Path, monkeypatch, capsys):
+    cfg = _demo_one_pane(tmp_path)
+    texts = ["a", "b", "b", "b"]
+    monkeypatch.setattr(swarm_apply, "capture_pane_text", lambda *a, **k: texts.pop(0) if texts else "b")
+    clock = [0.0]
+    monkeypatch.setattr(swarm_apply.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(swarm_apply.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    assert swarm_apply.wait_pane(cfg, "0.0", timeout=30, interval=1, stable=2) == 0
+    assert capsys.readouterr().out.strip() == "0.0 stable"
+
+
+def test_cli_wait_dispatches_split_and_flags(monkeypatch):
+    calls: list[tuple] = []
+
+    def fake_wait(cfg, pane, *, timeout=120.0, interval=1.0, stable=None):
+        calls.append((cfg, pane, timeout, interval, stable))
+        return 7
+
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: f"CFG:{path}")
+    monkeypatch.setattr(swarm_cli.swarm_topology, "wait_pane", fake_wait)
+
+    rc = swarm_cli.main([
+        "wait", "examples/swarm-grid.yaml", "0.2",
+        "--timeout", "30", "--interval", "0.5", "--stable", "5",
+    ])
+    assert rc == 7
+    assert calls == [("CFG:examples/swarm-grid.yaml", "0.2", 30.0, 0.5, 5.0)]
+
+    calls.clear()
+    rc = swarm_cli.main(["wait", "0.1", "-c", "examples/swarm-grid.yaml"])
+    assert rc == 7
+    assert calls == [("CFG:examples/swarm-grid.yaml", "0.1", 120.0, 1.0, None)]
 
 
 def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):

@@ -16,13 +16,15 @@ Swarm CLI: `aiswarm` (on PATH; `make install-aiswarm` from the nudge repo).
 Read workflow first:
 - `aiswarm` — common commands cheat sheet
 - `aiswarm instructions overview` — required agent briefing
-- `aiswarm instructions handoff` / `tasks` — peer send and backlog dispatch
+- `aiswarm instructions tasks` — backlog dispatcher
 - `aiswarm this` — this swarm's config + runtime.json path
 
 After start, machine map (not git): `{runtime_dir / "runtime.json"}`
 
 Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
 Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
+Do NOT attach/stream a peer pane. Snapshot: `aiswarm capture`. Block until idle: `aiswarm wait`.
+TUI findings are not done: file backlog tasks/docs, ping the requester, then idle.
 """
 
 
@@ -314,8 +316,8 @@ def init(
         config_path: config_text(name, agents, flavour=flavour),
         prompts_dir / "worker_long.md": (
             "Continue the assigned work. Read AGENTS.md; for swarm ops run "
-            "`aiswarm instructions overview` (and handoff/tasks as needed). "
-            "Session paths: `aiswarm this`.\n"
+            "`aiswarm instructions overview`. Session paths: `aiswarm this`. "
+            "TUI findings are not done — file backlog/docs and ping.\n"
         ),
         prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
     }

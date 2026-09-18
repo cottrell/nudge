@@ -55,17 +55,16 @@ aiswarm stop                 # workers + session teardown
 | Channel | Use for | Not for |
 |---|---|---|
 | `aiswarm send` / log | Short poke, wake, or single-consumer `any` work | Large diffs, long reports |
-| Backlog task | Goal, AC, notes, final-summary, Done | Live streaming chat |
-| Pane attach / capture | Human debug | Agent waiting on a peer |
+| Backlog task | Goal, AC, notes, follow-up tasks, final-summary, Done | Live streaming chat |
+| `aiswarm capture` / `wait` | Snapshot, or block until monitor idle | Attach/stream; source of record |
 | babysit | Periodic continue / clear nudges | Assigning real work units |
 | tasks dispatcher | Claim To Do backlog onto free panes | Peer A→B ad-hoc handoff |
 
 ### Hard rules
 
 - Do **not** use raw `tmux send-keys` (Enter is unreliable). Prefer `aiswarm send` or `./tmux-send`.
-- Do **not** attach to another agent's pane and stream it; use send + backlog + done-ping
-  (`aiswarm instructions handoff`).
-- Completion of assigned work is **backlog status Done**, not "pane went idle".
+- Do **not** attach/stream a peer pane. Snapshot: `aiswarm capture 0.2`. Block until idle: `aiswarm wait 0.2`.
+- Done = backlog Done + notes/tasks/docs + ping. TUI findings ≠ done (`/clear` wipes them; the other pane waits).
 - `session_worker.py` is one worker process per swarm session: it multiplexes comms for all panes,
   optional per-pane babysit prompts, and the tasks group. C `monitor-bin` remains per pane.
   `pane_worker.py` is only a compatibility entrypoint; `babysit.py` is no longer an entrypoint.
@@ -78,57 +77,8 @@ aiswarm stop                 # workers + session teardown
 ### Next guides
 
 - `aiswarm this` — which swarm / where is runtime.json
-- `aiswarm instructions handoff` — peer agent coordination
 - `aiswarm instructions tasks` — backlog dispatcher
 - `aiswarm <command> --help` — flags and options
-""",
-)
-
-_reg(
-    "handoff",
-    "Peer A→B: send poke, backlog response, done-ping (no pane streaming)",
-    """
-## Agent-to-agent handoff
-
-### Problem
-
-Agent A wants B to do work. Do **not** attach to B's pane or poll its scrollback.
-
-### Pattern
-
-1. **A** creates/reuses a backlog task (goal + AC + reply-to pane).
-2. **A** pokes B with a short send (task id + instructions).
-3. **A** continues its own work.
-4. **B** works from the backlog task; appends notes; sets Done + final-summary.
-5. **B** pings A: short `aiswarm send` that results live in backlog.
-6. **A** reads `backlog task TASK-NN --plain`.
-
-### Templates
-
-Request (A → B):
-
-```text
-TASK-NN for you. Read: backlog task TASK-NN --plain
-Reply: backlog notes/final-summary on TASK-NN
-When done: aiswarm send <my-pane> "TASK-NN done"
-```
-
-Done (B → A):
-
-```text
-TASK-NN done. See backlog task TASK-NN (final-summary).
-```
-
-Keep sends short (SMS, not attachments). Bulk content → git + backlog.
-
-### Anti-patterns
-
-- Spectator attach / capture loops
-- Giant send payloads
-- Status only in chat (clears wipe it)
-- Busy-wait polling instead of a done-ping
-
-See also backlog doc-2 in the nudge repo for a longer worked example.
 """,
 )
 
@@ -223,6 +173,8 @@ Common workflow:
   aiswarm init <name>                 Create .aiswarm/config.yaml + AGENTS block
   aiswarm start                       Start session, monitors, comms workers
   aiswarm status --brief              Pane states
+  aiswarm capture <pane>              Snapshot pane text
+  aiswarm wait <pane>                 Block until pane monitor idle
   aiswarm send <pane|any> "msg"       Durable message via log (delivered on idle)
   aiswarm clear [pane]                Send '/clear' via log (all agent panes by default)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)
@@ -238,7 +190,6 @@ Instructions (workflow for agents):
   aiswarm sessions                    Provider session IDs for crash resume
   aiswarm instructions                List guides
   aiswarm instructions overview       Start here
-  aiswarm instructions handoff        Peer send + backlog + done-ping
   aiswarm instructions tasks          Backlog dispatcher
 
 Command help (flags):
@@ -272,6 +223,13 @@ def render(guide: str | None) -> str:
     if not guide:
         return index()
     key = guide.strip().lower()
+    if key in ("observe", "handoff"):
+        return (
+            "No separate guide. Snapshot: `aiswarm capture <pane>`. "
+            "Block until idle: `aiswarm wait <pane>`. "
+            "Done: backlog + ping (TUI findings are not done). "
+            "See `aiswarm instructions overview`.\n"
+        )
     if key not in GUIDES:
         known = ", ".join(GUIDES)
         raise ValueError(f"unknown guide: {guide!r} (known: {known})")

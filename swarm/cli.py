@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 # Relative imports (for `python -m swarm.cli`) with bare fallback for direct
 # script execution or the installed `aiswarm` entrypoint.
@@ -253,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
         "guide",
         nargs="?",
         default=None,
-        help="Guide name (omit to list). overview | handoff | tasks",
+        help="Guide name (omit to list). overview | tasks",
     )
 
     this_p = sub.add_parser(
@@ -362,7 +363,8 @@ def build_parser() -> argparse.ArgumentParser:
             '  aiswarm send 0.2 "do the thing"\n'
             '  aiswarm send any "pick this up when free"\n'
             "  aiswarm send -c .aiswarm/config.yaml 0.1 hi there\n"
-            "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path"
+            "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path\n"
+            '  aiswarm send -s otherswarm 0.1 "hello from nudge"   # cross-swarm'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -372,6 +374,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="config_file",
         default=None,
         help=CONFIG_ARG_HELP,
+    )
+    send_p.add_argument(
+        "-s",
+        "--swarm",
+        dest="swarm",
+        default=None,
+        help=(
+            "Target another swarm by session name, resolved via "
+            "/tmp/nudge-swarm/<name>/runtime.json. Default: this swarm."
+        ),
     )
 
     health_p = sub.add_parser("healthcheck", help="Reply to a dispatcher healthcheck")
@@ -476,6 +488,47 @@ def build_parser() -> argparse.ArgumentParser:
         "tokens",
         nargs="+",
         help="pane id, or legacy: config pane",
+    )
+
+    wait_p = sub.add_parser(
+        "wait",
+        help="Block until a pane is idle (monitor) or its capture is unchanged",
+        description=(
+            "Poll in this process (not in the agent context). Default: wait until the "
+            "pane monitor reports idle. --stable SECS waits until capture-pane text "
+            "is unchanged for SECS instead. Prints one line, then exits."
+        ),
+    )
+    wait_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    wait_p.add_argument(
+        "tokens",
+        nargs="+",
+        help="pane id, or legacy: config pane",
+    )
+    wait_p.add_argument(
+        "--timeout",
+        type=float,
+        default=120.0,
+        help="Seconds to wait (default 120; 0 = forever)",
+    )
+    wait_p.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        help="Poll interval in seconds (default 1)",
+    )
+    wait_p.add_argument(
+        "--stable",
+        type=float,
+        default=None,
+        metavar="SECS",
+        help="Wait until capture-pane text is unchanged for SECS (instead of monitor idle)",
     )
 
     babysit_p = sub.add_parser("babysit", help="Toggle the babysit prompt group on top of the base worker loop (comms always-on)")
@@ -790,6 +843,17 @@ def main(argv: list[str] | None = None) -> int:
             cfg = load_config(explicit)
             swarm_topology.capture_pane(cfg, pane)
             return 0
+
+        if args.command == "wait":
+            explicit, pane = _split_capture_tokens(args.tokens, getattr(args, "config_file", None))
+            cfg = load_config(explicit)
+            return swarm_topology.wait_pane(
+                cfg,
+                pane,
+                timeout=args.timeout,
+                interval=args.interval,
+                stable=args.stable,
+            )
 
         if args.command == "broadcast":
             explicit, msg = _split_broadcast_words(args.words, getattr(args, "config_file", None))
