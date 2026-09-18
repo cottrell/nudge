@@ -143,6 +143,7 @@ aiswarm broadcast "AGENTS.md updated; please re-read it."
 aiswarm broadcast --via-log "use durable log"    # write to event log instead of direct send
 aiswarm send 0.0 "hello via log"                 # durable, delivered on idle
 aiswarm send any "investigate the failure"       # durable, exactly one idle pane
+aiswarm send -s otherswarm 0.1 "hi from nudge"   # cross-swarm, via its runtime.json
 aiswarm log --pending
 aiswarm cursors
 aiswarm clear-comms -y

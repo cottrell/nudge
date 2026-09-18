@@ -3677,6 +3677,46 @@ windows:
     assert delivered[0] == (f"{sess}:0.1", "all agents msg")
 
 
+def test_cli_send_cross_swarm(tmp_path: Path, monkeypatch, capsys):
+    """aiswarm send --swarm targets another swarm's comms log via its runtime.json,
+    bypassing the local .aiswarm config walk-up entirely."""
+    from cli import main as cli_main
+
+    other = "other_swarm_test"
+    other_dir = Path("/tmp/nudge-swarm") / other
+    other_dir.mkdir(parents=True, exist_ok=True)
+    (other_dir / "runtime.json").write_text(json.dumps({
+        "session_name": other,
+        "panes": {"0.0": {}, "0.1": {}},
+    }))
+    try:
+        # No local config needed when --swarm is given.
+        monkeypatch.delenv("AISWARM_CONFIG", raising=False)
+
+        cli_main(["send", "-s", other, "0.1", "hi from another swarm"])
+        out, err = capsys.readouterr()
+        assert f"session={other}" in out
+        assert "target=0.1" in out
+        assert err == ""
+        assert common.get_pending_events(other, "0.1")[-1][4] == "hi from another swarm"
+
+        try:
+            cli_main(["send", "-s", other, "9.9", "hello"])
+        except SystemExit:
+            pass
+        out, err = capsys.readouterr()
+        assert f"Warning: recipient pane '9.9' is not present in swarm '{other}'" in err
+
+        try:
+            cli_main(["send", "-s", "does-not-exist-swarm", "0.0", "hello"])
+        except SystemExit:
+            pass
+        out, err = capsys.readouterr()
+        assert "cannot read runtime map for swarm 'does-not-exist-swarm'" in err
+    finally:
+        shutil.rmtree(other_dir, ignore_errors=True)
+
+
 def test_dispatch_once_backlog_call_count_independent_of_candidate_count(
     tmp_path: Path, monkeypatch
 ):

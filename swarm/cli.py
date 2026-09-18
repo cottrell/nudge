@@ -873,20 +873,44 @@ def main(argv: list[str] | None = None) -> int:
             explicit, target, msg_parts = _split_send_tokens(
                 args.tokens, getattr(args, "config_file", None)
             )
-            cfg = load_config(explicit)
             msg = " ".join(msg_parts)
             try:
                 from .common import log_any, log_send
             except ImportError:
                 from common import log_any, log_send
-            if target not in [p.pane for p in cfg.panes] and target != "any":
-                print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
-            if args.dry_run:
-                print(f"would log-send session={cfg.session_name} target={target} msg={msg}")
+
+            swarm_name = getattr(args, "swarm", None)
+            if swarm_name:
+                runtime_path = Path("/tmp/nudge-swarm") / swarm_name / "runtime.json"
+                try:
+                    runtime = json.loads(runtime_path.read_text())
+                except (OSError, json.JSONDecodeError) as exc:
+                    print(
+                        f"error: cannot read runtime map for swarm '{swarm_name}' "
+                        f"({runtime_path}): {exc}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                session_name = runtime.get("session_name", swarm_name)
+                valid_panes = list((runtime.get("panes") or {}).keys())
+                if target not in valid_panes and target != "any":
+                    print(
+                        f"Warning: recipient pane '{target}' is not present in "
+                        f"swarm '{swarm_name}' runtime map",
+                        file=sys.stderr,
+                    )
             else:
-                eid = (log_any(cfg.session_name, msg, sender="cli send") if target == "any"
-                       else log_send(cfg.session_name, target, msg, sender="cli send"))
-                print(f"log-sent id={eid} session={cfg.session_name} target={target}")
+                cfg = load_config(explicit)
+                session_name = cfg.session_name
+                if target not in [p.pane for p in cfg.panes] and target != "any":
+                    print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
+
+            if args.dry_run:
+                print(f"would log-send session={session_name} target={target} msg={msg}")
+            else:
+                eid = (log_any(session_name, msg, sender="cli send") if target == "any"
+                       else log_send(session_name, target, msg, sender="cli send"))
+                print(f"log-sent id={eid} session={session_name} target={target}")
             return 0
 
         if args.command == "clear":
