@@ -1629,6 +1629,20 @@ def test_comms_helpers(tmp_path: Path):
         assert len(get_pending_events(sess, "0.0")) == 0
         curs = get_cursors(sess)
         assert "0.0" in curs
+
+        # monotonic advance_cursor: regressing last_id should have no effect
+        advance_cursor(sess, "0.0", pend[-1][0] - 1)
+        assert get_cursors(sess)["0.0"] == pend[-1][0]
+
+        # mcp recipient test
+        mcp_id = log_send(sess, "mcp", "hello mcp", sender="test_agent")
+        mcp_pend = get_pending_events(sess, "mcp")
+        assert len(mcp_pend) == 1
+        assert mcp_pend[0][0] == mcp_id
+        assert mcp_pend[0][2] == "test_agent"
+        assert mcp_pend[0][4] == "hello mcp"
+        advance_cursor(sess, "mcp", mcp_id)
+        assert len(get_pending_events(sess, "mcp")) == 0
     finally:
         # cleanup
         from common import _comms_db_path

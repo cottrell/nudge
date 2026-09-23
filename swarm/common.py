@@ -847,11 +847,14 @@ def get_pending_events(session_name: str, recipient: str):
         return cur.fetchall()
 
 def advance_cursor(session_name: str, recipient: str, last_id: int):
-    """Mark events up to last_id as read for this recipient."""
+    """Mark events up to last_id as read for this recipient (monotonic)."""
     db = init_comms_db(session_name)
     with _sqlite3.connect(str(db)) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO cursors (recipient, last_id) VALUES (?,?)",
+            """
+            INSERT INTO cursors (recipient, last_id) VALUES (?,?)
+            ON CONFLICT(recipient) DO UPDATE SET last_id = MAX(cursors.last_id, excluded.last_id)
+            """,
             (recipient, last_id)
         )
 
@@ -916,7 +919,10 @@ def advance_broadcast_cursor(session_name: str, pane: str, last_id: int):
     db = init_comms_db(session_name)
     with _sqlite3.connect(str(db)) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO cursors (recipient, last_id) VALUES (?,?)",
+            """
+            INSERT INTO cursors (recipient, last_id) VALUES (?,?)
+            ON CONFLICT(recipient) DO UPDATE SET last_id = MAX(cursors.last_id, excluded.last_id)
+            """,
             (bcast_key, last_id)
         )
 

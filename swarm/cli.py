@@ -393,11 +393,17 @@ def build_parser() -> argparse.ArgumentParser:
     pong_p.add_argument("pane", help="Pane id from the HEALTHCHECK prompt")
     pong_p.add_argument("nonce", help="Nonce from the HEALTHCHECK prompt")
     send_p.add_argument(
+        "--sender",
+        dest="sender",
+        default=None,
+        help="Optional sender identity string recorded in comms.db (default: 'cli send')",
+    )
+    send_p.add_argument(
         "tokens",
         nargs="+",
         metavar=("PANE", "MESSAGE"),
         help=(
-            "PANE id (e.g. 0.2), or 'any', then MESSAGE words. "
+            "PANE id (e.g. 0.2), or 'any', 'mcp', then MESSAGE words. "
             "Legacy: optional leading CONFIG path before the target"
         ),
     )
@@ -893,7 +899,8 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
                 session_name = runtime.get("session_name", swarm_name)
                 valid_panes = list((runtime.get("panes") or {}).keys())
-                if target not in valid_panes and target != "any":
+                is_valid_target = target in valid_panes or target == "any" or target == "mcp" or target.startswith("mcp:")
+                if not is_valid_target:
                     print(
                         f"Warning: recipient pane '{target}' is not present in "
                         f"swarm '{swarm_name}' runtime map",
@@ -902,14 +909,16 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 cfg = load_config(explicit)
                 session_name = cfg.session_name
-                if target not in [p.pane for p in cfg.panes] and target != "any":
+                is_valid_target = target in [p.pane for p in cfg.panes] or target == "any" or target == "mcp" or target.startswith("mcp:")
+                if not is_valid_target:
                     print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
 
+            sender_name = getattr(args, "sender", None) or "cli send"
             if args.dry_run:
-                print(f"would log-send session={session_name} target={target} msg={msg}")
+                print(f"would log-send session={session_name} target={target} sender={sender_name} msg={msg}")
             else:
-                eid = (log_any(session_name, msg, sender="cli send") if target == "any"
-                       else log_send(session_name, target, msg, sender="cli send"))
+                eid = (log_any(session_name, msg, sender=sender_name) if target == "any"
+                       else log_send(session_name, target, msg, sender=sender_name))
                 print(f"log-sent id={eid} session={session_name} target={target}")
             return 0
 
