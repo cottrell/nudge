@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-01 09:01'
-updated_date: '2026-10-01 09:04'
+updated_date: '2026-10-01 09:06'
 labels:
   - routing
   - config
@@ -34,4 +34,11 @@ Today a message goes to one named pane, to 'any' (TASK-66), or to all (broadcast
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented: PaneSpec.categories (validated), log_any/claim_any category filter via meta.category (same __any__ queue), CLI send <category>, runtime.json + babysit spec carry categories, dispatcher cat:<name> task labels (all required), status shows categories, README/instructions, 4 tests. Not done: explicit warn for category with no live panes (queues silently); per-category pending view in log/status.
+
+REVIEW (commit 5822b09, 2026-10-01): make test passed (30 monitor, 133 swarm). Core category routing is single-claim under BEGIN IMMEDIATE; incompatible category entries are skipped so a later plain any can be claimed. Findings:
+1. HIGH: _claim_new_onto_free greedily gives a general task to the only pane eligible for a later cat:heavy task; another free light pane cannot claim the heavy task. Tracked in TASK-79.1.
+2. MEDIUM: claim_any fetchall scans every unclaimed __any__ row and parses JSON while holding a write transaction on every idle poll. Orphan category messages make this grow without bound and slow existing any dispatch. Tracked in TASK-79.2.
+3. Existing TASK-79 acceptance gaps remain: no warning for category with no live/receiving pane (AC3); aiswarm status has no category display and log/status have no per-category pending summary (AC5).
+4. Config validation is incomplete for AC1: nudge.categories accepts a scalar string and mapping keys as categories, converts non-string elements with str(), and raises TypeError for truthy non-iterable values. Validate a list of nonempty string names with a clear ValueError.
+5. Current category tests only call pane_serves_task directly; add an end-to-end dispatcher assignment case, category CLI send/pending/log tests, and config malformed-type cases. No code edited in this review.
 <!-- SECTION:NOTES:END -->
