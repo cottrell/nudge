@@ -1790,6 +1790,95 @@ windows:
     assert not tasksctl.pane_serves_task(cfg, "0.1", both)
 
 
+def test_dispatch_gives_heavy_task_to_heavy_pane_not_general_first(tmp_path: Path, monkeypatch, capsys):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+  require_idle: false
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [heavy]
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [light]
+"""))
+    monkeypatch.setattr(tasksctl, "free_task_panes", lambda c, state: ["0.0", "0.1"])
+    monkeypatch.setattr(tasksctl, "_task_or_none", lambda c, tid, cache: {"id": tid, "assignees": []})
+    monkeypatch.setattr(tasksctl, "dependency_gate", lambda c, tid, cache=None: tasksctl.DependencyGate(True, False))
+    cands = [
+        tasksctl.BacklogTask(id="TASK-1", title="General", status="To Do", priority="HIGH"),
+        tasksctl.BacklogTask(id="TASK-2", title="Heavy", status="To Do", labels=["cat:heavy"]),
+    ]
+    actions = tasksctl._claim_new_onto_free(cfg, {"assignments": {}}, True, candidates=cands)
+    assert {a["task_id"]: a["pane"] for a in actions} == {"TASK-2": "0.0", "TASK-1": "0.1"}
+
+
+def test_claim_any_scans_only_matching_rows_with_malformed_meta():
+    sess = f"test_cat_meta_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.log_send(sess, "__any__", "bad meta", "x", "any")
+        db = common.init_comms_db(sess)
+        import sqlite3
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("UPDATE events SET meta='not json'")
+        for _ in range(50):
+            common.log_any(sess, "orphan", category="nobody")
+        assert common.claim_any(sess, "0.0", []) is not None
+        assert len(common.get_pending_any(sess)) == 50
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_load_config_categories_rejects_malformed(tmp_path: Path):
+    body = """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: %s
+"""
+    for bad in ("heavy", "{a: 1}", "[1, 2]", "5", '[""]'):
+        with pytest.raises(ValueError):
+            load_config(write_config(tmp_path, body % bad))
+
+
+def test_cli_send_category_queues_and_shows_pending(tmp_path: Path, capsys):
+    sess = f"test_cat_cli_{os.getpid()}_{random.randrange(1_000_000)}"
+    cfg_path = write_config(tmp_path, f"""
+session_name: {sess}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [heavy]
+""")
+    try:
+        assert swarm_cli.main(["send", "-c", str(cfg_path), "heavy", "do it"]) == 0
+        assert "target=heavy" in capsys.readouterr().out
+        pending = common.get_pending_any(sess)
+        assert len(pending) == 1 and json.loads(pending[0][5])["category"] == "heavy"
+        assert swarm_cli.main(["log", "-c", str(cfg_path), "--pending"]) == 0
+        assert "__any__:heavy" in capsys.readouterr().out
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
 def test_usage_scraper_timeout_cleans_exact_tmux_session(monkeypatch, tmp_path: Path):
     class TimedOutProcess:
         pid = 4321

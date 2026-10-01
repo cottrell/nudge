@@ -1305,9 +1305,15 @@ def _claim_new_onto_free(
                     candidate_idx = idx
                     break
             if candidate_idx == -1:
-                for idx, c in enumerate(candidates):
-                    if not c.assignees and pane_serves_task(cfg, pane, c):
-                        candidate_idx = idx
+                # Category-constrained tasks first, so a general task cannot
+                # take the only pane able to serve a later cat: task.
+                for want_cat in (True, False):
+                    for idx, c in enumerate(candidates):
+                        if (not c.assignees and bool(task_categories(c)) == want_cat
+                                and pane_serves_task(cfg, pane, c)):
+                            candidate_idx = idx
+                            break
+                    if candidate_idx != -1:
                         break
             if candidate_idx == -1:
                 break

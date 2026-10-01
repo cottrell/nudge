@@ -381,12 +381,14 @@ def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
     comms_raw = nudge.get("comms") if isinstance(nudge.get("comms"), dict) else {}
     comms = bool(comms_raw.get("enabled", monitor))
 
-    cats_raw = nudge.get("categories") or []
-    if isinstance(cats_raw, str):
-        cats_raw = [cats_raw]
+    cats_raw = nudge.get("categories")
+    if cats_raw is None:
+        cats_raw = []
+    if not isinstance(cats_raw, list) or not all(isinstance(c, str) for c in cats_raw):
+        raise ValueError(f"pane {pane_id} nudge.categories must be a list of strings")
     categories = []
     for c in cats_raw:
-        c = str(c).strip()
+        c = c.strip()
         if not c or c in RESERVED_TARGETS or c.startswith("mcp:") or PANE_RE.match(c):
             raise ValueError(f"pane {pane_id} has invalid category {c!r}")
         if c not in categories:
@@ -794,24 +796,24 @@ def claim_any(session_name: str, pane: str, categories: list[str] | None = None)
     db = init_comms_db(session_name)
     with _sqlite3.connect(str(db), timeout=30) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        have = set(categories or [])
-        row = meta = None
-        for cand in conn.execute(
+        have = list(categories or [])
+        marks = ",".join("?" * len(have))
+        row = conn.execute(
             "SELECT e.id, e.sender, e.payload, e.meta FROM events e "
             "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
             "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
-            "ORDER BY e.id"
-        ).fetchall():
-            try:
-                cmeta = json.loads(cand[3]) if cand[3] else {}
-            except (TypeError, json.JSONDecodeError):
-                cmeta = {}
-            if not cmeta.get("category") or cmeta["category"] in have:
-                row, meta = cand, cmeta
-                break
+            "AND ((CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IS NULL "
+            f"OR (CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IN ({marks})) "
+            "ORDER BY e.id LIMIT 1",
+            have,
+        ).fetchone()
         if row is None:
             return None
-        queue_id, sender, payload, _raw_meta = row
+        queue_id, sender, payload, raw_meta = row
+        try:
+            meta = json.loads(raw_meta) if raw_meta else {}
+        except (TypeError, json.JSONDecodeError):
+            meta = {}
         meta.update({"queue_event_id": queue_id, "selected_pane": pane})
         cur = conn.execute(
             "INSERT INTO events (recipient, sender, type, payload, meta) VALUES (?,?,?,?,?)",

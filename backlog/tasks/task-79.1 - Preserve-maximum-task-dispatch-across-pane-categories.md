@@ -1,9 +1,11 @@
 ---
 id: TASK-79.1
 title: Preserve maximum task dispatch across pane categories
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-01 09:06'
+updated_date: '2026-10-01 09:11'
 labels:
   - routing
   - dispatcher
@@ -25,3 +27,9 @@ With a heavy-only pane and a light-only pane free, a general task ordered before
 - [ ] #2 Preassigned tasks, priority, dependencies, max_inflight, and dry-run/live parity remain correct
 - [ ] #3 Regression coverage includes one heavy pane, one light pane, a general task ordered before a heavy task
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed in follow-up commit; verified by new tests, make test passes (137+30).
+<!-- SECTION:FINAL_SUMMARY:END -->

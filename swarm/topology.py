@@ -61,6 +61,10 @@ except ImportError:
     from session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
 
 
+def _title_cats(pane) -> str:
+    return f"{pane.title} [{','.join(pane.categories)}]" if pane.categories else pane.title
+
+
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, check=check, text=True, capture_output=True)
 
@@ -495,10 +499,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         proc = run("tmux", "list-panes", "-t", target, check=False)
         if proc.returncode != 0:
             if brief:
-                rows.append((target, pane.title, "missing", "off"))
+                rows.append((target, _title_cats(pane), "missing", "off"))
             else:
                 rows.append(
-                    (target, pane.title, "-", "missing", "-", "-", "off", "-", "-",
+                    (target, _title_cats(pane), "-", "missing", "-", "-", "off", "-", "-",
                      "off", "-")
                 )
             continue
@@ -661,14 +665,14 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                         clear_hb = "-"
 
         if brief:
-            rows.append((target, pane.title, monitor, brief_val))
+            rows.append((target, _title_cats(pane), monitor, brief_val))
         else:
             # Show the configured command from the YAML (what was requested),
             # not the live process name from tmux (which for node-based tools
             # like codex shows "node").
             command = pane.command or pane_current_command(cfg, pane.pane) or "-"
             rows.append(
-                (target, pane.title, command or "-", monitor, pid_val, comms_hb,
+                (target, _title_cats(pane), command or "-", monitor, pid_val, comms_hb,
                  babysit_val, nudge_hb, clear_hb, tasks_val, pane_tasks_hb)
             )
 
@@ -905,7 +909,11 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
                 except Exception:
                     pass
             for eid, ts, snd, typ, pay, meta in get_pending_any(cfg.session_name):
-                _print_log_event(eid, ts, "__any__", snd, typ, pay, meta)
+                try:
+                    cat = (json.loads(meta) if meta else {}).get("category")
+                except (TypeError, ValueError):
+                    cat = None
+                _print_log_event(eid, ts, f"__any__:{cat}" if cat else "__any__", snd, typ, pay, meta)
                 found = True
             if not found:
                 print("(no pending events)")
