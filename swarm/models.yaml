@@ -14,4 +14,6 @@
 # No -m. grok models does not list grok-build. The CLI default is the model in use.
 "grok:heavy": grok --always-approve
 
-"antigravity:heavy": agy --dangerously-skip-permissions
+"antigravity:heavy": agy --dangerously-skip-permissions --model gemini-3.8-flash-high
+"antigravity:medium": agy --dangerously-skip-permissions --model gemini-3.8-flash-medium
+"antigravity:light": agy --dangerously-skip-permissions --model gemini-3.8-flash-low
