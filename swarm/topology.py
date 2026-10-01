@@ -422,6 +422,8 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
 
 def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     for pane in cfg.panes:
+        if pane.alias_warning:
+            print(f"{pane.pane}: {pane.alias_warning}", file=sys.stderr)
         if pane.command_alias:
             print(f"{pane.pane} {pane.command_alias} -> {pane.command}")
     if not dry_run:

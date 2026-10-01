@@ -17,7 +17,13 @@ try:
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
     from . import instructions as swarm_instructions
-    from .common import build_this_text, load_config, looks_like_config_path, parse_duration
+    from .common import (
+        build_this_text,
+        load_config,
+        load_model_aliases,
+        looks_like_config_path,
+        parse_duration,
+    )
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
     import topology as swarm_topology
@@ -25,7 +31,13 @@ except ImportError:
     import tasksctl as swarm_tasks
     import init as swarm_init
     import instructions as swarm_instructions
-    from common import build_this_text, load_config, looks_like_config_path, parse_duration
+    from common import (
+        build_this_text,
+        load_config,
+        load_model_aliases,
+        looks_like_config_path,
+        parse_duration,
+    )
 
 CONFIG_ARG_HELP = (
     "YAML config path (optional). Default: $AISWARM_CONFIG or walk-up "
@@ -200,9 +212,15 @@ def _model_flag_status(helper: dict[str, object]) -> str:
 def print_model_help() -> None:
     print("Model selection helpers")
     print()
-    print("Use these in swarm YAML under pane shell_command.")
-    print("Commands are probed from the CLIs installed on this machine.")
+    print("Use a provider:role token from swarm/models.yaml as pane shell_command.")
+    print("Commands below are probed from the CLIs installed on this machine.")
     print()
+    try:
+        aliases = load_model_aliases()
+    except (OSError, ValueError) as exc:
+        aliases = {}
+        print(f"alias table: unavailable ({exc})")
+        print()
 
     for name, helper in MODEL_HELPERS.items():
         command = str(helper["command"])
@@ -235,7 +253,13 @@ def print_model_help() -> None:
             print("  list: no list-models command exposed by --help")
 
         print(f"  run: {helper['run']}")
-        print(f"  swarm YAML: shell_command: \"{helper['swarm']}\"")
+        tokens = [key for key in aliases if key.startswith(f"{name}:")]
+        if tokens:
+            print("  swarm YAML:")
+            for key in tokens:
+                print(f'    shell_command: "{key}"')
+        else:
+            print(f"  swarm YAML: shell_command: \"{helper['swarm']}\"")
         print()
 
 

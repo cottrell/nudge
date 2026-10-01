@@ -125,6 +125,8 @@ def test_swarm_init_3x3_layout():
     assert "model_reasoning_effort=low" in aliases["codex:light"]
     assert "gpt-6-sol" in aliases["codex:heavy"]
     assert "codex:solo" not in aliases
+    assert aliases["grok:heavy"] == "grok --always-approve"
+    assert "-m" not in aliases["grok:heavy"]
 
 
 def test_swarm_init_1x1_and_4x2_layouts():
@@ -657,9 +659,6 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     assert 'shell_command: "claude:heavy"' in out
     assert 'shell_command: "claude:light"' in out
     assert 'shell_command: "grok:heavy"' in out
-    assert 'shell_command: "gemini:heavy"' in out
-    assert 'shell_command: "gemini:light"' in out
-    assert 'shell_command: "vibe:heavy"' in out
     assert "gemini -m <model>" in out
     assert "grok -m <model>" in out
     assert "grok-build" in out

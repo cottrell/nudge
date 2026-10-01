@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import subprocess
 import socket as _socket
-import sys
 import tempfile
 import time
 from datetime import datetime, timedelta
@@ -150,6 +149,7 @@ class PaneSpec:
     tasks_enabled: bool
     categories: list[str] = field(default_factory=list)
     command_alias: str | None = None  # set when shell_command was a models.yaml key
+    alias_warning: str | None = None  # printed by start, not by every load_config
 
     @property
     def pane_index(self) -> int:
@@ -403,6 +403,31 @@ def _alias_providers(aliases: dict[str, str]) -> set[str]:
     return {key.split(":", 1)[0] for key in aliases if ":" in key}
 
 
+def _raw_shell_commands(windows_data: list) -> list[str]:
+    commands: list[str] = []
+    for wraw in windows_data:
+        if not isinstance(wraw, dict):
+            continue
+        for praw in wraw.get("panes") or []:
+            if not isinstance(praw, dict):
+                continue
+            commands.append(str(praw.get("shell_command") or "").strip() or "bash")
+    return commands
+
+
+def aliases_for_shell_commands(commands: list[str]) -> tuple[dict[str, str], str | None]:
+    """Load the alias table only when a pane uses a provider:role token.
+
+    A config of literal commands never reads models.yaml. A missing table
+    leaves those tokens unchanged and returns a warning for start to print.
+    """
+    if not any(_ALIAS_TOKEN.fullmatch(command) for command in commands):
+        return {}, None
+    if not MODELS_PATH.is_file():
+        return {}, f"model aliases not found: {MODELS_PATH}; launching alias tokens as written"
+    return load_model_aliases(), None
+
+
 def resolve_shell_command(
     command: str, aliases: dict[str, str]
 ) -> tuple[str, str | None, str | None]:
@@ -424,6 +449,7 @@ def _fill_pane(
     pane_id: str,
     cfg_path: Path,
     aliases: dict[str, str],
+    table_warning: str | None = None,
 ) -> PaneSpec:
     """Merge one pane YAML onto complete PaneSpec. Called only from load_config."""
     praw = praw or {}
@@ -438,8 +464,8 @@ def _fill_pane(
 
     raw_command = str(praw.get("shell_command") or "").strip() or "bash"
     command, command_alias, alias_warning = resolve_shell_command(raw_command, aliases)
-    if alias_warning:
-        print(f"pane {pane_id}: {alias_warning}", file=sys.stderr)
+    if table_warning and command_alias is None and _ALIAS_TOKEN.fullmatch(raw_command):
+        alias_warning = table_warning
     title = str(nudge.get("title") or agent or pane_id).strip()
 
     babysit = _fill_babysit(nudge.get("babysit"), pane_id, cfg_path)
@@ -473,13 +499,14 @@ def _fill_pane(
         pane=pane_id,
         agent=agent,
         command=command,
-        command_alias=command_alias,
         title=title,
         monitor=monitor,
         babysit=babysit,
         comms=comms,
         tasks_enabled=tasks_enabled,
         categories=categories,
+        command_alias=command_alias,
+        alias_warning=alias_warning,
     )
 
 
@@ -621,7 +648,7 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
     if not windows_data:
         raise ValueError("windows is required and must not be empty")
 
-    aliases = load_model_aliases()
+    aliases, table_warning = aliases_for_shell_commands(_raw_shell_commands(windows_data))
     windows: list[WindowSpec] = []
     for win_idx, wraw in enumerate(windows_data):
         window_name = str(wraw.get("window_name") or "").strip()
@@ -630,7 +657,7 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
         layout = str(wraw.get("layout") or "tiled").strip()
 
         panes = [
-            _fill_pane(praw, f"{win_idx}.{pane_idx}", cfg_path, aliases)
+            _fill_pane(praw, f"{win_idx}.{pane_idx}", cfg_path, aliases, table_warning)
             for pane_idx, praw in enumerate(wraw.get("panes") or [])
         ]
         windows.append(WindowSpec(window_name=window_name, layout=layout, panes=panes))

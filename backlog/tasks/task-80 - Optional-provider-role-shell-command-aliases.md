@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@grok'
 created_date: '2026-10-01 09:24'
-updated_date: '2026-10-01 09:36'
+updated_date: '2026-10-01 11:59'
 labels: []
 dependencies: []
 ---
@@ -47,4 +47,12 @@ REVIEW (0.2): no blockers. Issues: 1) load_config always calls load_model_aliase
 REVIEW from pane 0.2: no blockers. 1) load_config always reads models.yaml, so a missing or invalid file breaks every swarm config, including literal commands. 2) init used to bake gpt-5.6-terra / gpt-5.6-luna; the table now uses gpt-6-sol / gpt-6-luna. Confirm that is intended (it matches the live swarm). 3) aiswarm help MODEL_HELPERS still shows placeholder shell_command strings, not the alias tokens. 4) unknown-alias warning prints on every load_config. 5) nudge.egg-info/ is untracked; do not commit it. 6) shell_alias falls back light -> solo -> heavy silently.
 
 Migrated swarm configs under ~/dev/*/.aiswarm/config.yaml plus family_notes and notes-log/docsify to the alias tokens and committed each repo. Left literal: council-data claude heavy (--model sonnet), demographics aicodex and aiclaude --resume, and bash panes. Janus paths with no .aiswarm/config.yaml: agentsview, bifrost, internet_monitoring, jellyfish, navidrome, notes, reading.
+
+Review follow-up: gpt-6-sol and gpt-6-luna are intended. The live swarm and commit 4e7af30 had already left gpt-5.6-terra / gpt-5.6-luna; the alias table keeps those current invocations. AC5 means init writes tokens that resolve to the current role commands, not that the stale 5.6 strings stay frozen.
+
+load_config reads models.yaml only when a pane shell_command is a single provider:role token. A literal config ignores a missing or invalid table. A missing table with tokens leaves them unchanged and aiswarm start prints the warning once per pane. Unknown-token warnings are stored on the pane and printed at start, not on every status/load.
+
+aiswarm help prints shell_command tokens from models.yaml. Providers with no token still show the placeholder command. init fallback (role, then solo, then heavy, then the bare agent) is noted in swarm/models.yaml and aiswarm instructions. *.egg-info/ is already in .gitignore.
+
+grok:heavy does not pass -m. grok models on this machine lists grok-4.7 as default, plus grok-4.7-build-fast, grok-4.6, and grok-4.5. grok-build is not in that list. The alias uses the CLI default, same as grok:light.
 <!-- SECTION:NOTES:END -->
