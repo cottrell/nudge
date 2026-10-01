@@ -95,9 +95,11 @@ def test_swarm_init_default_3x2_layout():
     assert text.count("agent: codex") == 2
     assert text.count("agent: claude") == 2
     assert 'agent: antigravity' in text
-    assert 'agy --dangerously-skip-permissions' in text
+    assert 'shell_command: "antigravity:solo"' in text
     assert 'agent: grok' in text
-    assert 'grok --always-approve -m grok-build' in text
+    assert 'shell_command: "grok:solo"' in text
+    assert 'shell_command: "codex:heavy"' in text
+    assert 'shell_command: "codex:light"' in text
     assert 'title: shell' not in text
     assert 'shell_command: "bash"' not in text
 
@@ -114,8 +116,15 @@ def test_swarm_init_3x3_layout():
     assert "title: codex light" in text
     assert "title: claude heavy" in text
     assert "title: claude light" in text
-    assert "model_reasoning_effort=medium" in text
-    assert "model_reasoning_effort=low" in text
+    assert 'shell_command: "codex:heavy"' in text
+    assert 'shell_command: "codex:medium"' in text
+    assert 'shell_command: "codex:light"' in text
+    assert "gpt-" not in text
+    aliases = common.load_model_aliases()
+    assert "model_reasoning_effort=medium" in aliases["codex:medium"]
+    assert "model_reasoning_effort=low" in aliases["codex:light"]
+    assert aliases["codex:heavy"] == aliases["codex:solo"]
+    assert "gpt-6-sol" in aliases["codex:heavy"]
 
 
 def test_swarm_init_1x1_and_4x2_layouts():
@@ -664,6 +673,102 @@ def test_babysit_log_nudge_includes_target(tmp_path: Path, monkeypatch):
     assert "demo                 | demo:0.2" in line
     assert "| idle" in line
     assert "Please continue." in line
+
+
+def test_model_alias_exact_match_and_passthrough(tmp_path: Path, capsys):
+    aliases = common.load_model_aliases()
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: codex:heavy
+        nudge:
+          agent: codex
+          monitor: true
+      - shell_command: "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra"
+        nudge:
+          agent: codex
+          monitor: true
+      - shell_command: bash
+      - shell_command: htop
+      - shell_command: "codex:heavy --extra"
+        nudge:
+          agent: codex
+          monitor: true
+"""))
+    err = capsys.readouterr().err
+    assert err == ""
+    assert cfg.panes[0].command_alias == "codex:heavy"
+    assert cfg.panes[0].command == aliases["codex:heavy"]
+    assert cfg.panes[1].command_alias is None
+    assert cfg.panes[1].command == "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra"
+    assert cfg.panes[2].command == "bash"
+    assert cfg.panes[3].command == "htop"
+    assert cfg.panes[4].command == "codex:heavy --extra"
+    assert cfg.panes[4].command_alias is None
+
+
+def test_unknown_model_alias_warns_and_stays_verbatim(tmp_path: Path, capsys):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: codex:nope
+        nudge:
+          agent: codex
+          monitor: true
+      - shell_command: "other:tool"
+"""))
+    err = capsys.readouterr().err
+    assert "unknown model alias 'codex:nope'" in err
+    assert "other:tool" not in err
+    assert cfg.panes[0].command == "codex:nope"
+    assert cfg.panes[0].command_alias is None
+    assert cfg.panes[1].command == "other:tool"
+    assert cfg.panes[1].command_alias is None
+
+
+def test_duplicate_model_alias_rejected(tmp_path: Path):
+    path = tmp_path / "models.yaml"
+    path.write_text('"codex:heavy": one\n"codex:heavy": two\n')
+    with pytest.raises(ValueError, match="duplicate model alias: codex:heavy"):
+        common.load_model_aliases(path)
+
+
+def test_shell_alias_falls_back_to_bare_agent(monkeypatch):
+    monkeypatch.setattr(swarm_init, "load_model_aliases", lambda: {})
+    assert swarm_init.shell_alias("codex", "heavy") == "codex"
+
+
+def test_start_prints_alias_expansion(monkeypatch, tmp_path: Path, capsys):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo_alias
+windows:
+  - window_name: main
+    layout: tiled
+    panes:
+      - shell_command: codex:light
+        nudge:
+          agent: codex
+          monitor: true
+"""))
+    monkeypatch.setattr(swarm_apply, "setup_grid", lambda cfg, dry_run: None)
+    monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_title", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda *a, **k: True)
+    monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: None)
+    monkeypatch.setattr(swarm_apply, "collect_pane_pids", lambda cfg: {})
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda *a, **k: None)
+
+    swarm_start.start(cfg, dry_run=True)
+
+    out = capsys.readouterr().out
+    assert f"0.0 codex:light -> {cfg.panes[0].command}" in out
+    assert "model_reasoning_effort=low" in out
 
 
 def test_load_config_multiple_panes(tmp_path: Path):

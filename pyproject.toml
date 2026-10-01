@@ -17,6 +17,9 @@ aiswarm = "swarm.cli:main"
 [tool.setuptools]
 packages = ["swarm"]
 
+[tool.setuptools.package-data]
+swarm = ["models.yaml"]
+
 [dependency-groups]
 dev = [
   "pytest",

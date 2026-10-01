@@ -204,7 +204,7 @@ Built-in examples:
 - one tmux session
 - one or more tmux windows
 - each window has `window_name`, `layout`, and `panes`
-- pane command is `shell_command`
+- pane command is `shell_command`. A value that is exactly a key in `swarm/models.yaml` (`codex:heavy`) expands to that command on load. Any other string is launched as written.
 - nudge metadata is under `nudge.*` (`title`, `agent`, `monitor`, `babysit`, `comms`, `tasks`)
 - `comms.enabled` (defaults to `monitor`) is served by the session worker, which consumes each pane's durable log and delivers on idle
 - optional top-level `tasks:` configures a task-dispatch group in that same session worker (v1 source: backlog)

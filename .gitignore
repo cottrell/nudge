@@ -5,6 +5,7 @@ monitor-bin
 nudge.log
 *.pyc
 __pycache__/
+*.egg-info/
 scratch/
 session-ids.json
 .aiswarm/session-ids.json

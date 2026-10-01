@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+try:
+    from .common import load_model_aliases
+except ImportError:
+    from common import load_model_aliases
+
 BLOCK_START = "<!-- AISWARM/NUDGE GUIDELINES START -->"
 BLOCK_END = "<!-- AISWARM/NUDGE GUIDELINES END -->"
 
@@ -139,27 +144,14 @@ def remove_agents_block(agents_path: Path, dry_run: bool = False) -> bool:
 
 DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
 
-AGENT_COMMANDS: dict[str, str] = {
-    "claude": "claude --dangerously-skip-permissions",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-terra",
-    "gemini": "gemini -y",
-    "grok": "grok --always-approve -m grok-build",
-    "antigravity": "agy --dangerously-skip-permissions",
-    "copilot": "copilot --allow-all-tools",
-    "vibe": "vibe --agent auto-approve",
-}
 
-AGENT_LIGHT_COMMANDS: dict[str, str] = {
-    "claude": "claude --dangerously-skip-permissions --model haiku",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-luna -c model_reasoning_effort=low",
-    "gemini": "gemini -y -m gemini-2.5-flash",
-    "grok": "grok --always-approve",
-    "antigravity": "agy --dangerously-skip-permissions --model mini",
-}
-
-AGENT_MEDIUM_COMMANDS: dict[str, str] = {
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.6-luna -c model_reasoning_effort=medium",
-}
+def shell_alias(agent: str, weight: str) -> str:
+    """Token written into shell_command. Falls back to solo, then heavy, then the bare agent."""
+    aliases = load_model_aliases()
+    for key in (f"{agent}:{weight}", f"{agent}:solo", f"{agent}:heavy"):
+        if key in aliases:
+            return key
+    return agent
 
 FLAVOUR_AGENTS: dict[str, list[str]] = {
     "1x1": ["codex"],
@@ -168,7 +160,7 @@ FLAVOUR_AGENTS: dict[str, list[str]] = {
     "4x2": ["codex", "claude", "antigravity", "grok"],
     "2x2": ["codex", "claude"],
     "babysit": ["codex", "claude"],
-    # Usual multi-provider grid + log/shell (gemini kept in AGENT_COMMANDS only;
+    # Usual multi-provider grid + log/shell (gemini stays in models.yaml only;
     # Google-side in demos is antigravity/agy).
     "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
 }
@@ -178,17 +170,17 @@ FLAVOURS = ("1x1", "2x2", "3x2", "3x3", "4x2", "babysit", "demo")
 
 def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babysit: bool = False) -> str:
     if weight == "light":
-        cmd = AGENT_LIGHT_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
+        cmd = shell_alias(agent, "light")
         title = f"{agent} light"
         interval = 1800
         clear_every = "\n            clear_every: 6"
     elif weight == "medium":
-        cmd = AGENT_MEDIUM_COMMANDS.get(agent, AGENT_COMMANDS.get(agent, agent))
+        cmd = shell_alias(agent, "medium")
         title = f"{agent} medium"
         interval = 3600
         clear_every = "\n            clear_every: 3"
     else:
-        cmd = AGENT_COMMANDS.get(agent, agent)
+        cmd = shell_alias(agent, weight)
         title = f"{agent} heavy" if weight == "heavy" else agent
         interval = 7200
         clear_every = "\n            clear_every: 1"

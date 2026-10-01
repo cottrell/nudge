@@ -32,6 +32,8 @@ Resolution order:
 
 `aiswarm init <name>` creates `.aiswarm/config.yaml` + prompts.
 
+`shell_command` may be a `provider:role` token from `swarm/models.yaml` (`codex:heavy`). The whole value must match a key. Anything else, including a full command, is launched as written. Model ids and launch flags live in that file.
+
 In the **nudge** implementer repo, package code is `swarm/`; the live harness may
 still be an explicit path such as `nudgeswarm/nudge.yaml`.
 

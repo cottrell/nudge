@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import socket as _socket
+import sys
 import tempfile
 import time
 from datetime import datetime, timedelta
@@ -16,6 +17,8 @@ import yaml
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
+MODELS_PATH = Path(__file__).resolve().parent / "models.yaml"
+_ALIAS_TOKEN = re.compile(r"^([^:\s]+):([^:\s]+)$")
 VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity")
 SHELL_NAMES = {"bash", "sh", "zsh", "fish"}
 AGENT_STATS_CMD: dict[str, str | None] = {
@@ -146,6 +149,7 @@ class PaneSpec:
     comms: bool
     tasks_enabled: bool
     categories: list[str] = field(default_factory=list)
+    command_alias: str | None = None  # set when shell_command was a models.yaml key
 
     @property
     def pane_index(self) -> int:
@@ -352,7 +356,75 @@ def _fill_tasks(raw: dict | None, cfg_path: Path) -> TasksSpec:
     )
 
 
-def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Reject duplicate keys. Used only for models.yaml, not swarm configs."""
+
+
+def _construct_unique_map(loader: yaml.SafeLoader, node: yaml.Node) -> dict:
+    mapping: dict = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=False)
+        if key in mapping:
+            raise ValueError(f"duplicate model alias: {key}")
+        mapping[key] = loader.construct_object(value_node, deep=False)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_map,
+)
+
+
+def load_model_aliases(path: Path | None = None) -> dict[str, str]:
+    """Read provider:role -> full shell command. Missing file is an error."""
+    src = path or MODELS_PATH
+    if not src.is_file():
+        raise FileNotFoundError(f"model aliases not found: {src}")
+    try:
+        data = yaml.load(src.read_text(), Loader=_UniqueKeyLoader)
+    except yaml.YAMLError as e:
+        raise ValueError(f"invalid model aliases {src}: {e}") from e
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError(f"model aliases must be a mapping: {src}")
+    aliases: dict[str, str] = {}
+    for key, value in data.items():
+        if not isinstance(key, str) or not key.strip() or key != key.strip():
+            raise ValueError(f"model alias key must be a string: {key!r}")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"model alias {key} must be a shell command")
+        aliases[key] = value.strip()
+    return aliases
+
+
+def _alias_providers(aliases: dict[str, str]) -> set[str]:
+    return {key.split(":", 1)[0] for key in aliases if ":" in key}
+
+
+def resolve_shell_command(
+    command: str, aliases: dict[str, str]
+) -> tuple[str, str | None, str | None]:
+    """Expand command when it is exactly an alias key.
+
+    Returns (command, alias or None, warning or None). A provider:role token
+    whose provider is in the table but whose key is missing warns and is kept.
+    """
+    if command in aliases:
+        return aliases[command], command, None
+    match = _ALIAS_TOKEN.fullmatch(command)
+    if match and match.group(1) in _alias_providers(aliases):
+        return command, None, f"unknown model alias {command!r}; launching it as written"
+    return command, None, None
+
+
+def _fill_pane(
+    praw: dict | None,
+    pane_id: str,
+    cfg_path: Path,
+    aliases: dict[str, str],
+) -> PaneSpec:
     """Merge one pane YAML onto complete PaneSpec. Called only from load_config."""
     praw = praw or {}
     nudge = praw.get("nudge") or {}
@@ -364,7 +436,10 @@ def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
     if agent and agent not in VALID_AGENTS:
         raise ValueError(f"unknown agent: {agent}")
 
-    command = str(praw.get("shell_command") or "").strip() or "bash"
+    raw_command = str(praw.get("shell_command") or "").strip() or "bash"
+    command, command_alias, alias_warning = resolve_shell_command(raw_command, aliases)
+    if alias_warning:
+        print(f"pane {pane_id}: {alias_warning}", file=sys.stderr)
     title = str(nudge.get("title") or agent or pane_id).strip()
 
     babysit = _fill_babysit(nudge.get("babysit"), pane_id, cfg_path)
@@ -398,6 +473,7 @@ def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
         pane=pane_id,
         agent=agent,
         command=command,
+        command_alias=command_alias,
         title=title,
         monitor=monitor,
         babysit=babysit,
@@ -545,6 +621,7 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
     if not windows_data:
         raise ValueError("windows is required and must not be empty")
 
+    aliases = load_model_aliases()
     windows: list[WindowSpec] = []
     for win_idx, wraw in enumerate(windows_data):
         window_name = str(wraw.get("window_name") or "").strip()
@@ -553,7 +630,7 @@ def load_config(path: str | Path | None = None) -> SwarmConfig:
         layout = str(wraw.get("layout") or "tiled").strip()
 
         panes = [
-            _fill_pane(praw, f"{win_idx}.{pane_idx}", cfg_path)
+            _fill_pane(praw, f"{win_idx}.{pane_idx}", cfg_path, aliases)
             for pane_idx, praw in enumerate(wraw.get("panes") or [])
         ]
         windows.append(WindowSpec(window_name=window_name, layout=layout, panes=panes))
