@@ -2,27 +2,25 @@
 # entire shell_command is one of these keys. Any other string is launched
 # as written. Model ids and launch flags live here.
 #
-# solo matches heavy unless that provider's default launch differs.
+# Roles are the launch: heavy, medium, light. One pane of an agent still
+# uses heavy when that is the command it runs.
+# aiswarm init writes provider:role, then heavy, then the bare agent name.
 
 "codex:heavy": codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-sol
 "codex:medium": codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=medium
 "codex:light": codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=low
-"codex:solo": codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-sol
 
 "claude:heavy": claude --dangerously-skip-permissions
 "claude:light": claude --dangerously-skip-permissions --model haiku
-"claude:solo": claude --dangerously-skip-permissions
 
-"gemini:solo": gemini -y
+"gemini:heavy": gemini -y
 "gemini:light": gemini -y -m gemini-2.5-flash
 
 "grok:heavy": grok --always-approve -m grok-build
-"grok:solo": grok --always-approve -m grok-build
 "grok:light": grok --always-approve
 
 "antigravity:heavy": agy --dangerously-skip-permissions
-"antigravity:solo": agy --dangerously-skip-permissions
 "antigravity:light": agy --dangerously-skip-permissions --model mini
 
-"copilot:solo": copilot --allow-all-tools
-"vibe:solo": vibe --agent auto-approve
+"copilot:heavy": copilot --allow-all-tools
+"vibe:heavy": vibe --agent auto-approve

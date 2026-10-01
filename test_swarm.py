@@ -95,9 +95,9 @@ def test_swarm_init_default_3x2_layout():
     assert text.count("agent: codex") == 2
     assert text.count("agent: claude") == 2
     assert 'agent: antigravity' in text
-    assert 'shell_command: "antigravity:solo"' in text
+    assert 'shell_command: "antigravity:heavy"' in text
     assert 'agent: grok' in text
-    assert 'shell_command: "grok:solo"' in text
+    assert 'shell_command: "grok:heavy"' in text
     assert 'shell_command: "codex:heavy"' in text
     assert 'shell_command: "codex:light"' in text
     assert 'title: shell' not in text
@@ -123,8 +123,8 @@ def test_swarm_init_3x3_layout():
     aliases = common.load_model_aliases()
     assert "model_reasoning_effort=medium" in aliases["codex:medium"]
     assert "model_reasoning_effort=low" in aliases["codex:light"]
-    assert aliases["codex:heavy"] == aliases["codex:solo"]
     assert "gpt-6-sol" in aliases["codex:heavy"]
+    assert "codex:solo" not in aliases
 
 
 def test_swarm_init_1x1_and_4x2_layouts():
@@ -651,16 +651,20 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     assert "codex:" in out
     assert "list: codex debug models --bundled (stable local catalog)" in out
     assert "gpt-test" in out
-    assert (
-        'shell_command: "codex --dangerously-bypass-approvals-and-sandbox '
-        '-m <model>"'
-    ) in out
-    assert "claude --dangerously-skip-permissions --model <model>" in out
-    assert "gemini -y -m <model>" in out
-    assert "grok --always-approve -m <model>" in out
+    assert 'shell_command: "codex:heavy"' in out
+    assert 'shell_command: "codex:medium"' in out
+    assert 'shell_command: "codex:light"' in out
+    assert 'shell_command: "claude:heavy"' in out
+    assert 'shell_command: "claude:light"' in out
+    assert 'shell_command: "grok:heavy"' in out
+    assert 'shell_command: "gemini:heavy"' in out
+    assert 'shell_command: "gemini:light"' in out
+    assert 'shell_command: "vibe:heavy"' in out
+    assert "gemini -m <model>" in out
+    assert "grok -m <model>" in out
     assert "grok-build" in out
     assert "qwen -y -m <model>" in out
-    assert "VIBE_ACTIVE_MODEL=<model> vibe --agent auto-approve" in out
+    assert "VIBE_ACTIVE_MODEL=<model> vibe" in out
 
 
 def test_babysit_log_nudge_includes_target(tmp_path: Path, monkeypatch):
@@ -723,9 +727,10 @@ windows:
           monitor: true
       - shell_command: "other:tool"
 """))
-    err = capsys.readouterr().err
-    assert "unknown model alias 'codex:nope'" in err
-    assert "other:tool" not in err
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "unknown model alias 'codex:nope'" in (cfg.panes[0].alias_warning or "")
+    assert cfg.panes[1].alias_warning is None
     assert cfg.panes[0].command == "codex:nope"
     assert cfg.panes[0].command_alias is None
     assert cfg.panes[1].command == "other:tool"
@@ -739,9 +744,65 @@ def test_duplicate_model_alias_rejected(tmp_path: Path):
         common.load_model_aliases(path)
 
 
+def test_literal_config_does_not_read_alias_table(tmp_path: Path, monkeypatch):
+    bad = tmp_path / "models.yaml"
+    bad.write_text(":\n")
+    monkeypatch.setattr(common, "MODELS_PATH", bad)
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+"""))
+    assert cfg.panes[0].command == "claude"
+    assert cfg.panes[0].alias_warning is None
+
+
+def test_missing_alias_table_leaves_token(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.setattr(common, "MODELS_PATH", tmp_path / "missing.yaml")
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo_missing
+windows:
+  - window_name: main
+    layout: tiled
+    panes:
+      - shell_command: codex:heavy
+        nudge:
+          agent: codex
+          monitor: true
+"""))
+    assert capsys.readouterr().err == ""
+    assert cfg.panes[0].command == "codex:heavy"
+    assert "not found" in (cfg.panes[0].alias_warning or "")
+    monkeypatch.setattr(swarm_apply, "setup_grid", lambda cfg, dry_run: None)
+    monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_title", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_command", lambda *a, **k: True)
+    monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: None)
+    monkeypatch.setattr(swarm_apply, "collect_pane_pids", lambda cfg: {})
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda *a, **k: None)
+    swarm_start.start(cfg, dry_run=True)
+    assert "model aliases not found" in capsys.readouterr().err
+
+
 def test_shell_alias_falls_back_to_bare_agent(monkeypatch):
     monkeypatch.setattr(swarm_init, "load_model_aliases", lambda: {})
     assert swarm_init.shell_alias("codex", "heavy") == "codex"
+
+
+def test_shell_alias_falls_back_light_to_heavy(monkeypatch):
+    monkeypatch.setattr(
+        swarm_init,
+        "load_model_aliases",
+        lambda: {"copilot:heavy": "copilot --allow-all-tools"},
+    )
+    assert swarm_init.shell_alias("copilot", "light") == "copilot:heavy"
+    assert swarm_init.shell_alias("copilot", "solo") == "copilot:heavy"
 
 
 def test_start_prints_alias_expansion(monkeypatch, tmp_path: Path, capsys):

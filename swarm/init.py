@@ -146,9 +146,14 @@ DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
 
 
 def shell_alias(agent: str, weight: str) -> str:
-    """Token written into shell_command. Falls back to solo, then heavy, then the bare agent."""
+    """Token written into shell_command.
+
+    Roles are heavy, medium, and light. A one-pane layout passes weight "solo";
+    that still writes provider:heavy. A missing role uses heavy, then the bare agent name.
+    """
     aliases = load_model_aliases()
-    for key in (f"{agent}:{weight}", f"{agent}:solo", f"{agent}:heavy"):
+    role = "heavy" if weight == "solo" else weight
+    for key in (f"{agent}:{role}", f"{agent}:heavy"):
         if key in aliases:
             return key
     return agent

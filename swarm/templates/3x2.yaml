@@ -59,7 +59,7 @@ windows:
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
 
-      - shell_command: "antigravity:solo"
+      - shell_command: "antigravity:heavy"
         nudge:
           title: antigravity
           agent: antigravity
@@ -73,7 +73,7 @@ windows:
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
 
-      - shell_command: "grok:solo"
+      - shell_command: "grok:heavy"
         nudge:
           title: grok
           agent: grok
