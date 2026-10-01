@@ -55,7 +55,7 @@ windows:
             clear_every: 6
             long_prompt_file: prompts/worker_long.md
             short_prompt_file: prompts/worker_short.txt
-      - shell_command: "antigravity:heavy"
+      - shell_command: "antigravity:light"
         nudge:
           title: antigravity
           agent: antigravity
