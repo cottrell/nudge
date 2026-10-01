@@ -72,8 +72,11 @@ class BacklogTask:
     status: str
     priority: str = ""
     assignees: list[str] = None
+    labels: list[str] = None
 
     def __post_init__(self) -> None:
+        if self.labels is None:
+            self.labels = []
         if self.assignees is None:
             self.assignees = []
 
@@ -263,10 +266,27 @@ def parse_task_list_json(data: dict) -> list[BacklogTask]:
                 status=str(row.get("status") or "").strip(),
                 priority=pri,
                 assignees=_task_assignees(row),
+                labels=[str(x) for x in (row.get("labels") or [])],
             )
         )
     out.sort(key=lambda t: (PRI_RANK.get(t.priority, 3), t.id))
     return out
+
+
+CAT_PREFIX = "cat:"
+
+
+def task_categories(task: BacklogTask) -> set[str]:
+    return {l[len(CAT_PREFIX):] for l in task.labels if l.startswith(CAT_PREFIX) and len(l) > len(CAT_PREFIX)}
+
+
+def pane_serves_task(cfg: SwarmConfig, pane: str, task: BacklogTask) -> bool:
+    """Task `cat:X` labels (all required) must be among the pane's categories."""
+    need = task_categories(task)
+    if not need:
+        return True
+    spec = next((p for p in cfg.panes if p.pane == pane), None)
+    return bool(spec) and need <= set(spec.categories)
 
 
 def list_candidate_tasks(
@@ -1281,12 +1301,12 @@ def _claim_new_onto_free(
             candidate_idx = -1
             for idx, c in enumerate(candidates):
                 c_assignees = {a.strip().lower() for a in c.assignees}
-                if pane_assignee in c_assignees:
+                if pane_assignee in c_assignees and pane_serves_task(cfg, pane, c):
                     candidate_idx = idx
                     break
             if candidate_idx == -1:
                 for idx, c in enumerate(candidates):
-                    if not c.assignees:
+                    if not c.assignees and pane_serves_task(cfg, pane, c):
                         candidate_idx = idx
                         break
             if candidate_idx == -1:
@@ -1535,7 +1555,9 @@ def status(cfg: SwarmConfig) -> None:
     )
     panes = cfg.task_panes
     print(f"task panes ({len(panes)}): " + (
-        ", ".join(f"{p.pane}({p.title})" for p in panes) if panes else "(none)"
+        ", ".join(
+            f"{p.pane}({p.title}{'; ' + ','.join(p.categories) if p.categories else ''})" for p in panes
+        ) if panes else "(none)"
     ))
     if path.exists():
         print(f"dispatcher: pid={pid} {'running' if alive else 'dead'}")

@@ -1717,6 +1717,79 @@ def test_any_message_skips_pane_with_task_assignment():
         shutil.rmtree(runtime, ignore_errors=True)
 
 
+def test_category_message_only_goes_to_panes_with_category():
+    sess = f"test_cat_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.log_any(sess, "heavy job", category="heavy")
+        assert common.claim_any(sess, "0.0", ["light"]) is None
+        assert common.claim_any(sess, "0.1") is None
+        assert common.get_pending_any(sess)
+        assert common.claim_any(sess, "0.2", ["light", "heavy"]) is not None
+        assert common.get_pending_any(sess) == []
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_category_message_does_not_block_plain_any():
+    sess = f"test_cat_any_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.log_any(sess, "heavy job", category="heavy")
+        common.log_any(sess, "anyone")
+        assert common.claim_any(sess, "0.0", ["light"]) is not None
+        payloads = [r[5] for r in common.get_events(sess) if r[4] == "any-delivery"]
+        assert payloads == ["anyone"]
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_load_config_pane_categories(tmp_path: Path):
+    body = """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: %s
+"""
+    cfg = load_config(write_config(tmp_path, body % "[heavy, claude, heavy]"))
+    assert cfg.panes[0].categories == ["heavy", "claude"]
+    for bad in ("[any]", "[mcp]", '["0.1"]'):
+        with pytest.raises(ValueError):
+            load_config(write_config(tmp_path, body % bad))
+
+
+def test_dispatcher_matches_task_category_labels(tmp_path: Path, monkeypatch):
+    bdir = _write_backlog_project(tmp_path)
+    cfg = load_config(write_config(tmp_path, f"""
+session_name: demo
+tasks:
+  backlog_dir: "{bdir}"
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [light]
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [heavy, claude]
+"""))
+    heavy = tasksctl.BacklogTask(id="TASK-1", title="H", status="To Do", labels=["cat:heavy"])
+    plain = tasksctl.BacklogTask(id="TASK-2", title="P", status="To Do")
+    assert not tasksctl.pane_serves_task(cfg, "0.0", heavy)
+    assert tasksctl.pane_serves_task(cfg, "0.1", heavy)
+    assert tasksctl.pane_serves_task(cfg, "0.0", plain)
+    both = tasksctl.BacklogTask(id="TASK-3", title="B", status="To Do", labels=["cat:heavy", "cat:codex"])
+    assert not tasksctl.pane_serves_task(cfg, "0.1", both)
+
+
 def test_usage_scraper_timeout_cleans_exact_tmux_session(monkeypatch, tmp_path: Path):
     class TimedOutProcess:
         pid = 4321

@@ -81,6 +81,7 @@ aiswarm init myproject          # writes .aiswarm/config.yaml + prompts (commit 
 aiswarm start                   # no path needed inside the project
 aiswarm send 0.0 "hello"        # same
 aiswarm send any "check tests"  # one eligible idle pane receives it
+aiswarm send heavy "refactor"   # one idle pane in category `heavy`
 aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)
 ```
 
@@ -159,6 +160,12 @@ even when all panes are busy; the always-running comms worker atomically routes 
 to exactly one idle monitored pane. Panes holding local Backlog task assignments
 are skipped. This does not require `aiswarm tasks start`, and it does not add task
 completion or chase semantics.
+
+Pane categories: list labels per pane (`nudge.categories: [heavy, claude]`, several
+allowed). `aiswarm send heavy "msg"` is `send any` restricted to panes carrying that
+category. A category with no free pane stays queued. Names may not be `any`, `mcp`, or
+a pane id. Backlog tasks labelled `cat:heavy` are only dispatched to panes with that
+category (all `cat:` labels required); unlabelled tasks go anywhere.
 
 ### Agent-to-agent handoff (do not stream peer panes)
 

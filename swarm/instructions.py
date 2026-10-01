@@ -45,6 +45,7 @@ aiswarm tasks start          # poll backlog → free panes (--for 1h to auto-sto
 aiswarm status --brief
 aiswarm send 0.2 "msg"       # durable poke via log
 aiswarm send any "msg"       # one eligible idle pane claims it
+aiswarm send heavy "msg"     # same, only panes with category `heavy`
 aiswarm babysit stop
 aiswarm tasks stop
 aiswarm stop                 # workers + session teardown
@@ -175,7 +176,7 @@ Common workflow:
   aiswarm status --brief              Pane states
   aiswarm capture <pane>              Snapshot pane text
   aiswarm wait <pane>                 Block until pane monitor idle
-  aiswarm send <pane|any> "msg"       Durable message via log (delivered on idle)
+  aiswarm send <pane|any|category> "msg" Durable message via log (delivered on idle)
   aiswarm clear [pane]                Send '/clear' via log (all agent panes by default)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)
   aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (--for 1h)

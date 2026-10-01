@@ -119,6 +119,7 @@ def desired_spec(cfg: SwarmConfig, pane: str, interval: int, clear_every: int,
         "ema_max_wait": bs.ema_max_wait if bs else 1200,
         "agent": pane_spec.agent if pane_spec else "",
         "monitor": pane_spec.monitor if pane_spec else False,
+        "categories": list(pane_spec.categories) if pane_spec else [],
     }
 
 

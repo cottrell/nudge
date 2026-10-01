@@ -80,7 +80,7 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
                     pass
 
         if claim_any_message and not simulate:
-            claim_any(session, pane)
+            claim_any(session, pane, (spec or {}).get("categories") or [])
         pending = get_pending_events(session, pane)
         for eid, *_rest, payload, _meta in pending:
             _send_message(target, payload, simulate); log_ack(session, pane, eid, pane, target)

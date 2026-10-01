@@ -29,6 +29,7 @@ AGENT_STATS_CMD: dict[str, str | None] = {
     "vibe":    None,
 }
 PANE_RE = re.compile(r"^(\d+)\.(\d+)$")
+RESERVED_TARGETS = {"any", "mcp"}
 _DURATION_PARTS = re.compile(r"(\d+)([hms])")
 
 
@@ -144,6 +145,7 @@ class PaneSpec:
     babysit: BabysitSpec
     comms: bool
     tasks_enabled: bool
+    categories: list[str] = field(default_factory=list)
 
     @property
     def pane_index(self) -> int:
@@ -379,6 +381,17 @@ def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
     comms_raw = nudge.get("comms") if isinstance(nudge.get("comms"), dict) else {}
     comms = bool(comms_raw.get("enabled", monitor))
 
+    cats_raw = nudge.get("categories") or []
+    if isinstance(cats_raw, str):
+        cats_raw = [cats_raw]
+    categories = []
+    for c in cats_raw:
+        c = str(c).strip()
+        if not c or c in RESERVED_TARGETS or c.startswith("mcp:") or PANE_RE.match(c):
+            raise ValueError(f"pane {pane_id} has invalid category {c!r}")
+        if c not in categories:
+            categories.append(c)
+
     return PaneSpec(
         pane=pane_id,
         agent=agent,
@@ -388,6 +401,7 @@ def _fill_pane(praw: dict | None, pane_id: str, cfg_path: Path) -> PaneSpec:
         babysit=babysit,
         comms=comms,
         tasks_enabled=tasks_enabled,
+        categories=categories,
     )
 
 
@@ -427,6 +441,7 @@ def effective_config_dict(cfg: SwarmConfig) -> dict:
                 "monitor": p.monitor,
                 "comms": p.comms,
                 "tasks_enabled": p.tasks_enabled,
+                "categories": list(p.categories),
                 "babysit": {
                     "enabled": p.babysit.enabled,
                     "interval_secs": p.babysit.interval_secs,
@@ -622,6 +637,7 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                 "has_short_prompt": has_short,
             }
         entry["tasks"] = {"enabled": pane.tasks_enabled}
+        entry["categories"] = list(pane.categories)
         panes_map[pane.pane] = entry
     sid_path = cfg.runtime_dir / "session-ids.json"
     if sid_path.is_file():
@@ -753,9 +769,11 @@ def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = 
              meta={"include_nonmonitored": include_nonmonitored})
 
 
-def log_any(session_name: str, message: str, sender: str = None) -> int:
-    """Queue a message for exactly one eligible idle pane."""
-    return log_send(session_name, "__any__", message, sender, "any")
+def log_any(session_name: str, message: str, sender: str = None,
+            category: str | None = None) -> int:
+    """Queue a message for exactly one eligible idle pane (in category, if given)."""
+    return log_send(session_name, "__any__", message, sender, "any",
+                    meta={"category": category} if category else None)
 
 
 def pane_has_task_assignment(session_name: str, pane: str) -> bool:
@@ -767,26 +785,33 @@ def pane_has_task_assignment(session_name: str, pane: str) -> bool:
     return pane in (state.get("assignments") or {})
 
 
-def claim_any(session_name: str, pane: str) -> int | None:
-    """Atomically route the oldest unclaimed any event to pane."""
+def claim_any(session_name: str, pane: str, categories: list[str] | None = None) -> int | None:
+    """Atomically route the oldest unclaimed any event to pane.
+
+    Events carrying meta.category only go to panes that have that category."""
     if pane_has_task_assignment(session_name, pane):
         return None
     db = init_comms_db(session_name)
     with _sqlite3.connect(str(db), timeout=30) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
+        have = set(categories or [])
+        row = meta = None
+        for cand in conn.execute(
             "SELECT e.id, e.sender, e.payload, e.meta FROM events e "
             "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
             "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
-            "ORDER BY e.id LIMIT 1"
-        ).fetchone()
+            "ORDER BY e.id"
+        ).fetchall():
+            try:
+                cmeta = json.loads(cand[3]) if cand[3] else {}
+            except (TypeError, json.JSONDecodeError):
+                cmeta = {}
+            if not cmeta.get("category") or cmeta["category"] in have:
+                row, meta = cand, cmeta
+                break
         if row is None:
             return None
-        queue_id, sender, payload, raw_meta = row
-        try:
-            meta = json.loads(raw_meta) if raw_meta else {}
-        except (TypeError, json.JSONDecodeError):
-            meta = {}
+        queue_id, sender, payload, _raw_meta = row
         meta.update({"queue_event_id": queue_id, "selected_pane": pane})
         cur = conn.execute(
             "INSERT INTO events (recipient, sender, type, payload, meta) VALUES (?,?,?,?,?)",

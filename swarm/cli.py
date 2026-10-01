@@ -899,7 +899,10 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
                 session_name = runtime.get("session_name", swarm_name)
                 valid_panes = list((runtime.get("panes") or {}).keys())
-                is_valid_target = target in valid_panes or target == "any" or target == "mcp" or target.startswith("mcp:")
+                cats = {c for v in (runtime.get("panes") or {}).values() for c in (v.get("categories") or [])}
+                category = target if target in cats else None
+                is_valid_target = (target in valid_panes or target == "any" or target == "mcp"
+                                   or target.startswith("mcp:") or category is not None)
                 if not is_valid_target:
                     print(
                         f"Warning: recipient pane '{target}' is not present in "
@@ -909,7 +912,10 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 cfg = load_config(explicit)
                 session_name = cfg.session_name
-                is_valid_target = target in [p.pane for p in cfg.panes] or target == "any" or target == "mcp" or target.startswith("mcp:")
+                cats = {c for p in cfg.panes for c in p.categories}
+                category = target if target in cats else None
+                is_valid_target = (target in [p.pane for p in cfg.panes] or target == "any" or target == "mcp"
+                                   or target.startswith("mcp:") or category is not None)
                 if not is_valid_target:
                     print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
 
@@ -917,7 +923,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.dry_run:
                 print(f"would log-send session={session_name} target={target} sender={sender_name} msg={msg}")
             else:
-                eid = (log_any(session_name, msg, sender=sender_name) if target == "any"
+                eid = (log_any(session_name, msg, sender=sender_name, category=category)
+                       if target == "any" or category
                        else log_send(session_name, target, msg, sender=sender_name))
                 print(f"log-sent id={eid} session={session_name} target={target}")
             return 0
