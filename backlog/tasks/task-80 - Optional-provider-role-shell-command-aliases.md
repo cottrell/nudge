@@ -1,11 +1,11 @@
 ---
 id: TASK-80
 title: 'Optional provider:role shell command aliases'
-status: In Progress
+status: Done
 assignee:
   - '@grok'
 created_date: '2026-10-01 09:24'
-updated_date: '2026-10-01 11:59'
+updated_date: '2026-10-02 08:48'
 labels: []
 dependencies: []
 ---
@@ -18,13 +18,13 @@ Model and flag changes (for example gpt-5.6-terra becoming gpt-6-sol, or a reaso
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A shell_command whose entire value is a key in swarm/models.yaml loads as that key's full command
-- [ ] #2 A shell_command that is not a key is kept verbatim, including full commands, bash, and htop
-- [ ] #3 A single token provider:role whose provider is in the alias table but whose key is missing warns and stays verbatim
-- [ ] #4 Duplicate keys in swarm/models.yaml fail to load
-- [ ] #5 aiswarm init writes provider:role tokens, and those tokens resolve to the invocations init used to bake in
-- [ ] #6 aiswarm start prints each alias expansion
-- [ ] #7 Tests cover exact match, passthrough, unknown role, duplicate keys, and init output
+- [x] #1 A shell_command whose entire value is a key in swarm/models.yaml loads as that key's full command
+- [x] #2 A shell_command that is not a key is kept verbatim, including full commands, bash, and htop
+- [x] #3 A single token provider:role whose provider is in the alias table but whose key is missing warns and stays verbatim
+- [x] #4 Duplicate keys in swarm/models.yaml fail to load
+- [x] #5 aiswarm init writes provider:role tokens, and those tokens resolve to the invocations init used to bake in
+- [x] #6 aiswarm start prints each alias expansion
+- [x] #7 Tests cover exact match, passthrough, unknown role, duplicate keys, and init output
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -55,4 +55,12 @@ load_config reads models.yaml only when a pane shell_command is a single provide
 aiswarm help prints shell_command tokens from models.yaml. Providers with no token still show the placeholder command. init fallback (role, then solo, then heavy, then the bare agent) is noted in swarm/models.yaml and aiswarm instructions. *.egg-info/ is already in .gitignore.
 
 grok:heavy does not pass -m. grok models on this machine lists grok-4.7 as default, plus grok-4.7-build-fast, grok-4.6, and grok-4.5. grok-build is not in that list. The alias uses the CLI default, same as grok:light.
+
+Review (0.2) findings resolved: alias table read lazily, warnings printed once by start, solo dropped, egg-info ignored. AC5: tokens resolve to the current live launches (gpt-6-sol/luna, gemini-3.8 for antigravity); older baked gpt-5.6 ids were deliberately replaced.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Optional provider:role aliases in swarm/models.yaml: exact-key expansion, verbatim passthrough, warning on unknown role, duplicate-key rejection, lazy table load, init writes tokens, start prints expansions. Verified: uv run pytest test_swarm.py (147 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->
