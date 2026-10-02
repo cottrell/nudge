@@ -563,11 +563,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     wait_p = sub.add_parser(
         "wait",
-        help="Block until a pane is idle (monitor) or its capture is unchanged",
+        help="Block until a pane is idle (monitor-bin state) or its screen stops changing",
         description=(
-            "Poll in this process (not in the agent context). Default: wait until the "
-            "pane monitor reports idle. --stable SECS waits until capture-pane text "
-            "is unchanged for SECS instead. Prints one line, then exits."
+            "Standalone blocking CLI poll; no comms log, no messages sent. Default: poll "
+            "the pane's monitor-bin idle state (same signal babysit/tasks/comms use) "
+            "every --interval secs and exit when idle. --stable SECS ignores the monitor "
+            "and instead diffs tmux capture-pane text, exiting once unchanged for SECS. "
+            "Prints one line. Exit 0 = idle/stable, 1 = timeout, 2 = unknown pane."
         ),
     )
     wait_p.add_argument(
@@ -592,14 +594,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--interval",
         type=float,
         default=1.0,
-        help="Poll interval in seconds (default 1)",
+        help="Seconds between polls (default 1)",
     )
     wait_p.add_argument(
         "--stable",
         type=float,
         default=None,
         metavar="SECS",
-        help="Wait until capture-pane text is unchanged for SECS (instead of monitor idle)",
+        help="Use raw capture-pane text diffing instead of monitor-bin: done when unchanged for SECS",
     )
 
     babysit_p = sub.add_parser("babysit", help="Toggle the babysit prompt group on top of the base worker loop (comms always-on)")
