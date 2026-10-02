@@ -4,6 +4,7 @@ title: 'Consider hierarchical CLI organization for aiswarm (think only, no commi
 status: To Do
 assignee: []
 created_date: '2026-10-02 09:46'
+updated_date: '2026-10-02 09:50'
 labels:
   - cli
   - parked
@@ -34,3 +35,9 @@ Considerations: (+) discoverability, shorter --help, consistent places for share
 - [ ] #2 If yes: list which commands move, which stay top-level hot aliases, and the deprecation story for agent prompts and docs
 - [ ] #3 Estimate blast radius: grep instructions.py, README, AGENTS.md, tests for spelled commands
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Related: multi-swarm addressing audit (selector design for send -c vs -s, swarm:target for capture/wait) should be decided together with this.
+<!-- SECTION:NOTES:END -->
