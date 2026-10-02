@@ -241,12 +241,13 @@ Notes:
 - provider session IDs: `aiswarm sessions` (also `session-ids.json` next to the
   config and under the runtime dir). Claude and Grok are launched with
   `--session-id`; live panes are matched by PID / open files, not newest-cwd.
-- `aiswarm start --resume` replaces each pane command that has a recorded id
-  with the short resume form (`claude -r`, `grok -r`, `agy --conversation`,
-  `codex resume`) before `mint_launch_command`. That flag is already session
-  control, so mint does not append a second `--session-id`. Panes with no
-  recorded id keep `pane.command` (Claude/Grok still mint). Plain `start`
-  always mints.
+- `aiswarm start --resume` splices a recorded id into that pane's config
+  command before `mint_launch_command`: Claude/Grok append `-r <id>`,
+  Antigravity appends `--conversation <id>`, and Codex becomes
+  `codex resume <id>` followed by the config flags (`codex resume` accepts
+  those options after the session id). An existing `--session-id` is removed
+  first, so mint does not append a second one. Panes with no recorded id keep
+  `pane.command` (Claude/Grok still mint). Plain `start` always mints.
 - tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`
 
 ## Tasks dispatcher (backlog → free panes)

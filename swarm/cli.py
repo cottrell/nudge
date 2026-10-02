@@ -342,7 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     start_p.add_argument(
         "--resume",
         action="store_true",
-        help="Relaunch panes from session-ids.json (claude -r / grok -r / agy --conversation / codex resume). Panes with no recorded id keep their config command",
+        help="Relaunch panes from session-ids.json, keeping config flags (append -r or --conversation; codex resume <id> then those flags). Panes with no recorded id are unchanged",
     )
 
     status_p = sub.add_parser("status", help="Report current swarm state")

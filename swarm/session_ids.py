@@ -115,9 +115,33 @@ def mint_launch_command(agent: str | None, command: str) -> tuple[str, str | Non
     return f"{command.rstrip()} --session-id {sid}", sid, "minted"
 
 
-def resume_launch_command(agent: str | None, record: SessionRecord | None) -> str | None:
-    """Short resume command for a stored pane id, or None to keep pane.command.
+def _strip_session_id_flag(argv: list[str]) -> list[str]:
+    """Drop --session-id and its value so a resume id is the only pin."""
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--session-id":
+            i += 2 if i + 1 < len(argv) else 1
+            continue
+        if tok.startswith("--session-id="):
+            i += 1
+            continue
+        out.append(tok)
+        i += 1
+    return out
 
+
+def resume_launch_command(
+    agent: str | None,
+    command: str,
+    record: SessionRecord | None,
+) -> str | None:
+    """Config command with the recorded id spliced in, or None if there is no id.
+
+    Claude/Grok append `-r <id>`. Antigravity appends `--conversation <id>`.
+    Codex is `codex resume <id>` then the config flags: `codex resume` accepts
+    options after the session id. An existing `--session-id` is removed first.
     Callers pass the result through mint_launch_command. The resume flag is
     already session control, so mint does not append a second --session-id.
     """
@@ -126,7 +150,22 @@ def resume_launch_command(agent: str | None, record: SessionRecord | None) -> st
     agent_c = canonical_agent(agent) or canonical_agent(record.agent)
     if not agent_c:
         return None
-    return resume_command(agent_c, record.session_id.strip())
+    sid = record.session_id.strip()
+    argv = _strip_session_id_flag(_split_command(command or ""))
+    if not argv:
+        return resume_command(agent_c, sid)
+    if agent_c == "codex":
+        binary, *rest = argv
+        if rest and rest[0].lower() == "resume":
+            rest = rest[1:]
+            if rest and UUID_RE.fullmatch(rest[0]):
+                rest = rest[1:]
+        return shlex.join([binary, "resume", sid, *rest])
+    if agent_c == "agy":
+        return shlex.join([*argv, "--conversation", sid])
+    if agent_c in ("claude", "grok"):
+        return shlex.join([*argv, "-r", sid])
+    return shlex.join([*argv, "--resume", sid])
 
 
 def session_id_from_argv(agent: str, argv: list[str]) -> str | None:

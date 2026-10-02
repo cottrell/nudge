@@ -430,7 +430,7 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool, resume: bool = False) -> Non
         ensure_title(cfg, pane.pane, pane.title, dry_run)
         command = pane.command
         if resume:
-            alt = resume_launch_command(pane.agent, records.get(pane.pane))
+            alt = resume_launch_command(pane.agent, command, records.get(pane.pane))
             if alt:
                 command = alt
                 print(f"{pane.pane} resume -> {command}")

@@ -984,19 +984,47 @@ windows:
     assert calls[6] == ("runtime_map", "demo")
 
 
-def test_resume_launch_command_forms_and_no_double_mint():
+def test_resume_launch_command_keeps_config_flags():
     sid = "11111111-1111-4111-8111-111111111111"
-    claude = session_ids.make_record("0.0", "claude", sid, "minted")
-    assert session_ids.resume_launch_command("claude", claude) == f"claude -r {sid}"
-    assert session_ids.resume_launch_command("grok", session_ids.make_record("0.1", "grok", sid, "minted")) == f"grok -r {sid}"
-    assert session_ids.resume_launch_command("antigravity", session_ids.make_record("0.2", "agy", sid, "proc_fd")) == f"agy --conversation {sid}"
-    assert session_ids.resume_launch_command("codex", session_ids.make_record("0.3", "codex", sid, "proc_fd")) == f"codex resume {sid}"
-    assert session_ids.resume_launch_command("codex", None) is None
-    assert session_ids.resume_launch_command("grok", session_ids.make_record("0.1", "grok", None, "")) is None
-    resumed = session_ids.resume_launch_command("claude", claude)
+    old = "00000000-0000-4000-8000-000000000099"
+    cases = [
+        (
+            "claude",
+            f"claude --dangerously-skip-permissions --model haiku --session-id {old}",
+            f"claude --dangerously-skip-permissions --model haiku -r {sid}",
+        ),
+        (
+            "grok",
+            f"grok --always-approve --session-id {old}",
+            f"grok --always-approve -r {sid}",
+        ),
+        (
+            "antigravity",
+            "agy --dangerously-skip-permissions --model gemini-3.8-flash-high",
+            f"agy --dangerously-skip-permissions --model gemini-3.8-flash-high --conversation {sid}",
+        ),
+        (
+            "codex",
+            "codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=low",
+            f"codex resume {sid} --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=low",
+        ),
+    ]
+    for agent, command, expected in cases:
+        rec = session_ids.make_record("0.0", agent, sid, "minted")
+        out = session_ids.resume_launch_command(agent, command, rec)
+        assert out == expected
+        minted, _, _ = session_ids.mint_launch_command(agent, out)
+        assert "--session-id" not in minted
+        assert old not in (minted or "")
+    assert session_ids.resume_launch_command("codex", "codex --dangerously-bypass-approvals-and-sandbox", None) is None
+    assert session_ids.resume_launch_command("grok", "grok --always-approve", session_ids.make_record("0.1", "grok", None, "")) is None
+    resumed = session_ids.resume_launch_command(
+        "claude",
+        "claude --dangerously-skip-permissions",
+        session_ids.make_record("0.0", "claude", sid, "minted"),
+    )
     cmd, out_sid, src = session_ids.mint_launch_command("claude", resumed)
-    assert cmd == f"claude -r {sid}"
-    assert "--session-id" not in cmd
+    assert cmd == f"claude --dangerously-skip-permissions -r {sid}"
     assert out_sid == sid
     assert src == "argv"
 
@@ -1008,13 +1036,13 @@ windows:
   - window_name: grid
     layout: tiled
     panes:
-      - shell_command: claude --dangerously-skip-permissions
+      - shell_command: claude --dangerously-skip-permissions --model haiku
         nudge: {agent: claude, monitor: true}
       - shell_command: grok --always-approve
         nudge: {agent: grok, monitor: true}
-      - shell_command: codex --dangerously-bypass-approvals-and-sandbox
+      - shell_command: codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=low
         nudge: {agent: codex, monitor: false}
-      - shell_command: agy --dangerously-skip-permissions
+      - shell_command: agy --dangerously-skip-permissions --model gemini-3.8-flash-high
         nudge: {agent: antigravity, monitor: true}
 """))
     claude_id = "11111111-1111-4111-8111-111111111111"
@@ -1048,10 +1076,15 @@ windows:
     swarm_start.start(cfg, dry_run=True, resume=True)
 
     by_pane = dict(calls)
-    assert by_pane["0.0"] == f"claude -r {claude_id}"
+    assert by_pane["0.0"] == f"claude --dangerously-skip-permissions --model haiku -r {claude_id}"
     assert "--session-id" not in by_pane["0.0"]
-    assert by_pane["0.2"] == f"codex resume {codex_id}"
-    assert by_pane["0.3"] == f"agy --conversation {agy_id}"
+    assert by_pane["0.2"] == (
+        f"codex resume {codex_id} --dangerously-bypass-approvals-and-sandbox "
+        "-m gpt-6-luna -c model_reasoning_effort=low"
+    )
+    assert by_pane["0.3"] == (
+        f"agy --dangerously-skip-permissions --model gemini-3.8-flash-high --conversation {agy_id}"
+    )
     assert by_pane["0.1"] == "grok --always-approve --session-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     assert minted == ["called"]
 
