@@ -163,7 +163,7 @@ completion or chase semantics.
 
 Pane categories: list labels per pane (`nudge.categories: [heavy, claude]`, several
 allowed). `aiswarm send heavy "msg"` is `send any` restricted to panes carrying that
-category. A category with no free pane stays queued. Names may not be `any`, `mcp`, or
+category. A category with no free pane stays queued; a target that is no pane, `any`, or configured category is an error. `aiswarm status` ends with a per-category rollup (panes, idle, pending messages, open `cat:` tasks). Names may not be `any`, `mcp`, or
 a pane id. Backlog tasks labelled `cat:heavy` are only dispatched to panes with that
 category (all `cat:` labels required); unlabelled tasks go anywhere.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -928,6 +929,9 @@ def main(argv: list[str] | None = None) -> int:
                 is_valid_target = (target in valid_panes or target == "any" or target == "mcp"
                                    or target.startswith("mcp:") or category is not None)
                 if not is_valid_target:
+                    if not re.fullmatch(r"\d+\.\d+", target):
+                        print(f"error: no pane or category '{target}' in swarm '{swarm_name}'", file=sys.stderr)
+                        return 1
                     print(
                         f"Warning: recipient pane '{target}' is not present in "
                         f"swarm '{swarm_name}' runtime map",
@@ -941,6 +945,9 @@ def main(argv: list[str] | None = None) -> int:
                 is_valid_target = (target in [p.pane for p in cfg.panes] or target == "any" or target == "mcp"
                                    or target.startswith("mcp:") or category is not None)
                 if not is_valid_target:
+                    if not re.fullmatch(r"\d+\.\d+", target):
+                        print(f"error: no pane or category '{target}' in the config", file=sys.stderr)
+                        return 1
                     print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
 
             sender_name = getattr(args, "sender", None) or "cli send"

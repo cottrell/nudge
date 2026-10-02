@@ -32,7 +32,12 @@ try:
         desired_spec as babysit_desired_spec,
         supervisor_pid_path,
     )
-    from .tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
+    from .tasksctl import (
+        is_group_enabled as tasks_group_enabled,
+        list_candidate_tasks,
+        task_categories,
+        worker_state_path,
+    )
     from .session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
 except ImportError:
     # direct script fallback
@@ -57,7 +62,12 @@ except ImportError:
         desired_spec as babysit_desired_spec,
         supervisor_pid_path,
     )
-    from tasksctl import is_group_enabled as tasks_group_enabled, worker_state_path
+    from tasksctl import (
+        is_group_enabled as tasks_group_enabled,
+        list_candidate_tasks,
+        task_categories,
+        worker_state_path,
+    )
     from session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
 
 
@@ -458,6 +468,46 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
     print()
 
 
+def category_lines(cfg: SwarmConfig, states: dict[str, str]) -> list[str]:
+    """Per-category rollup: panes, idle panes, pending any-messages, open cat: tasks."""
+    try:
+        from .common import get_pending_any
+    except ImportError:
+        from common import get_pending_any
+    panes: dict[str, list[str]] = {}
+    for p in cfg.panes:
+        for c in p.categories:
+            panes.setdefault(c, []).append(p.pane)
+    msgs: dict[str, int] = {}
+    for *_, meta in get_pending_any(cfg.session_name):
+        try:
+            cat = (json.loads(meta) if meta else {}).get("category")
+        except (TypeError, ValueError):
+            cat = None
+        if cat:
+            msgs[cat] = msgs.get(cat, 0) + 1
+    tasks: dict[str, int] = {}
+    if tasks_group_enabled(cfg):
+        try:
+            for t in list_candidate_tasks(cfg, unassigned_only=False):
+                for c in task_categories(t):
+                    tasks[c] = tasks.get(c, 0) + 1
+        except Exception:
+            pass
+    names = sorted(set(panes) | set(msgs) | set(tasks))
+    if not names:
+        return []
+    rows = [("Category", "Panes", "Idle", "Msgs", "Tasks")]
+    for c in names:
+        ps = panes.get(c, [])
+        idle = sum(1 for p in ps if states.get(p) == "idle")
+        rows.append((c, ",".join(ps) or "-", str(idle), str(msgs.get(c, 0)), str(tasks.get(c, 0))))
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    out = ["", "Categories (Msgs = pending any-messages, Tasks = open cat: tasks)"]
+    out += ["  ".join(r[i].ljust(widths[i]) for i in range(5)).rstrip() for r in rows]
+    return out
+
+
 def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
     lines: list[str] = []
     session_exists = run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode == 0
@@ -499,6 +549,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             tasks_hb = "?"
 
+    states: dict[str, str] = {}
     for pane in cfg.panes:
         target = f"{cfg.session_name}:{pane.pane}"
         proc = run("tmux", "list-panes", "-t", target, check=False)
@@ -517,6 +568,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             monitor = state_str
         else:
             monitor = "off"
+        states[pane.pane] = monitor
         pid_val = "-"
         comms_hb = "-"
         babysit_val = "off"
@@ -701,6 +753,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("  Tasks HB = countdown to the next claim/chase dispatcher pass")
             lines.append("             Run `babysit start` / `babysit stop` to toggle the babysit prompt group.")
 
+    lines.extend(category_lines(cfg, states))
     return lines
 
 

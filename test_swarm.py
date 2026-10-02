@@ -4515,3 +4515,52 @@ windows:
     out = capsys.readouterr().out
     assert "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" in out
     assert "grok -r" in out
+
+
+def test_cli_send_unknown_category_errors(tmp_path: Path, capsys):
+    sess = f"test_cat_err_{os.getpid()}_{random.randrange(1_000_000)}"
+    cfg_path = write_config(tmp_path, f"""
+session_name: {sess}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          categories: [heavy]
+""")
+    try:
+        assert swarm_cli.main(["send", "-c", str(cfg_path), "lite", "x"]) == 1
+        assert "no pane or category 'lite'" in capsys.readouterr().err
+        assert common.get_pending_any(sess) == []
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_category_lines_rollup(tmp_path: Path):
+    sess = f"test_cat_status_{os.getpid()}_{random.randrange(1_000_000)}"
+    cfg_path = write_config(tmp_path, f"""
+session_name: {sess}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          categories: [heavy]
+      - shell_command: claude
+        nudge:
+          agent: claude
+          categories: [heavy, light]
+""")
+    try:
+        cfg = common.load_config(cfg_path)
+        common.log_any(sess, "a", category="heavy")
+        common.log_any(sess, "b", category="ghost")
+        out = "\n".join(swarm_start.category_lines(cfg, {"0.0": "idle", "0.1": "working"}))
+        rows = {l.split()[0]: l.split() for l in out.splitlines()[2:]}
+        assert rows["heavy"][1:] == ["0.0,0.1", "1", "1", "0"]
+        assert rows["light"][1:] == ["0.1", "0", "0", "0"]
+        assert rows["ghost"][1:] == ["-", "0", "1", "0"]
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
