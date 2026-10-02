@@ -1,10 +1,10 @@
 ---
 id: TASK-69
 title: Decide ownership and boundary of the desktop MCP gateway
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-27 10:10'
-updated_date: '2026-08-27 10:43'
+updated_date: '2026-10-02 09:30'
 labels:
   - architecture
   - mcp
@@ -34,3 +34,9 @@ Decide whether the current local-mcp connector gateway belongs inside nudge, rem
 - [ ] #4 A recommended API boundary covers submit, query status, list/read replies, acknowledge, and routing without committing to a particular chat provider
 - [ ] #5 The outcome is recorded as a Backlog decision or architecture document with explicit migration and no-change paths
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decision: desktop MCP gateway lives in a separate service/repo (desktop-mcp), not in nudge. Too user-specific for now; nudge stays minimal. Revisit folding it in only if it proves itself and its shape is obvious/general.
+<!-- SECTION:FINAL_SUMMARY:END -->

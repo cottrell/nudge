@@ -1,9 +1,10 @@
 ---
 id: TASK-70
 title: Evaluate machine-wide nudge supervisor versus per-swarm workers
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-27 10:10'
+updated_date: '2026-10-02 09:28'
 labels:
   - architecture
   - swarm
@@ -30,3 +31,9 @@ Evaluate whether nudge should retain one Python session worker per swarm or intr
 - [ ] #4 The recommendation states quantitative or operational thresholds that would justify consolidation
 - [ ] #5 Any proposed change remains compatible with explicit per-project aiswarm commands and does not require infrastructure beyond the desktop without approval
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed without work: decided against a machine-wide supervisor. Current per-swarm session worker is sufficient; revisit only if process count or load becomes a real problem. (Original rationale was not logged at the time.)
+<!-- SECTION:FINAL_SUMMARY:END -->
