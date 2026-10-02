@@ -984,6 +984,90 @@ windows:
     assert calls[6] == ("runtime_map", "demo")
 
 
+def test_resume_launch_command_forms_and_no_double_mint():
+    sid = "11111111-1111-4111-8111-111111111111"
+    claude = session_ids.make_record("0.0", "claude", sid, "minted")
+    assert session_ids.resume_launch_command("claude", claude) == f"claude -r {sid}"
+    assert session_ids.resume_launch_command("grok", session_ids.make_record("0.1", "grok", sid, "minted")) == f"grok -r {sid}"
+    assert session_ids.resume_launch_command("antigravity", session_ids.make_record("0.2", "agy", sid, "proc_fd")) == f"agy --conversation {sid}"
+    assert session_ids.resume_launch_command("codex", session_ids.make_record("0.3", "codex", sid, "proc_fd")) == f"codex resume {sid}"
+    assert session_ids.resume_launch_command("codex", None) is None
+    assert session_ids.resume_launch_command("grok", session_ids.make_record("0.1", "grok", None, "")) is None
+    resumed = session_ids.resume_launch_command("claude", claude)
+    cmd, out_sid, src = session_ids.mint_launch_command("claude", resumed)
+    assert cmd == f"claude -r {sid}"
+    assert "--session-id" not in cmd
+    assert out_sid == sid
+    assert src == "argv"
+
+
+def test_start_resume_substitutes_recorded_ids_and_falls_back(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: resume_demo
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude --dangerously-skip-permissions
+        nudge: {agent: claude, monitor: true}
+      - shell_command: grok --always-approve
+        nudge: {agent: grok, monitor: true}
+      - shell_command: codex --dangerously-bypass-approvals-and-sandbox
+        nudge: {agent: codex, monitor: false}
+      - shell_command: agy --dangerously-skip-permissions
+        nudge: {agent: antigravity, monitor: true}
+"""))
+    claude_id = "11111111-1111-4111-8111-111111111111"
+    codex_id = "22222222-2222-4222-8222-222222222222"
+    agy_id = "33333333-3333-4333-8333-333333333333"
+    session_ids.save_records(cfg, {
+        "0.0": session_ids.make_record("0.0", "claude", claude_id, "minted"),
+        "0.2": session_ids.make_record("0.2", "codex", codex_id, "proc_fd"),
+        "0.3": session_ids.make_record("0.3", "agy", agy_id, "proc_fd"),
+    })
+    calls: list[tuple[str, str]] = []
+    minted: list[str] = []
+    monkeypatch.setattr(swarm_apply, "setup_grid", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_monitor", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_apply, "ensure_title", lambda *a, **k: None)
+    monkeypatch.setattr(
+        swarm_apply,
+        "ensure_command",
+        lambda cfg, pane, title, command, dry_run: calls.append((pane, command)) or True,
+    )
+    monkeypatch.setattr(swarm_apply, "write_runtime_map", lambda cfg: None)
+    monkeypatch.setattr(swarm_apply, "collect_pane_pids", lambda cfg: {})
+    monkeypatch.setattr(babysitctl, "ensure_workers", lambda *a, **k: None)
+    monkeypatch.setattr(swarm_start.time, "sleep", lambda *_: None)
+
+    def fake_new_id() -> str:
+        minted.append("called")
+        return "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    monkeypatch.setattr(session_ids, "new_session_id", fake_new_id)
+    swarm_start.start(cfg, dry_run=True, resume=True)
+
+    by_pane = dict(calls)
+    assert by_pane["0.0"] == f"claude -r {claude_id}"
+    assert "--session-id" not in by_pane["0.0"]
+    assert by_pane["0.2"] == f"codex resume {codex_id}"
+    assert by_pane["0.3"] == f"agy --conversation {agy_id}"
+    assert by_pane["0.1"] == "grok --always-approve --session-id aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert minted == ["called"]
+
+
+def test_cli_start_resume_flag(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(swarm_cli, "load_config", lambda path: "CFG")
+    monkeypatch.setattr(
+        swarm_cli.swarm_topology,
+        "start",
+        lambda cfg, dry_run, skip_grid=False, resume=False: calls.append((cfg, dry_run, skip_grid, resume)),
+    )
+    assert swarm_cli.main(["start", "-D", "--resume", "--skip-grid", "examples/swarm-grid.yaml"]) == 0
+    assert calls == [("CFG", True, True, True)]
+
+
 def test_start_dry_run_writes_runtime_notes(monkeypatch, tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo_dry

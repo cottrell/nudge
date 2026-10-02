@@ -39,7 +39,15 @@ try:
         task_categories,
         worker_state_path,
     )
-    from .session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
+    from .session_ids import (
+        mint_launch_command,
+        resume_launch_command,
+        make_record,
+        load_records,
+        save_records,
+        refresh_records,
+        merge_record,
+    )
 except ImportError:
     # direct script fallback
     from common import (
@@ -69,7 +77,15 @@ except ImportError:
         task_categories,
         worker_state_path,
     )
-    from session_ids import mint_launch_command, make_record, load_records, save_records, refresh_records, merge_record
+    from session_ids import (
+        mint_launch_command,
+        resume_launch_command,
+        make_record,
+        load_records,
+        save_records,
+        refresh_records,
+        merge_record,
+    )
 
 
 def _title_cats(pane) -> str:
@@ -402,7 +418,7 @@ def broadcast(cfg: SwarmConfig, message: str, include_nonmonitored: bool, dry_ru
         raise ValueError(f"no {scope} matched for broadcast")
 
 
-def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
+def setup_monitors(cfg: SwarmConfig, dry_run: bool, resume: bool = False) -> None:
     """Start monitors, set pane titles, and run agent commands. Run after setup_grid or tmuxp load."""
     for pane in cfg.panes:
         if pane.monitor:
@@ -413,10 +429,15 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
     for pane in cfg.panes:
         ensure_title(cfg, pane.pane, pane.title, dry_run)
         command = pane.command
+        if resume:
+            alt = resume_launch_command(pane.agent, records.get(pane.pane))
+            if alt:
+                command = alt
+                print(f"{pane.pane} resume -> {command}")
         minted = None
         mint_source = ""
         if pane.agent:
-            command, minted, mint_source = mint_launch_command(pane.agent, pane.command)
+            command, minted, mint_source = mint_launch_command(pane.agent, command)
         launched = ensure_command(cfg, pane.pane, pane.title, command, dry_run)
         if minted and (dry_run or launched):
             records[pane.pane] = merge_record(
@@ -431,7 +452,7 @@ def setup_monitors(cfg: SwarmConfig, dry_run: bool) -> None:
     write_runtime_map(cfg)
 
 
-def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
+def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False, resume: bool = False) -> None:
     for pane in cfg.panes:
         if pane.alias_warning:
             print(f"{pane.pane}: {pane.alias_warning}", file=sys.stderr)
@@ -445,7 +466,7 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False) -> None:
         init_comms_db(cfg.session_name)
     if not skip_grid:
         setup_grid(cfg, dry_run)
-    setup_monitors(cfg, dry_run)
+    setup_monitors(cfg, dry_run, resume=resume)
     # Ensure the one session worker (multiplexed comms/IO for every pane) is running.
     # Babysit prompt group is managed separately via 'aiswarm babysit start'.
     try:

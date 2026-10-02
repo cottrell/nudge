@@ -339,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
     start_p.add_argument("-D", "--dry-run", action="store_true", help="Validate and print actions without changing tmux; still writes runtime notes")
     start_p.add_argument("-a", "--attach", action="store_true", help="Attach to the tmux session after start")
     start_p.add_argument("--skip-grid", action="store_true", help="Skip session/pane creation (use after tmuxp load)")
+    start_p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Relaunch panes from session-ids.json (claude -r / grok -r / agy --conversation / codex resume). Panes with no recorded id keep their config command",
+    )
 
     status_p = sub.add_parser("status", help="Report current swarm state")
     _add_optional_config(status_p)
@@ -785,7 +790,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "start":
             cfg = _cfg_from_args(args)
-            swarm_topology.start(cfg, args.dry_run, skip_grid=args.skip_grid)
+            swarm_topology.start(cfg, args.dry_run, skip_grid=args.skip_grid, resume=args.resume)
             if args.attach and not args.dry_run:
                 subprocess.run(["tmux", "attach", "-t", cfg.session_name], check=True, text=True)
             return 0

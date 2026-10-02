@@ -76,8 +76,11 @@ aiswarm stop                 # workers + session teardown
 - Session identity / runtime map path: `aiswarm this` (resolves config; points at
   `/tmp/nudge-swarm/<session>/runtime.json` written on start).
 - Provider conversation IDs: `aiswarm sessions`. Claude/Grok get `--session-id` at
-  launch; others are bound via the pane PID (not newest-file-in-cwd). Resume with
-  the printed command after a crash.
+  launch; others are bound via the pane PID (not newest-file-in-cwd).
+  `aiswarm start --resume` swaps in the recorded short resume command
+  (`claude -r` / `grok -r` / `agy --conversation` / `codex resume`) before
+  mint. mint sees that flag and does not append a second id. No recorded id:
+  keep the config command. Plain `start` still mints.
 
 ### Next guides
 

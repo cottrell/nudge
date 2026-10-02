@@ -115,6 +115,20 @@ def mint_launch_command(agent: str | None, command: str) -> tuple[str, str | Non
     return f"{command.rstrip()} --session-id {sid}", sid, "minted"
 
 
+def resume_launch_command(agent: str | None, record: SessionRecord | None) -> str | None:
+    """Short resume command for a stored pane id, or None to keep pane.command.
+
+    Callers pass the result through mint_launch_command. The resume flag is
+    already session control, so mint does not append a second --session-id.
+    """
+    if record is None or not (record.session_id or "").strip():
+        return None
+    agent_c = canonical_agent(agent) or canonical_agent(record.agent)
+    if not agent_c:
+        return None
+    return resume_command(agent_c, record.session_id.strip())
+
+
 def session_id_from_argv(agent: str, argv: list[str]) -> str | None:
     agent = canonical_agent(agent)
     if agent == "codex":

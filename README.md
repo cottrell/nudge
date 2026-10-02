@@ -57,6 +57,7 @@ aiswarm instructions         # agent guides index
 aiswarm instructions overview
 aiswarm this                 # this swarm: config + runtime.json path
 aiswarm sessions             # provider session IDs (resume after a crash)
+aiswarm start --resume       # relaunch panes from those IDs
 aiswarm <command> --help     # flags
 ```
 
@@ -240,6 +241,12 @@ Notes:
 - provider session IDs: `aiswarm sessions` (also `session-ids.json` next to the
   config and under the runtime dir). Claude and Grok are launched with
   `--session-id`; live panes are matched by PID / open files, not newest-cwd.
+- `aiswarm start --resume` replaces each pane command that has a recorded id
+  with the short resume form (`claude -r`, `grok -r`, `agy --conversation`,
+  `codex resume`) before `mint_launch_command`. That flag is already session
+  control, so mint does not append a second `--session-id`. Panes with no
+  recorded id keep `pane.command` (Claude/Grok still mint). Plain `start`
+  always mints.
 - tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`
 
 ## Tasks dispatcher (backlog → free panes)
