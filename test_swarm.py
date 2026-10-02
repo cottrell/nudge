@@ -4843,3 +4843,279 @@ def test_sender_auto_population(monkeypatch):
     monkeypatch.setattr("common.load_config", lambda *_: None)
     assert _infer_sender() == "cli send"
 
+
+def test_parse_at_spec():
+    from datetime import datetime, timezone
+    base = datetime(2026, 10, 2, 10, 0, 0, tzinfo=timezone.utc)
+    # relative
+    assert common.parse_at_spec("+2h", now=base) == "2026-10-02 12:00:00"
+    assert common.parse_at_spec("+30m", now=base) == "2026-10-02 10:30:00"
+    assert common.parse_at_spec("+45s", now=base) == "2026-10-02 10:00:45"
+    assert common.parse_at_spec("+1h30m", now=base) == "2026-10-02 11:30:00"
+
+    # ISO format
+    assert common.parse_at_spec("2026-10-02T15:00:00Z") == "2026-10-02 15:00:00"
+    assert common.parse_at_spec("2026-10-02T15:00:00+02:00") == "2026-10-02 13:00:00"
+
+    # Invalid values raise ValueError
+    import pytest
+    with pytest.raises(ValueError, match="invalid --at"):
+        common.parse_at_spec("+")
+    with pytest.raises(ValueError, match="invalid --at"):
+        common.parse_at_spec("+bad")
+    with pytest.raises(ValueError, match="invalid --at"):
+        common.parse_at_spec("not-a-timestamp")
+    with pytest.raises(ValueError, match="cannot be empty"):
+        common.parse_at_spec("")
+
+
+def test_comms_db_migration():
+    import sqlite3
+    sess = f"test_migration_{os.getpid()}_{random.randrange(1_000_000)}"
+    db = Path("/tmp/nudge-swarm") / sess / "comms.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # Create an old schema without not_before
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("""
+                CREATE TABLE events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    recipient TEXT NOT NULL,
+                    sender TEXT,
+                    type TEXT DEFAULT 'msg',
+                    payload TEXT NOT NULL,
+                    meta TEXT
+                )
+            """)
+            conn.execute("INSERT INTO events (recipient, payload) VALUES ('0.0', 'legacy')")
+
+        # Calling init_comms_db migrates in place
+        common.init_comms_db(sess)
+        with sqlite3.connect(str(db)) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()]
+            assert "not_before" in cols
+            row = conn.execute("SELECT id, payload, not_before FROM events WHERE id=1").fetchone()
+            assert row == (1, "legacy", None)
+
+        # New sends work with not_before
+        eid = common.log_send(sess, "0.0", "new", not_before="2026-10-02 12:00:00")
+        with sqlite3.connect(str(db)) as conn:
+            row = conn.execute("SELECT id, payload, not_before FROM events WHERE id=?", (eid,)).fetchone()
+            assert row == (eid, "new", "2026-10-02 12:00:00")
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_scheduled_message_delivery_and_no_head_of_line_blocking():
+    import sqlite3
+    sess = f"test_sched_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.init_comms_db(sess)
+        future = "2099-01-01 00:00:00"
+        # 1. Event 1: scheduled in the future
+        e1 = common.log_send(sess, "0.0", "future msg 1", not_before=future)
+        # 2. Event 2 & 3: immediate
+        e2 = common.log_send(sess, "0.0", "immediate msg 2")
+        e3 = common.log_send(sess, "0.0", "immediate msg 3")
+
+        # get_pending_events should return e2 and e3, skipping e1 without blocking
+        pending = common.get_pending_events(sess, "0.0")
+        assert [r[0] for r in pending] == [e2, e3]
+
+        # Advance cursor as pane_worker would
+        for r in pending:
+            common.advance_cursor(sess, "0.0", r[0])
+        common.advance_cursor(sess, "0.0", pending[-1][0])
+
+        # Next poll: nothing pending (e1 still future, e2 and e3 already delivered)
+        assert common.get_pending_events(sess, "0.0") == []
+
+        # Send another immediate message e4
+        e4 = common.log_send(sess, "0.0", "immediate msg 4")
+        pending4 = common.get_pending_events(sess, "0.0")
+        assert [r[0] for r in pending4] == [e4]
+        common.advance_cursor(sess, "0.0", e4)
+        assert common.get_pending_events(sess, "0.0") == []
+
+        # Now simulate clock passing e1's due time
+        db = common._comms_db_path(sess)
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("UPDATE events SET not_before = '2000-01-01 00:00:00' WHERE id = ?", (e1,))
+
+        # e1 is now due!
+        due_pending = common.get_pending_events(sess, "0.0")
+        assert [r[0] for r in due_pending] == [e1]
+
+        # Advance cursor for e1
+        common.advance_cursor(sess, "0.0", e1)
+        assert common.get_pending_events(sess, "0.0") == []
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_scheduled_claim_any_and_category_no_head_of_line_blocking():
+    import sqlite3
+    sess = f"test_sched_any_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.init_comms_db(sess)
+        future = "2099-01-01 00:00:00"
+
+        # Future any message followed by due any message
+        e1 = common.log_any(sess, "future any", not_before=future)
+        e2 = common.log_any(sess, "due any")
+
+        # claim_any skips e1 and claims e2
+        c2 = common.claim_any(sess, "0.0")
+        assert c2 is not None
+        # Verify e2 was delivered, e1 still in __any__
+        assert len(common.get_pending_any(sess, due_only=True)) == 0
+        assert len(common.get_pending_any(sess, due_only=False)) == 1
+
+        # Now test category with scheduled messages
+        e3 = common.log_any(sess, "future heavy", category="heavy", not_before=future)
+        e4 = common.log_any(sess, "due heavy", category="heavy")
+
+        # Pane with category 'heavy' claims e4, not e3
+        c4 = common.claim_any(sess, "0.1", categories=["heavy"])
+        assert c4 is not None
+
+        # Simulate e3 becoming due
+        db = common._comms_db_path(sess)
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("UPDATE events SET not_before = '2000-01-01 00:00:00' WHERE id = ?", (e3,))
+
+        # Now e3 is claimed by heavy pane
+        c3 = common.claim_any(sess, "0.1", categories=["heavy"])
+        assert c3 is not None
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_scheduled_broadcast_fanout_no_head_of_line_blocking():
+    import sqlite3
+    sess = f"test_sched_bcast_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.init_comms_db(sess)
+        future = "2099-01-01 00:00:00"
+
+        common.log_broadcast(sess, "future bcast", not_before=future)
+        common.log_broadcast(sess, "due bcast")
+
+        # 0.0 fetches broadcast: only due bcast returned
+        bcasts = common.get_pending_broadcasts(sess, "0.0")
+        assert len(bcasts) == 1
+        assert bcasts[0][4] == "due bcast"
+
+        common.advance_broadcast_cursor(sess, "0.0", bcasts[0][0])
+        assert common.get_pending_broadcasts(sess, "0.0") == []
+
+        # Simulate time passing
+        db = common._comms_db_path(sess)
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("UPDATE events SET not_before = '2000-01-01 00:00:00' WHERE payload = 'future bcast'")
+
+        bcasts2 = common.get_pending_broadcasts(sess, "0.0")
+        assert len(bcasts2) == 1
+        assert bcasts2[0][4] == "future bcast"
+        common.advance_broadcast_cursor(sess, "0.0", bcasts2[0][0])
+        assert common.get_pending_broadcasts(sess, "0.0") == []
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_scheduled_messages_visible_in_log_and_status(tmp_path: Path, monkeypatch, capsys):
+    from common import SwarmConfig, PaneSpec, WindowSpec
+    from topology import print_log, status_lines
+    sess = f"test_sched_vis_{os.getpid()}_{random.randrange(1_000_000)}"
+    try:
+        common.init_comms_db(sess)
+        future = "2099-01-01 12:00:00"
+        eid = common.log_send(sess, "0.0", "remind me later", sender="user", not_before=future)
+
+        # get_scheduled_events returns it
+        sched = common.get_scheduled_events(sess)
+        assert len(sched) == 1
+        assert sched[0][0] == eid
+        assert sched[0][7] == future
+
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(f"""
+session_name: {sess}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+""")
+        cfg = common.load_config(cfg_path)
+
+        # print_log pending shows due time
+        print_log(cfg, pending=True)
+        out = capsys.readouterr().out
+        assert 'due="2099-01-01 12:00:00"' in out
+        assert "remind me later" in out
+
+        # status_lines includes Scheduled messages
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: type("Res", (), {"returncode": 0, "stdout": "grid\n"})())
+        monkeypatch.setattr("topology._query_monitor", lambda *a, **k: {"state": "idle"})
+        lines = status_lines(cfg)
+        status_text = "\n".join(lines)
+        assert "Scheduled messages:" in status_text
+        assert "due=2099-01-01 12:00:00" in status_text
+        assert "to=0.0" in status_text
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_cli_send_at(tmp_path: Path, monkeypatch, capsys):
+    from cli import main
+    sess = f"test_cli_at_{os.getpid()}_{random.randrange(1_000_000)}"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(f"""
+session_name: {sess}
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+          categories: [heavy]
+""")
+    try:
+        # Invalid --at format errors cleanly
+        ret = main(["send", "-c", str(cfg_path), "--at", "invalid-time", "0.0", "hello"])
+        assert ret == 1
+        err = capsys.readouterr().err
+        assert "error: invalid --at" in err
+
+        # Dry run with --at
+        ret = main(["send", "-c", str(cfg_path), "--at", "+2h", "-D", "0.0", "hello"])
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert "would log-send" in out
+        assert "at=" in out
+
+        # Live send with --at relative
+        ret = main(["send", "-c", str(cfg_path), "--at", "+2h", "0.0", "deferred"])
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert "log-sent" in out
+        assert "at=" in out
+
+        # Live send to category with --at
+        ret = main(["send", "-c", str(cfg_path), "--at", "+30m", "heavy", "deferred heavy"])
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert "log-sent" in out
+        assert "target=heavy" in out
+
+        # Verify in DB
+        sched = common.get_scheduled_events(sess)
+        assert len(sched) == 2
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+

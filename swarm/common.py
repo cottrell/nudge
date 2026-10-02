@@ -10,7 +10,7 @@ import subprocess
 import socket as _socket
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import yaml
 
 
@@ -53,6 +53,39 @@ def parse_duration(text: str) -> int:
     if secs <= 0:
         raise ValueError("duration must be positive")
     return secs
+
+
+def parse_at_spec(at_spec: str, now: datetime | None = None) -> str:
+    """Parse --at value (ISO timestamp or relative +Nh/+Nm/+Ns).
+    Returns UTC timestamp string formatted as 'YYYY-MM-DD HH:MM:SS'.
+    Raises ValueError on invalid formats.
+    """
+    raw = (at_spec or "").strip()
+    if not raw:
+        raise ValueError("--at value cannot be empty")
+    if raw.startswith("+"):
+        try:
+            secs = parse_duration(raw[1:])
+        except ValueError as exc:
+            raise ValueError(f"invalid --at relative format '{at_spec}': {exc}") from exc
+        base = now if now is not None else datetime.now(timezone.utc)
+        if base.tzinfo is None:
+            base = base.replace(tzinfo=timezone.utc)
+        target = base + timedelta(seconds=secs)
+        return target.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        dt = datetime.fromisoformat(raw)
+    except Exception as exc:
+        raise ValueError(
+            f"invalid --at timestamp '{at_spec}': expected ISO timestamp "
+            "(e.g. 2026-10-02T12:00:00) or relative offset (+2h, +30m, +45s)"
+        ) from exc
+    if dt.tzinfo is not None:
+        target = dt.astimezone(timezone.utc)
+    else:
+        target = dt.astimezone().astimezone(timezone.utc)
+    return target.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def load_until(path: Path) -> float | None:
@@ -833,9 +866,13 @@ def init_comms_db(session_name: str) -> Path:
                 sender TEXT,
                 type TEXT DEFAULT 'msg',
                 payload TEXT NOT NULL,
-                meta TEXT
+                meta TEXT,
+                not_before DATETIME
             )
         """)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()]
+        if "not_before" not in cols:
+            conn.execute("ALTER TABLE events ADD COLUMN not_before DATETIME")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cursors (
                 recipient TEXT PRIMARY KEY,
@@ -850,36 +887,50 @@ def init_comms_db(session_name: str) -> Path:
                 delivery_event_id INTEGER NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cursor_acks (
+                recipient TEXT NOT NULL,
+                event_id INTEGER NOT NULL,
+                acked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (recipient, event_id)
+            )
+        """)
     return db
 
 def log_send(session_name: str, recipient: str, payload: str, sender: str = None,
-             etype: str = "msg", meta: dict | None = None) -> int:
+             etype: str = "msg", meta: dict | None = None,
+             not_before: str | None = None) -> int:
     """Append to the event log for a pane recipient. Returns event id."""
     db = init_comms_db(session_name)
-    m = json.dumps(meta) if meta else None
+    m_dict = dict(meta) if meta else {}
+    if not_before and "not_before" not in m_dict:
+        m_dict["not_before"] = not_before
+    m = json.dumps(m_dict) if m_dict else None
     with _sqlite3.connect(str(db)) as conn:
         cur = conn.execute(
-            "INSERT INTO events (recipient, sender, type, payload, meta) "
-            "VALUES (?,?,?,?,?)",
-            (recipient, sender, etype, payload, m)
+            "INSERT INTO events (recipient, sender, type, payload, meta, not_before) "
+            "VALUES (?,?,?,?,?,?)",
+            (recipient, sender, etype, payload, m, not_before)
         )
         eid = cur.lastrowid
     return eid
 
 def log_broadcast(session_name: str, message: str, include_nonmonitored: bool = False,
-                  sender: str = None) -> None:
+                  sender: str = None, not_before: str | None = None) -> None:
     """Write a broadcast event. Consumer will fan out to appropriate panes."""
     # For simplicity we write a special recipient; real fan-out can happen at consume time
     # or we can enumerate panes here. Start simple.
     log_send(session_name, "__broadcast__", message, sender, "broadcast",
-             meta={"include_nonmonitored": include_nonmonitored})
+             meta={"include_nonmonitored": include_nonmonitored},
+             not_before=not_before)
 
 
 def log_any(session_name: str, message: str, sender: str = None,
-            category: str | None = None) -> int:
+            category: str | None = None, not_before: str | None = None) -> int:
     """Queue a message for exactly one eligible idle pane (in category, if given)."""
     return log_send(session_name, "__any__", message, sender, "any",
-                    meta={"category": category} if category else None)
+                    meta={"category": category} if category else None,
+                    not_before=not_before)
 
 
 def pane_has_task_assignment(session_name: str, pane: str) -> bool:
@@ -894,7 +945,8 @@ def pane_has_task_assignment(session_name: str, pane: str) -> bool:
 def claim_any(session_name: str, pane: str, categories: list[str] | None = None) -> int | None:
     """Atomically route the oldest unclaimed any event to pane.
 
-    Events carrying meta.category only go to panes that have that category."""
+    Events carrying meta.category only go to panes that have that category.
+    Skips events where not_before is in the future."""
     if pane_has_task_assignment(session_name, pane):
         return None
     db = init_comms_db(session_name)
@@ -903,9 +955,10 @@ def claim_any(session_name: str, pane: str, categories: list[str] | None = None)
         have = list(categories or [])
         marks = ",".join("?" * len(have))
         row = conn.execute(
-            "SELECT e.id, e.sender, e.payload, e.meta FROM events e "
+            "SELECT e.id, e.sender, e.payload, e.meta, e.not_before FROM events e "
             "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
             "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
+            "AND (e.not_before IS NULL OR datetime(e.not_before) <= datetime('now')) "
             "AND ((CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IS NULL "
             f"OR (CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IN ({marks})) "
             "ORDER BY e.id LIMIT 1",
@@ -913,15 +966,15 @@ def claim_any(session_name: str, pane: str, categories: list[str] | None = None)
         ).fetchone()
         if row is None:
             return None
-        queue_id, sender, payload, raw_meta = row
+        queue_id, sender, payload, raw_meta, not_before = row
         try:
             meta = json.loads(raw_meta) if raw_meta else {}
         except (TypeError, json.JSONDecodeError):
             meta = {}
         meta.update({"queue_event_id": queue_id, "selected_pane": pane})
         cur = conn.execute(
-            "INSERT INTO events (recipient, sender, type, payload, meta) VALUES (?,?,?,?,?)",
-            (pane, sender or "any-dispatch", "any-delivery", payload, json.dumps(meta)),
+            "INSERT INTO events (recipient, sender, type, payload, meta, not_before) VALUES (?,?,?,?,?,?)",
+            (pane, sender or "any-dispatch", "any-delivery", payload, json.dumps(meta), not_before),
         )
         delivery_id = cur.lastrowid
         conn.execute(
@@ -931,15 +984,16 @@ def claim_any(session_name: str, pane: str, categories: list[str] | None = None)
         return delivery_id
 
 
-def get_pending_any(session_name: str):
+def get_pending_any(session_name: str, due_only: bool = False):
     db = _comms_db_path(session_name)
     if not db.exists():
         return []
     with _sqlite3.connect(str(db)) as conn:
+        cond = "AND (e.not_before IS NULL OR datetime(e.not_before) <= datetime('now'))" if due_only else ""
         return conn.execute(
-            "SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta FROM events e "
-            "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
-            "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL ORDER BY e.id"
+            f"SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta FROM events e "
+            f"LEFT JOIN any_claims c ON c.queue_event_id = e.id "
+            f"WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL {cond} ORDER BY e.id"
         ).fetchall()
 
 
@@ -961,7 +1015,7 @@ def log_ack(session_name: str, pane: str, acked_event_id: int,
     )
 
 
-def get_pending_events(session_name: str, recipient: str):
+def get_pending_events(session_name: str, recipient: str, due_only: bool = True):
     """Return (id, ts, sender, type, payload, meta) for unread events."""
     db = _comms_db_path(session_name)
     if not db.exists():
@@ -970,10 +1024,19 @@ def get_pending_events(session_name: str, recipient: str):
         cur = conn.execute("SELECT last_id FROM cursors WHERE recipient = ?", (recipient,))
         row = cur.fetchone()
         last = row[0] if row else 0
+        cond = "AND (e.not_before IS NULL OR datetime(e.not_before) <= datetime('now'))" if due_only else ""
         cur = conn.execute(
-            "SELECT id, ts, sender, type, payload, meta FROM events "
-            "WHERE recipient = ? AND id > ? ORDER BY id",
-            (recipient, last)
+            f"""
+            SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta
+            FROM events e
+            LEFT JOIN cursor_acks a ON a.recipient = ? AND a.event_id = e.id
+            WHERE e.recipient = ?
+              AND a.event_id IS NULL
+              AND (e.id > ? OR e.not_before IS NOT NULL)
+              {cond}
+            ORDER BY e.id
+            """,
+            (recipient, recipient, last),
         )
         return cur.fetchall()
 
@@ -986,7 +1049,26 @@ def advance_cursor(session_name: str, recipient: str, last_id: int):
             INSERT INTO cursors (recipient, last_id) VALUES (?,?)
             ON CONFLICT(recipient) DO UPDATE SET last_id = MAX(cursors.last_id, excluded.last_id)
             """,
-            (recipient, last_id)
+            (recipient, last_id),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO cursor_acks (recipient, event_id)
+            VALUES (?, ?)
+            """,
+            (recipient, last_id),
+        )
+        target_rec = "__broadcast__" if recipient.endswith(":bcast") else recipient
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO cursor_acks (recipient, event_id)
+            SELECT ?, id FROM events
+            WHERE recipient = ?
+              AND id <= ?
+              AND not_before IS NOT NULL
+              AND datetime(not_before) <= datetime('now')
+            """,
+            (recipient, target_rec, last_id),
         )
 
 
@@ -1026,7 +1108,7 @@ def get_pending_count(session_name: str, recipient: str) -> int:
     return len(get_pending_events(session_name, recipient))
 
 
-def get_pending_broadcasts(session_name: str, pane: str):
+def get_pending_broadcasts(session_name: str, pane: str, due_only: bool = True):
     """Pending broadcast events, using a per-pane cursor for __broadcast__ so
     multiple panes don't interfere with each other's broadcast cursors."""
     bcast_key = f"{pane}:bcast"
@@ -1037,25 +1119,26 @@ def get_pending_broadcasts(session_name: str, pane: str):
         cur = conn.execute("SELECT last_id FROM cursors WHERE recipient = ?", (bcast_key,))
         row = cur.fetchone()
         last = row[0] if row else 0
+        cond = "AND (e.not_before IS NULL OR datetime(e.not_before) <= datetime('now'))" if due_only else ""
         cur = conn.execute(
-            "SELECT id, ts, sender, type, payload, meta FROM events "
-            "WHERE recipient = '__broadcast__' AND id > ? ORDER BY id",
-            (last,)
+            f"""
+            SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta
+            FROM events e
+            LEFT JOIN cursor_acks a ON a.recipient = ? AND a.event_id = e.id
+            WHERE e.recipient = '__broadcast__'
+              AND a.event_id IS NULL
+              AND (e.id > ? OR e.not_before IS NOT NULL)
+              {cond}
+            ORDER BY e.id
+            """,
+            (bcast_key, last),
         )
         return cur.fetchall()
 
 
 def advance_broadcast_cursor(session_name: str, pane: str, last_id: int):
     bcast_key = f"{pane}:bcast"
-    db = init_comms_db(session_name)
-    with _sqlite3.connect(str(db)) as conn:
-        conn.execute(
-            """
-            INSERT INTO cursors (recipient, last_id) VALUES (?,?)
-            ON CONFLICT(recipient) DO UPDATE SET last_id = MAX(cursors.last_id, excluded.last_id)
-            """,
-            (bcast_key, last_id)
-        )
+    advance_cursor(session_name, bcast_key, last_id)
 
 
 def clear_comms(session_name: str, confirm: bool = False):
@@ -1069,12 +1152,30 @@ def clear_comms(session_name: str, confirm: bool = False):
     if db.exists():
         with _sqlite3.connect(str(db)) as conn:
             conn.execute("DELETE FROM any_claims")
+            conn.execute("DELETE FROM cursor_acks")
             conn.execute("DELETE FROM events")
             conn.execute("DELETE FROM cursors")
         # VACUUM cannot run inside a transaction
         with _sqlite3.connect(str(db)) as conn:
             conn.execute("VACUUM")
         print(f"cleared comms log for {session_name}")
+
+
+def get_scheduled_events(session_name: str) -> list:
+    """Return all future events where not_before > now, ordered by due time."""
+    db = _comms_db_path(session_name)
+    if not db.exists():
+        return []
+    with _sqlite3.connect(str(db)) as conn:
+        return conn.execute(
+            """
+            SELECT e.id, e.ts, e.recipient, e.sender, e.type, e.payload, e.meta, e.not_before
+            FROM events e
+            WHERE e.not_before IS NOT NULL
+              AND datetime(e.not_before) > datetime('now')
+            ORDER BY datetime(e.not_before), e.id
+            """
+        ).fetchall()
 
 
 # --- agentsview provider usage (task-7) ---

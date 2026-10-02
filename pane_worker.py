@@ -97,6 +97,7 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
             out_msg = _format_delivered_message(payload, sender)
             _send_message(target, out_msg, simulate)
             log_ack(session, pane, eid, pane, target)
+            advance_cursor(session, pane, eid)
         if pending: advance_cursor(session, pane, pending[-1][0])
         bcasts = get_pending_broadcasts(session, pane)
         for eid, _ts, sender, _etype, payload, meta in bcasts:
@@ -120,6 +121,7 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
             out_msg = _format_delivered_message(payload, sender)
             _send_message(target, out_msg, simulate)
             log_ack(session, pane, eid, "__broadcast__", target)
+            advance_broadcast_cursor(session, pane, eid)
         if bcasts: advance_broadcast_cursor(session, pane, bcasts[-1][0])
     except Exception as exc:
         print(f"comms error {session}:{pane}: {exc}", flush=True)

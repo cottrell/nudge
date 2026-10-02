@@ -776,6 +776,29 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("             Run `babysit start` / `babysit stop` to toggle the babysit prompt group.")
 
     lines.extend(category_lines(cfg, states))
+
+    try:
+        from .common import get_scheduled_events
+    except ImportError:
+        from common import get_scheduled_events
+    try:
+        sched = get_scheduled_events(cfg.session_name)
+        if sched:
+            lines.append("")
+            lines.append("Scheduled messages:")
+            for eid, _ts, rec, snd, _typ, pay, meta, due in sched:
+                cat_suffix = ""
+                if rec == "__any__":
+                    try:
+                        cat = (json.loads(meta) if meta else {}).get("category")
+                        if cat:
+                            cat_suffix = f":{cat}"
+                    except Exception:
+                        pass
+                rec_display = f"{rec}{cat_suffix}"
+                lines.append(f"  id={eid} to={rec_display} from={snd or '-'} due={due} payload={pay}")
+    except Exception:
+        pass
     return lines
 
 
@@ -938,6 +961,18 @@ def _print_log_event(
         _kv("from", snd or "-"),
         _kv("to", rec),
     ]
+    due = None
+    if meta:
+        try:
+            m = json.loads(meta) if isinstance(meta, str) else meta
+            if isinstance(m, dict) and "not_before" in m:
+                due = m["not_before"]
+        except Exception:
+            pass
+    if "due" in extra:
+        due = extra.pop("due")
+    if due:
+        parts.append(_kv("due", due))
     for key, value in extra.items():
         parts.append(_kv(key, value))
     parts.append(_kv("payload", pay))
@@ -967,11 +1002,11 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
     print()
     if pending:
         if pane:
-            pend = get_pending_events(cfg.session_name, pane)
+            pend = get_pending_events(cfg.session_name, pane, due_only=False)
             for eid, ts, snd, typ, pay, meta in pend:
                 _print_log_event(eid, ts, pane, snd, typ, pay, meta)
             try:
-                bpend = get_pending_broadcasts(cfg.session_name, pane)
+                bpend = get_pending_broadcasts(cfg.session_name, pane, due_only=False)
                 for eid, ts, snd, typ, pay, meta in bpend:
                     _print_log_event(eid, ts, pane, snd, typ, pay, meta, via="broadcast")
             except Exception:
@@ -979,16 +1014,16 @@ def print_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
         else:
             found = False
             for pane_spec in cfg.panes:
-                for eid, ts, snd, typ, pay, meta in get_pending_events(cfg.session_name, pane_spec.pane):
+                for eid, ts, snd, typ, pay, meta in get_pending_events(cfg.session_name, pane_spec.pane, due_only=False):
                     _print_log_event(eid, ts, pane_spec.pane, snd, typ, pay, meta)
                     found = True
                 try:
-                    for eid, ts, snd, typ, pay, meta in get_pending_broadcasts(cfg.session_name, pane_spec.pane):
+                    for eid, ts, snd, typ, pay, meta in get_pending_broadcasts(cfg.session_name, pane_spec.pane, due_only=False):
                         _print_log_event(eid, ts, pane_spec.pane, snd, typ, pay, meta, via="broadcast")
                         found = True
                 except Exception:
                     pass
-            for eid, ts, snd, typ, pay, meta in get_pending_any(cfg.session_name):
+            for eid, ts, snd, typ, pay, meta in get_pending_any(cfg.session_name, due_only=False):
                 try:
                     cat = (json.loads(meta) if meta else {}).get("category")
                 except (TypeError, ValueError):

@@ -50,6 +50,7 @@ aiswarm send 0.2 "msg"       # durable poke via log
 aiswarm send any "msg"       # one eligible idle pane claims it
 aiswarm send heavy "msg"     # same, only panes with category `heavy`
 aiswarm send other:0.1 "msg" # cross-swarm qualified send (delivered on idle)
+aiswarm send --at +2h 0.2 "msg" # deferred/scheduled send (ISO or +Nh/+Nm/+Ns)
 aiswarm babysit stop
 aiswarm tasks stop
 aiswarm stop                 # workers + session teardown
@@ -184,7 +185,7 @@ Common workflow:
   aiswarm status --brief              Pane states
   aiswarm capture <pane>              Snapshot pane text
   aiswarm wait <pane>                 Block until pane monitor idle
-  aiswarm send <target|swarm:target> "msg" Durable message via log (delivered on idle)
+  aiswarm send [--at TIME] <target|swarm:target> "msg" Durable message via log (delivered on idle)
   aiswarm swarms                      List active/inactive swarms on this machine
   aiswarm clear [pane]                Send '/clear' via log (all agent panes by default)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)

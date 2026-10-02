@@ -415,9 +415,20 @@ def build_parser() -> argparse.ArgumentParser:
             "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path\n"
             '  aiswarm send -s otherswarm 0.1 "hello from nudge"   # cross-swarm\n'
             '  aiswarm send otherswarm:0.1 "hello from nudge"      # qualified shorthand\n'
-            '  aiswarm send otherswarm:any "pick this up"          # qualified any'
+            '  aiswarm send otherswarm:any "pick this up"          # qualified any\n'
+            '  aiswarm send --at +2h 0.2 "check progress"          # scheduled delivery\n'
+            '  aiswarm send --at +30m any "nudge on idle"          # scheduled any'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    send_p.add_argument(
+        "--at",
+        dest="at",
+        default=None,
+        help=(
+            "Defer message delivery until specified time: ISO timestamp "
+            "(e.g. 2026-10-02T12:00:00) or relative offset (+2h, +30m, +45s)"
+        ),
     )
     send_p.add_argument(
         "-c",
@@ -974,9 +985,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             msg = " ".join(msg_parts)
             try:
-                from .common import log_any, log_send
+                from .common import log_any, log_send, parse_at_spec
             except ImportError:
-                from common import log_any, log_send
+                from common import log_any, log_send, parse_at_spec
+
+            at_spec = getattr(args, "at", None)
+            not_before = None
+            if at_spec:
+                try:
+                    not_before = parse_at_spec(at_spec)
+                except ValueError as exc:
+                    print(f"error: {exc}", file=sys.stderr)
+                    return 1
 
             swarm_name = getattr(args, "swarm", None)
             if not swarm_name and ":" in target and not target.startswith("mcp:"):
@@ -1022,13 +1042,14 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
 
             sender_name = getattr(args, "sender", None) or _infer_sender(session_name if not swarm_name else None)
+            at_info = f" at={not_before}" if not_before else ""
             if args.dry_run:
-                print(f"would log-send session={session_name} target={target} sender={sender_name} msg={msg}")
+                print(f"would log-send session={session_name} target={target} sender={sender_name}{at_info} msg={msg}")
             else:
-                eid = (log_any(session_name, msg, sender=sender_name, category=category)
+                eid = (log_any(session_name, msg, sender=sender_name, category=category, not_before=not_before)
                        if target == "any" or category
-                       else log_send(session_name, target, msg, sender=sender_name))
-                print(f"log-sent id={eid} session={session_name} target={target}")
+                       else log_send(session_name, target, msg, sender=sender_name, not_before=not_before))
+                print(f"log-sent id={eid} session={session_name} target={target}{at_info}")
             return 0
 
         if args.command == "clear":

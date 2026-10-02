@@ -83,6 +83,7 @@ aiswarm start                   # no path needed inside the project
 aiswarm send 0.0 "hello"        # same
 aiswarm send any "check tests"  # one eligible idle pane receives it
 aiswarm send heavy "refactor"   # one idle pane in category `heavy`
+aiswarm send --at +2h 0.2 "check progress"  # deferred delivery (ISO timestamp or +Nh/+Nm/+Ns)
 aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)
 ```
 
@@ -145,6 +146,7 @@ aiswarm broadcast "AGENTS.md updated; please re-read it."
 aiswarm broadcast --via-log "use durable log"    # write to event log instead of direct send
 aiswarm send 0.0 "hello via log"                 # durable, delivered on idle
 aiswarm send any "investigate the failure"       # durable, exactly one idle pane
+aiswarm send --at +30m 0.0 "poke in 30m"         # scheduled delivery (+2h, +30m, ISO timestamp)
 aiswarm send -s otherswarm 0.1 "hi from nudge"   # cross-swarm, via its runtime.json
 aiswarm log --pending
 aiswarm cursors
@@ -161,6 +163,8 @@ even when all panes are busy; the always-running comms worker atomically routes 
 to exactly one idle monitored pane. Panes holding local Backlog task assignments
 are skipped. This does not require `aiswarm tasks start`, and it does not add task
 completion or chase semantics.
+
+Scheduled messages (`send --at`): Defer message delivery with `--at <ISO timestamp|+Nh|+Nm|+Ns>` (e.g. `+2h`, `+30m`, `+45s`, `2026-10-02T12:00:00`). The message is stored in the durable event log with a not-before timestamp and delivered only after that time has passed and normal idle conditions hold. Does not cause head-of-line blocking for subsequent immediate messages. Scheduled messages appear in `aiswarm log --pending` and `aiswarm status` with their due times.
 
 Pane categories: list labels per pane (`nudge.categories: [heavy, claude]`, several
 allowed). `aiswarm send heavy "msg"` is `send any` restricted to panes carrying that
