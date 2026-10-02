@@ -1,13 +1,15 @@
 ---
 id: TASK-64
-title: Support scheduled tasks? i.e. run this in the future
+title: Schedule backlog tasks (not-before ready filter in tasks dispatcher)
 status: To Do
 assignee: []
 created_date: '2026-08-07 09:35'
-updated_date: '2026-10-02 09:27'
+updated_date: '2026-10-02 09:44'
 labels:
   - parked
 dependencies: []
+references:
+  - TASK-82
 ---
 
 ## Description
@@ -29,4 +31,6 @@ Scheduling is a ready-filter in the tasks dispatcher, not a babysit feature. A t
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-02: Parked. Backlog has no custom fields (dueDate is date-only deadline). Revisit if Backlog gains a start-time/custom field, or decide on a label convention. Scheduled messages are tracked separately (see send --at task).
+
+Scope: this is about scheduling BACKLOG TASKS in the 'aiswarm tasks' dispatcher. It is NOT the comms-message scheduler: that is TASK-82 (aiswarm send --at), done. Use TASK-82 for timed reminders/nudges; use this only for deferring real backlog work. Reference: TASK-82.
 <!-- SECTION:NOTES:END -->
