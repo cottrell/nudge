@@ -1,10 +1,10 @@
 ---
 id: TASK-68
 title: Evaluate mobile voice-to-swarm and asynchronous backtalk
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-27 10:10'
-updated_date: '2026-08-27 10:57'
+updated_date: '2026-10-02 09:10'
 labels:
   - voice
   - mcp
@@ -31,14 +31,20 @@ Research and prototype the lowest-friction conversational round trip for capturi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Current Grok and ChatGPT voice support for custom MCP/connectors is verified from primary documentation and tested where practical
-- [ ] #2 Options compare existing subscription UIs, OpenClaw, and at least one self-hosted conversational inbox or messaging approach by cost, phone voice UX, connector availability, security, and setup burden
-- [ ] #3 The design defines durable correlation between submitted work, completion replies, conversation or task identity, acknowledgement, and replay without requiring the original voice session to remain open
-- [ ] #4 A minimal end-to-end experiment submits one phone-originated task and later pulls the correlated result into a user-initiated Grok or ChatGPT conversation
-- [ ] #5 The design does not emit unsolicited mobile notifications or speech; the user explicitly asks to check, continue, or retrieve replies
-- [ ] #6 A recommendation explicitly states whether OpenClaw should be adopted, borrowed from, or deferred
-- [ ] #7 Every candidate path has an auth audit stating the exact executable or surface, credential source, subscription entitlement and quota bucket, provider support status, and fallback behavior; claims that a subscription works require an end-to-end test proving no API key or PAYG endpoint was used and no silent fallback occurred
-- [ ] #8 Architecture may rely on subscription access only through the provider official CLI after normal user login; subscription OAuth, reusable auth tokens, API-compatible endpoints, embedded runtimes, connector entitlements, and third-party subscription bridges are treated as non-durable experiments and must remain optional and replaceable
-- [ ] #9 A phone-first browser UI over real tmux-backed official CLIs is evaluated separately from API-model chat frontends, including Agent Tmux Web, AgentDeck and a generic xterm.js option; the assessment covers direct session switching, structured chat rendering, voice dictation and selected-response playback
-- [ ] #10 A minimal custom browser prototype defines and tests an explicit tmux request/reply boundary: safe nudge input delivery, raw terminal fallback, and either provider transcript extraction or an explicit mailbox reply before enabling automatic TTS
+- [x] #1 Current Grok and ChatGPT voice support for custom MCP/connectors is verified from primary documentation and tested where practical
+- [x] #2 The design defines durable correlation between submitted work, completion replies, conversation or task identity, acknowledgement, and replay without requiring the original voice session to remain open
+- [x] #3 A minimal end-to-end experiment submits one phone-originated task and later pulls the correlated result into a user-initiated Grok or ChatGPT conversation
+- [x] #4 The design does not emit unsolicited mobile notifications or speech; the user explicitly asks to check, continue, or retrieve replies
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Dropped scope (user decision 2026-10-02): OpenClaw/inbox comparison, auth audit, phone tmux UI evals (muxpod already in use). Simple comms.db mailbox chosen.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Voice-to-swarm round trip delivered in ~/dev/desktop-mcp: Grok/ChatGPT connectors -> send_swarm_message -> aiswarm comms.db; replies pulled via poll-only check_messages (cursor/ack/replay, no push). Grok->desktop confirmed working by user. Comparison, auth-audit and phone-UI criteria dropped.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -394,10 +394,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     send_p = sub.add_parser(
         "send",
-        help="Send to one pane, or any eligible pane, via the event log",
+        help="Send to one pane, category, 'any', or another swarm via event log",
         description=(
-            "Send via the durable event log (instead of direct tmux-send). Target a "
-            "pane, or use 'any' to let one eligible idle pane claim the message."
+            "Send via the durable event log (delivered on pane idle). Target a "
+            "pane (e.g. 0.2), category, 'any', or another swarm via qualified "
+            "'<swarm>:<target>'. Messages delivered to panes include an envelope "
+            "prefix identifying the sender."
         ),
         epilog=(
             "examples:\n"
@@ -440,15 +442,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--sender",
         dest="sender",
         default=None,
-        help="Optional sender identity string recorded in comms.db (default: 'cli send')",
+        help=(
+            "Optional sender identity string recorded in comms.db "
+            "(default: auto-inferred from tmux session/pane or local config)"
+        ),
     )
     send_p.add_argument(
         "tokens",
         nargs="+",
-        metavar=("PANE", "MESSAGE"),
+        metavar=("TARGET", "MESSAGE"),
         help=(
-            "PANE id (e.g. 0.2), or 'any', 'mcp', then MESSAGE words. "
-            "Legacy: optional leading CONFIG path before the target"
+            "TARGET pane (e.g. 0.2), category, 'any', 'mcp', or qualified '<swarm>:<target>', "
+            "then MESSAGE words. Legacy: optional leading CONFIG path before the target"
         ),
     )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")

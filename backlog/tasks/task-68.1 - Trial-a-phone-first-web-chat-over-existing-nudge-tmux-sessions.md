@@ -1,11 +1,11 @@
 ---
 id: TASK-68.1
 title: Trial a phone-first web chat over existing nudge tmux sessions
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-27 11:30'
-updated_date: '2026-08-27 11:36'
+updated_date: '2026-10-02 09:20'
 labels:
   - mobile-web
   - voice
@@ -49,4 +49,12 @@ Test whether an existing browser UI can provide usable text and voice-dictated c
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-08-27 trial: cloned Agent Tmux Web v0.1.26 at aa13d56 into ~/dev/agent-tmux-web after source/security inspection. Built production bundle and ran tests (269/270; only source-registry manifest assertion fails after patched ws update). Updated runtime ws to 8.21.3 due high-severity memory-exhaustion advisory. Started transient user service agent-tmux-web-trial.service on [::]:16174 with required token and Codex app-server autostart disabled. Verified unauthenticated API=401, authenticated API=200, and discovery of 12 existing tmux sessions including nudge-created sessions. Phone UX remains unverified. Security: token grants control over all user tmux sessions, not only nudge; HTTP permits keyboard dictation but trusted HTTPS is required before browser microphone/VAD testing.
+
+Dropped 2026-10-02: user uses muxpod; phone UI evals not wanted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Dropped without work; not needed (muxpod already in use). No ACs verified.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -45,9 +45,11 @@ aiswarm start                # tmux grid + monitors + comms workers
 aiswarm babysit start        # optional idle prompt loops (--for 1h to auto-stop)
 aiswarm tasks start          # poll backlog → free panes (--for 1h to auto-stop)
 aiswarm status --brief
+aiswarm swarms               # discover swarms on this machine (active/inactive)
 aiswarm send 0.2 "msg"       # durable poke via log
 aiswarm send any "msg"       # one eligible idle pane claims it
 aiswarm send heavy "msg"     # same, only panes with category `heavy`
+aiswarm send other:0.1 "msg" # cross-swarm qualified send (delivered on idle)
 aiswarm babysit stop
 aiswarm tasks stop
 aiswarm stop                 # workers + session teardown
@@ -178,7 +180,7 @@ Common workflow:
   aiswarm status --brief              Pane states
   aiswarm capture <pane>              Snapshot pane text
   aiswarm wait <pane>                 Block until pane monitor idle
-  aiswarm send <pane|any|category> "msg" Durable message via log (delivered on idle)
+  aiswarm send <target|swarm:target> "msg" Durable message via log (delivered on idle)
   aiswarm swarms                      List active/inactive swarms on this machine
   aiswarm clear [pane]                Send '/clear' via log (all agent panes by default)
   aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)
