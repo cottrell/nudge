@@ -265,6 +265,22 @@ def print_model_help() -> None:
         print()
 
 
+_HELP_ORDER = (
+    "init start stop status this sessions swarms worker "
+    "send broadcast clear log clear-comms healthcheck "
+    "capture wait babysit tasks "
+    "quota quota-debug av-usage help instructions"
+).split()
+
+
+def _order_subcommands(sub: argparse._SubParsersAction) -> None:
+    """Display-only: group related commands in `aiswarm -h`. Unlisted ones go last."""
+    rank = {n: i for i, n in enumerate(_HELP_ORDER)}
+    last = len(rank)
+    sub._choices_actions.sort(key=lambda a: rank.get(a.dest, last))
+    sub.choices = dict(sorted(sub.choices.items(), key=lambda kv: rank.get(kv[0], last)))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Unified CLI for config-driven tmux swarm workflows.",
@@ -662,6 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Run the tasks group for a duration (1h, 30m, 90s, or seconds) then auto-stop",
                 )
 
+    _order_subcommands(sub)
     return parser
 
 

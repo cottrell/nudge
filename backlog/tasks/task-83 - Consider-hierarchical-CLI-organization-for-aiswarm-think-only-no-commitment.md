@@ -4,7 +4,7 @@ title: 'Consider hierarchical CLI organization for aiswarm (think only, no commi
 status: To Do
 assignee: []
 created_date: '2026-10-02 09:46'
-updated_date: '2026-10-02 09:50'
+updated_date: '2026-10-02 10:07'
 labels:
   - cli
   - parked
@@ -40,4 +40,6 @@ Considerations: (+) discoverability, shorter --help, consistent places for share
 
 <!-- SECTION:NOTES:BEGIN -->
 Related: multi-swarm addressing audit (selector design for send -c vs -s, swarm:target for capture/wait) should be decided together with this.
+
+Free option done (display only): aiswarm -h now lists commands grouped (lifecycle, messaging, pane, automation, usage/info) via _order_subcommands in swarm/cli.py. No behavior change.
 <!-- SECTION:NOTES:END -->
