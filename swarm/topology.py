@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import json
+from pathlib import Path
 
 try:
     from .common import (
@@ -1013,3 +1014,95 @@ def watch_log(cfg: SwarmConfig, pane: str | None = None, limit: int = 50, pendin
             time.sleep(interval)
     except KeyboardInterrupt:
         return
+
+
+def inspect_swarms(runtime_root: Path | None = None) -> list[dict]:
+    if runtime_root is None:
+        runtime_root = Path("/tmp/nudge-swarm")
+    swarms: list[dict] = []
+    if not runtime_root.exists():
+        return swarms
+    try:
+        entries = sorted(runtime_root.iterdir())
+    except OSError:
+        return swarms
+
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        runtime_json = entry / "runtime.json"
+        if not runtime_json.is_file():
+            continue
+        try:
+            data = json.loads(runtime_json.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        session_name = data.get("session_name") or entry.name
+        panes = data.get("panes") or {}
+        pane_count = len(panes)
+
+        # Check if tmux session exists
+        res = subprocess.run(
+            ["tmux", "has-session", "-t", session_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        tmux_alive = (res.returncode == 0)
+
+        # Check if session worker is running
+        worker_pid_file = entry / "session_worker.pid"
+        worker_alive = False
+        if worker_pid_file.exists():
+            try:
+                pid = int(worker_pid_file.read_text().strip())
+                os.kill(pid, 0)
+                worker_alive = True
+            except (OSError, ValueError):
+                worker_alive = False
+
+        if tmux_alive and worker_alive:
+            status = "active"
+            worker_status = "running"
+        elif tmux_alive:
+            status = "tmux-only"
+            worker_status = "stopped"
+        elif worker_alive:
+            status = "worker-only"
+            worker_status = "running"
+        else:
+            status = "inactive"
+            worker_status = "stopped"
+
+        swarms.append({
+            "session_name": session_name,
+            "status": status,
+            "panes": pane_count,
+            "worker": worker_status,
+            "runtime_dir": str(entry),
+        })
+
+    order = {"active": 0, "tmux-only": 1, "worker-only": 2, "inactive": 3}
+    swarms.sort(key=lambda s: (order.get(s["status"], 9), s["session_name"]))
+    return swarms
+
+
+def print_swarms(brief: bool = False, as_json: bool = False, runtime_root: Path | None = None) -> None:
+    swarms = inspect_swarms(runtime_root)
+    if as_json:
+        print(json.dumps(swarms, indent=2))
+        return
+    if not swarms:
+        print("no swarms found in /tmp/nudge-swarm")
+        return
+    if brief:
+        for s in swarms:
+            print(f"{s['session_name']} ({s['status']}, {s['panes']} panes)")
+        return
+
+    header = f"{'SWARM':<20} {'STATUS':<12} {'PANES':<8} {'WORKER':<10} {'RUNTIME_DIR'}"
+    print(header)
+    print("-" * len(header))
+    for s in swarms:
+        print(f"{s['session_name']:<20} {s['status']:<12} {s['panes']:<8} {s['worker']:<10} {s['runtime_dir']}")
+

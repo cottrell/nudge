@@ -1838,12 +1838,12 @@ def test_any_message_waits_for_idle_worker_and_delivers_once(monkeypatch):
 
         worker.tick(spec, 16)
         assert common.get_pending_any(sess) == []
-        assert sent == [(f"{sess}:0.0", "voice note")]
+        assert sent == [(f"{sess}:0.0", "aiswarm-send: from voice-mcp: voice note")]
         types = [row[4] for row in common.get_events(sess)]
         assert types == ["any", "any-delivery", "ack"]
 
         worker.tick(spec, 22)
-        assert sent == [(f"{sess}:0.0", "voice note")]
+        assert sent == [(f"{sess}:0.0", "aiswarm-send: from voice-mcp: voice note")]
     finally:
         shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
 
@@ -4564,3 +4564,165 @@ windows:
         assert rows["ghost"][1:] == ["-", "0", "1", "0"]
     finally:
         shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_cli_swarms_listing(tmp_path: Path, monkeypatch, capsys):
+    from cli import main as cli_main
+    from topology import inspect_swarms
+
+    # Create mock swarms in tmp_path
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    (alpha / "runtime.json").write_text(json.dumps({
+        "session_name": "alpha",
+        "panes": {"0.0": {}, "0.1": {}},
+    }))
+    (alpha / "session_worker.pid").write_text(str(os.getpid()))
+
+    beta = tmp_path / "beta"
+    beta.mkdir()
+    (beta / "runtime.json").write_text(json.dumps({
+        "session_name": "beta",
+        "panes": {"0.0": {}},
+    }))
+
+    gamma = tmp_path / "gamma"
+    gamma.mkdir()
+    (gamma / "runtime.json").write_text(json.dumps({
+        "session_name": "gamma",
+        "panes": {"0.0": {}, "0.1": {}, "0.2": {}},
+    }))
+
+    def mock_subprocess_run(cmd, *args, **kwargs):
+        class Res:
+            pass
+        r = Res()
+        if cmd[:2] == ["tmux", "has-session"]:
+            sess_arg = cmd[3]
+            r.returncode = 0 if sess_arg in ("alpha", "beta") else 1
+            return r
+        return subprocess.run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    swarms = inspect_swarms(tmp_path)
+    assert len(swarms) == 3
+    # alpha: active (tmux alive + worker alive)
+    assert swarms[0]["session_name"] == "alpha"
+    assert swarms[0]["status"] == "active"
+    assert swarms[0]["worker"] == "running"
+    assert swarms[0]["panes"] == 2
+    # beta: tmux-only (tmux alive, worker dead/missing)
+    assert swarms[1]["session_name"] == "beta"
+    assert swarms[1]["status"] == "tmux-only"
+    assert swarms[1]["worker"] == "stopped"
+    assert swarms[1]["panes"] == 1
+    # gamma: inactive
+    assert swarms[2]["session_name"] == "gamma"
+    assert swarms[2]["status"] == "inactive"
+    assert swarms[2]["panes"] == 3
+
+    # CLI tests
+    assert cli_main(["swarms", "--runtime-dir", str(tmp_path)]) == 0
+    out, err = capsys.readouterr()
+    assert "alpha" in out
+    assert "beta" in out
+    assert "gamma" in out
+
+    assert cli_main(["swarms", "--brief", "--runtime-dir", str(tmp_path)]) == 0
+    out, err = capsys.readouterr()
+    assert "alpha (active, 2 panes)" in out
+    assert "beta (tmux-only, 1 panes)" in out
+    assert "gamma (inactive, 3 panes)" in out
+
+    assert cli_main(["swarms", "--json", "--runtime-dir", str(tmp_path)]) == 0
+    out, err = capsys.readouterr()
+    data = json.loads(out)
+    assert len(data) == 3
+    assert data[0]["session_name"] == "alpha"
+
+
+def test_cli_send_qualified_addressing(tmp_path: Path, monkeypatch, capsys):
+    from cli import main as cli_main
+
+    target_swarm = "qualified_swarm_test"
+    target_dir = Path("/tmp/nudge-swarm") / target_swarm
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "runtime.json").write_text(json.dumps({
+        "session_name": target_swarm,
+        "panes": {"0.0": {}, "0.1": {"categories": ["heavy"]}},
+    }))
+    try:
+        monkeypatch.delenv("AISWARM_CONFIG", raising=False)
+
+        # Qualified pane
+        assert cli_main(["send", f"{target_swarm}:0.1", "hello qualified"]) == 0
+        out, err = capsys.readouterr()
+        assert f"session={target_swarm}" in out
+        assert "target=0.1" in out
+        assert common.get_pending_events(target_swarm, "0.1")[-1][4] == "hello qualified"
+
+        # Qualified any
+        assert cli_main(["send", f"{target_swarm}:any", "hello any"]) == 0
+        out, err = capsys.readouterr()
+        assert f"session={target_swarm}" in out
+        assert "target=any" in out
+        assert common.get_pending_any(target_swarm)[-1][4] == "hello any"
+
+        # Qualified category
+        assert cli_main(["send", f"{target_swarm}:heavy", "hello heavy"]) == 0
+        out, err = capsys.readouterr()
+        assert f"session={target_swarm}" in out
+        assert "target=heavy" in out
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+
+def test_format_delivered_message():
+    from pane_worker import _format_delivered_message
+
+    # Regular message from agent / user
+    assert _format_delivered_message("do something", "nudge:0.2") == "aiswarm-send: from nudge:0.2: do something"
+    assert _format_delivered_message("do something", "cli send") == "aiswarm-send: from cli send: do something"
+
+    # Internal system senders
+    assert _format_delivered_message("nudge prompt", "babysitter") == "nudge prompt"
+    assert _format_delivered_message("task prompt", "tasks") == "task prompt"
+    assert _format_delivered_message("/clear", "cli clear") == "/clear"
+
+    # /clear command
+    assert _format_delivered_message("/clear", "nudge:0.2") == "/clear"
+
+    # Already prefixed
+    assert _format_delivered_message("aiswarm-send: from other: msg", "nudge:0.2") == "aiswarm-send: from other: msg"
+
+    # Empty or None sender
+    assert _format_delivered_message("hello", None) == "hello"
+    assert _format_delivered_message("hello", "") == "hello"
+
+
+def test_sender_auto_population(monkeypatch):
+    from cli import _infer_sender
+
+    # Mock inside tmux
+    monkeypatch.setenv("TMUX_PANE", "%5")
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+
+    def mock_run(cmd, *args, **kwargs):
+        class Res:
+            returncode = 0
+            stdout = "my-swarm:0.3\n"
+        return Res()
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    assert _infer_sender() == "my-swarm:0.3"
+
+    # Mock outside tmux with session
+    monkeypatch.delenv("TMUX_PANE", raising=False)
+    monkeypatch.delenv("TMUX", raising=False)
+    assert _infer_sender("local_swarm") == "local_swarm:cli"
+
+    # Mock outside tmux without session
+    monkeypatch.setattr("common.load_config", lambda *_: None)
+    assert _infer_sender() == "cli send"
+

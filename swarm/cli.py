@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -304,6 +305,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not re-discover from live pane PIDs",
     )
 
+    swarms_p = sub.add_parser(
+        "swarms",
+        help="List swarms discovered in /tmp/nudge-swarm with status and pane counts",
+        description="Inspect /tmp/nudge-swarm to list active and inactive swarms on this machine.",
+        epilog=(
+            "examples:\n"
+            "  aiswarm swarms           # table of discovered swarms\n"
+            "  aiswarm swarms --brief   # one-line summaries\n"
+            "  aiswarm swarms --json    # JSON output\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    swarms_p.add_argument("--brief", "-b", action="store_true", help="One-line summary per swarm")
+    swarms_p.add_argument("--json", action="store_true", help="Output JSON")
+    swarms_p.add_argument("--runtime-dir", dest="runtime_dir", default=None, help=argparse.SUPPRESS)
+
     init_p = sub.add_parser("init", help="Create a starter swarm config and AGENTS.md block")
     init_p.add_argument("name", help="Swarm/session name")
     init_p.add_argument("--root", default=".", help="Project root to initialize, default current directory")
@@ -389,7 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
             '  aiswarm send any "pick this up when free"\n'
             "  aiswarm send -c .aiswarm/config.yaml 0.1 hi there\n"
             "  aiswarm send ./swarm.yaml 0.0 hello   # legacy: leading config path\n"
-            '  aiswarm send -s otherswarm 0.1 "hello from nudge"   # cross-swarm'
+            '  aiswarm send -s otherswarm 0.1 "hello from nudge"   # cross-swarm\n'
+            '  aiswarm send otherswarm:0.1 "hello from nudge"      # qualified shorthand\n'
+            '  aiswarm send otherswarm:any "pick this up"          # qualified any'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -669,6 +688,40 @@ def _split_capture_tokens(tokens: list[str], config_file: str | None) -> tuple[s
     raise ValueError("capture requires PANE or CONFIG PANE")
 
 
+def _infer_sender(local_session: str | None = None) -> str:
+    """Infer sender identity from tmux pane/session or local config."""
+    if os.environ.get("TMUX") or os.environ.get("TMUX_PANE"):
+        target_args = ["-t", os.environ["TMUX_PANE"]] if os.environ.get("TMUX_PANE") else []
+        try:
+            res = subprocess.run(
+                ["tmux", "display-message", *target_args, "-p", "#{session_name}:#{window_index}.#{pane_index}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            val = res.stdout.strip()
+            if res.returncode == 0 and val:
+                return val
+        except OSError:
+            pass
+
+    if local_session:
+        return f"{local_session}:cli"
+
+    try:
+        from .common import load_config
+    except ImportError:
+        from common import load_config
+    try:
+        cfg = load_config(None)
+        if cfg and cfg.session_name:
+            return f"{cfg.session_name}:cli"
+    except Exception:
+        pass
+
+    return "cli send"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -706,6 +759,11 @@ def main(argv: list[str] | None = None) -> int:
                 ))
             else:
                 print(format_records(cfg, records))
+            return 0
+
+        if args.command == "swarms":
+            r_root = Path(args.runtime_dir) if getattr(args, "runtime_dir", None) else None
+            swarm_topology.print_swarms(brief=args.brief, as_json=args.json, runtime_root=r_root)
             return 0
 
         if args.command == "init":
@@ -911,6 +969,9 @@ def main(argv: list[str] | None = None) -> int:
                 from common import log_any, log_send
 
             swarm_name = getattr(args, "swarm", None)
+            if not swarm_name and ":" in target and not target.startswith("mcp:"):
+                swarm_name, target = target.split(":", 1)
+
             if swarm_name:
                 runtime_path = Path("/tmp/nudge-swarm") / swarm_name / "runtime.json"
                 try:
@@ -950,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
                         return 1
                     print(f"Warning: recipient pane '{target}' is not present in the config", file=sys.stderr)
 
-            sender_name = getattr(args, "sender", None) or "cli send"
+            sender_name = getattr(args, "sender", None) or _infer_sender(session_name if not swarm_name else None)
             if args.dry_run:
                 print(f"would log-send session={session_name} target={target} sender={sender_name} msg={msg}")
             else:

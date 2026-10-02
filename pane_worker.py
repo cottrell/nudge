@@ -65,6 +65,17 @@ def _send_message(target: str, msg: str, simulate: bool = False) -> None:
     subprocess.run([str(_TMUX_SEND), "--no-prefix", target, msg], check=False)
 
 
+def _format_delivered_message(payload: str, sender: str | None) -> str:
+    if not sender:
+        return payload
+    s = sender.strip()
+    if not s or s in ("babysitter", "tasks", "cli clear"):
+        return payload
+    if payload.startswith("/clear") or payload.startswith("aiswarm-send"):
+        return payload
+    return f"aiswarm-send: from {s}: {payload}"
+
+
 def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
                  spec: dict | None = None, claim_any_message: bool = False) -> None:
     try:
@@ -82,11 +93,13 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
         if claim_any_message and not simulate:
             claim_any(session, pane, (spec or {}).get("categories") or [])
         pending = get_pending_events(session, pane)
-        for eid, *_rest, payload, _meta in pending:
-            _send_message(target, payload, simulate); log_ack(session, pane, eid, pane, target)
+        for eid, _ts, sender, _etype, payload, _meta in pending:
+            out_msg = _format_delivered_message(payload, sender)
+            _send_message(target, out_msg, simulate)
+            log_ack(session, pane, eid, pane, target)
         if pending: advance_cursor(session, pane, pending[-1][0])
         bcasts = get_pending_broadcasts(session, pane)
-        for eid, *_rest, payload, meta in bcasts:
+        for eid, _ts, sender, _etype, payload, meta in bcasts:
             if spec is not None:
                 agent = spec.get("agent")
                 if not agent:
@@ -104,7 +117,9 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
                         pass
                 if not include_nonmonitored and not monitor:
                     continue
-            _send_message(target, payload, simulate); log_ack(session, pane, eid, "__broadcast__", target)
+            out_msg = _format_delivered_message(payload, sender)
+            _send_message(target, out_msg, simulate)
+            log_ack(session, pane, eid, "__broadcast__", target)
         if bcasts: advance_broadcast_cursor(session, pane, bcasts[-1][0])
     except Exception as exc:
         print(f"comms error {session}:{pane}: {exc}", flush=True)
