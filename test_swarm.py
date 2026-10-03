@@ -5235,11 +5235,12 @@ def test_unsend_broadcast_and_permissions():
         shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
 
 
-def test_unsend_cli_roundtrip(capsys):
+def test_unsend_cli_roundtrip(capsys, monkeypatch):
     from swarm import cli
+    monkeypatch.setattr(cli, "_infer_sender", lambda *_: "tester")
     sess = _unsend_sess()
     try:
-        e = common.log_send(sess, "0.0", "m", sender=cli._infer_sender(sess))
+        e = common.log_send(sess, "0.0", "m", sender="tester")
         runtime = Path("/tmp/nudge-swarm") / sess / "runtime.json"
         runtime.write_text(json.dumps({"session_name": sess, "panes": {}}))
         assert cli.main(["unsend", "-s", sess, str(e)]) == 0
