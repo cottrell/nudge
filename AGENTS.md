@@ -95,7 +95,6 @@ Read workflow first:
 - `aiswarm this` — this swarm's config + runtime.json path
 
 After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
-`aiswarm start --resume` splices the recorded id into the config command (`-r` for claude/grok, `--conversation` for agy, `codex resume <id>` then the config flags). An existing `--session-id` is removed first, so mint does not append a second id. Panes with no id keep their config command. Plain `aiswarm start` still mints.
 
 Config: `.aiswarm/config.yaml` (cwd walk-up), `$AISWARM_CONFIG`, or explicit path.
 Messaging: `aiswarm send <pane> "msg"` (durable log). Do NOT raw `tmux send-keys`.
