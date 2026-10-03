@@ -267,7 +267,7 @@ def print_model_help() -> None:
 
 _HELP_ORDER = (
     "init start stop status this sessions swarms worker "
-    "send broadcast clear log clear-comms healthcheck "
+    "send unsend broadcast clear log clear-comms healthcheck "
     "capture wait babysit tasks "
     "quota quota-debug av-usage help instructions"
 ).split()
@@ -489,6 +489,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     send_p.add_argument("-D", "--dry-run", action="store_true", help="Print action without sending")
+
+    unsend_p = sub.add_parser(
+        "unsend",
+        help="Cancel a queued message by id (as printed by send) before it is delivered",
+        description=(
+            "Cancel an undelivered message. Works while the message is still queued "
+            "(busy pane, scheduled --at, or 'any' not yet claimed). Once delivered it is too late."
+        ),
+        epilog="examples:\n  aiswarm unsend 42\n  aiswarm unsend -s otherswarm 42",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    unsend_p.add_argument("-c", "--config-file", dest="config_file", default=None, help=CONFIG_ARG_HELP)
+    unsend_p.add_argument("-s", "--swarm", dest="swarm", default=None, help="Swarm session name (default: this swarm)")
+    unsend_p.add_argument("--force", action="store_true", help="Cancel even if sent by someone else")
+    unsend_p.add_argument("id", type=int, help="Event id printed by send")
 
     clear_p = sub.add_parser(
         "clear",
@@ -1070,6 +1085,28 @@ def main(argv: list[str] | None = None) -> int:
                        else log_send(session_name, target, msg, sender=sender_name, not_before=not_before))
                 print(f"log-sent id={eid} session={session_name} target={target}{at_info}")
             return 0
+
+        if args.command == "unsend":
+            try:
+                from .common import unsend_event
+            except ImportError:
+                from common import unsend_event
+            swarm_name = args.swarm
+            if swarm_name:
+                runtime_path = Path("/tmp/nudge-swarm") / swarm_name / "runtime.json"
+                try:
+                    session_name = json.loads(runtime_path.read_text()).get("session_name", swarm_name)
+                except (OSError, json.JSONDecodeError) as exc:
+                    print(f"error: cannot read runtime map for swarm '{swarm_name}': {exc}", file=sys.stderr)
+                    return 1
+            else:
+                session_name = load_config(args.config_file).session_name
+            status, detail = unsend_event(
+                session_name, args.id,
+                requester=_infer_sender(session_name if not swarm_name else None), force=args.force,
+            )
+            print(f"unsend {status}: {detail}", file=sys.stderr if status in ("denied", "not_found", "too_late") else sys.stdout)
+            return 0 if status in ("cancelled", "partial") else 1
 
         if args.command == "clear":
             explicit, target = _split_clear_tokens(

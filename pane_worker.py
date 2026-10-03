@@ -80,6 +80,7 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
                  spec: dict | None = None, claim_any_message: bool = False) -> None:
     try:
         from common import (advance_broadcast_cursor, advance_cursor, claim_any,
+                            claim_delivery,
                             get_pending_broadcasts, get_pending_events, log_ack)
         if spec is None:
             stem = f"babysit-{pane.replace('.', '-')}"
@@ -94,6 +95,8 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
             claim_any(session, pane, (spec or {}).get("categories") or [])
         pending = get_pending_events(session, pane)
         for eid, _ts, sender, _etype, payload, _meta in pending:
+            if not claim_delivery(session, pane, eid):
+                continue  # unsent
             out_msg = _format_delivered_message(payload, sender)
             _send_message(target, out_msg, simulate)
             log_ack(session, pane, eid, pane, target)
@@ -118,6 +121,8 @@ def _drain_comms(session: str, target: str, pane: str, simulate: bool = False,
                         pass
                 if not include_nonmonitored and not monitor:
                     continue
+            if not claim_delivery(session, f"{pane}:bcast", eid, cancel_key="__broadcast__"):
+                continue  # unsent
             out_msg = _format_delivered_message(payload, sender)
             _send_message(target, out_msg, simulate)
             log_ack(session, pane, eid, "__broadcast__", target)

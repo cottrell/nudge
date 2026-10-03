@@ -958,6 +958,7 @@ def claim_any(session_name: str, pane: str, categories: list[str] | None = None)
             "SELECT e.id, e.sender, e.payload, e.meta, e.not_before FROM events e "
             "LEFT JOIN any_claims c ON c.queue_event_id = e.id "
             "WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM cursor_acks u WHERE u.recipient = '__any__' AND u.event_id = e.id) "
             "AND (e.not_before IS NULL OR datetime(e.not_before) <= datetime('now')) "
             "AND ((CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IS NULL "
             f"OR (CASE WHEN json_valid(e.meta) THEN json_extract(e.meta, '$.category') END) IN ({marks})) "
@@ -993,7 +994,9 @@ def get_pending_any(session_name: str, due_only: bool = False):
         return conn.execute(
             f"SELECT e.id, e.ts, e.sender, e.type, e.payload, e.meta FROM events e "
             f"LEFT JOIN any_claims c ON c.queue_event_id = e.id "
-            f"WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL {cond} ORDER BY e.id"
+            f"WHERE e.recipient = '__any__' AND c.queue_event_id IS NULL "
+            f"AND NOT EXISTS (SELECT 1 FROM cursor_acks u WHERE u.recipient = '__any__' AND u.event_id = e.id) "
+            f"{cond} ORDER BY e.id"
         ).fetchall()
 
 
@@ -1013,6 +1016,69 @@ def log_ack(session_name: str, pane: str, acked_event_id: int,
             "delivery": "tmux-send",
         },
     )
+
+
+def claim_delivery(session_name: str, recipient: str, event_id: int,
+                   cancel_key: str | None = None) -> bool:
+    """Atomically mark an event consumed for recipient. Consumer calls this before
+    tmux-send; unsend uses the same row, so exactly one of them wins.
+    cancel_key: extra recipient whose ack means the event was unsent (broadcasts)."""
+    db = init_comms_db(session_name)
+    with _sqlite3.connect(str(db), timeout=30) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if cancel_key and conn.execute(
+            "SELECT 1 FROM cursor_acks WHERE recipient = ? AND event_id = ?", (cancel_key, event_id)
+        ).fetchone():
+            return False
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO cursor_acks (recipient, event_id) VALUES (?,?)", (recipient, event_id)
+        )
+        return cur.rowcount == 1
+
+
+def unsend_event(session_name: str, event_id: int, requester: str | None = None,
+                 force: bool = False) -> tuple[str, str]:
+    """Cancel an undelivered message. Returns (status, detail); status is one of
+    cancelled, partial (broadcast, some panes already got it), too_late,
+    not_found, denied. Appends an ack event (delivery=unsent) on success."""
+    db = init_comms_db(session_name)
+    with _sqlite3.connect(str(db), timeout=30) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT recipient, sender, type FROM events WHERE id = ?", (event_id,)
+        ).fetchone()
+        if row is None or row[2] in ("ack", "unsend") or row[0].endswith(":ack"):
+            return "not_found", f"no sendable event {event_id}"
+        recipient, sender, _etype = row
+        if not force and requester and sender and sender != requester:
+            return "denied", f"event {event_id} was sent by {sender}"
+        status = "cancelled"
+        if recipient == "__any__":
+            claim = conn.execute(
+                "SELECT pane, delivery_event_id FROM any_claims WHERE queue_event_id = ?", (event_id,)
+            ).fetchone()
+            if claim:
+                recipient, event_id = claim  # already routed: cancel the pane delivery
+        if recipient == "__broadcast__":
+            got = conn.execute(
+                "SELECT COUNT(*) FROM cursor_acks WHERE event_id = ? AND recipient LIKE '%:bcast'",
+                (event_id,),
+            ).fetchone()[0]
+            if got:
+                status = "partial"
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO cursor_acks (recipient, event_id) VALUES (?,?)", (recipient, event_id)
+        )
+        if cur.rowcount == 0:
+            return "too_late", f"event {event_id} already delivered or unsent"
+        ack_pane = recipient.removesuffix(":bcast")
+        meta = {"acked_event_id": event_id, "acked_recipient": recipient, "delivery": "unsent",
+                "by": requester or "unknown"}
+        conn.execute(
+            "INSERT INTO events (recipient, sender, type, payload, meta) VALUES (?,?,?,?,?)",
+            (f"{ack_pane}:ack", "unsend", "unsend", "", json.dumps(meta)),
+        )
+    return status, f"event {event_id} {status}"
 
 
 def get_pending_events(session_name: str, recipient: str, due_only: bool = True):
@@ -1127,6 +1193,7 @@ def get_pending_broadcasts(session_name: str, pane: str, due_only: bool = True):
             LEFT JOIN cursor_acks a ON a.recipient = ? AND a.event_id = e.id
             WHERE e.recipient = '__broadcast__'
               AND a.event_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM cursor_acks u WHERE u.recipient = '__broadcast__' AND u.event_id = e.id)
               AND (e.id > ? OR e.not_before IS NOT NULL)
               {cond}
             ORDER BY e.id

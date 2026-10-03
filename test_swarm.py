@@ -5119,3 +5119,88 @@ windows:
     finally:
         shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
 
+
+
+def _unsend_sess():
+    return f"test_unsend_{os.getpid()}_{random.randrange(1_000_000)}"
+
+
+def test_unsend_queued_pane_message_is_not_delivered_and_logs_ack(monkeypatch):
+    import pane_worker
+    sess = _unsend_sess()
+    sent = []
+    monkeypatch.setattr(pane_worker, "_send_message", lambda t, m, sim=False: sent.append(m))
+    try:
+        keep = common.log_send(sess, "0.0", "keep", sender="a")
+        gone = common.log_send(sess, "0.0", "gone", sender="a")
+        assert common.unsend_event(sess, gone, requester="a")[0] == "cancelled"
+        pane_worker._drain_comms(sess, f"{sess}:0.0", "0.0")
+        assert [m for m in sent if "keep" in m] and not [m for m in sent if "gone" in m]
+        assert common.get_pending_events(sess, "0.0") == []
+        acks = [e for e in common.get_events(sess, "0.0") if e[4] == "unsend"]
+        assert json.loads(acks[0][6])["delivery"] == "unsent"
+        assert keep
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_unsend_after_claim_is_too_late_and_claim_after_unsend_fails():
+    sess = _unsend_sess()
+    try:
+        e1 = common.log_send(sess, "0.0", "x", sender="a")
+        assert common.claim_delivery(sess, "0.0", e1) is True
+        assert common.unsend_event(sess, e1)[0] == "too_late"
+        e2 = common.log_send(sess, "0.0", "y", sender="a")
+        assert common.unsend_event(sess, e2)[0] == "cancelled"
+        assert common.claim_delivery(sess, "0.0", e2) is False
+        assert common.unsend_event(sess, e2)[0] == "too_late"
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_unsend_scheduled_any_and_claimed_any():
+    sess = _unsend_sess()
+    try:
+        e1 = common.log_any(sess, "later", not_before="2099-01-01 00:00:00")
+        assert common.unsend_event(sess, e1)[0] == "cancelled"
+        assert common.get_pending_any(sess) == []
+        e2 = common.log_any(sess, "now")
+        assert common.unsend_event(sess, e2)[0] == "cancelled"
+        assert common.claim_any(sess, "0.0") is None
+        e3 = common.log_any(sess, "claimed")
+        assert common.claim_any(sess, "0.0") is not None
+        assert common.get_pending_events(sess, "0.0")
+        assert common.unsend_event(sess, e3)[0] == "cancelled"  # cancels the pane delivery
+        assert common.get_pending_events(sess, "0.0") == []
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_unsend_broadcast_and_permissions():
+    sess = _unsend_sess()
+    try:
+        common.log_broadcast(sess, "all hands", sender="a")
+        bid = common.get_pending_broadcasts(sess, "0.0")[0][0]
+        e = common.log_send(sess, "0.0", "m", sender="a")
+        assert common.unsend_event(sess, e, requester="b")[0] == "denied"
+        assert common.unsend_event(sess, e, requester="b", force=True)[0] == "cancelled"
+        assert common.unsend_event(sess, 9999)[0] == "not_found"
+        assert common.unsend_event(sess, bid, requester="a")[0] == "cancelled"
+        assert common.get_pending_broadcasts(sess, "0.0") == []
+        assert common.claim_delivery(sess, "0.1:bcast", bid, cancel_key="__broadcast__") is False
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_unsend_cli_roundtrip(capsys):
+    from swarm import cli
+    sess = _unsend_sess()
+    try:
+        e = common.log_send(sess, "0.0", "m", sender=cli._infer_sender(sess))
+        runtime = Path("/tmp/nudge-swarm") / sess / "runtime.json"
+        runtime.write_text(json.dumps({"session_name": sess, "panes": {}}))
+        assert cli.main(["unsend", "-s", sess, str(e)]) == 0
+        assert cli.main(["unsend", "-s", sess, str(e)]) == 1
+        assert "cancelled" in capsys.readouterr().out
+    finally:
+        shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
