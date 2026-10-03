@@ -1036,6 +1036,14 @@ def claim_delivery(session_name: str, recipient: str, event_id: int,
         return cur.rowcount == 1
 
 
+def _other_pane(requester: str | None, sender: str | None) -> bool:
+    """Only deny when both identities are tmux panes and differ. ':cli' identities
+    depend on cwd/config and are not comparable between send and unsend."""
+    pane = re.compile(r":\d+\.\d+$")
+    return bool(requester and sender and pane.search(requester) and pane.search(sender)
+                and requester != sender)
+
+
 def unsend_event(session_name: str, event_id: int, requester: str | None = None,
                  force: bool = False) -> tuple[str, str]:
     """Cancel an undelivered message. Returns (status, detail); status is one of
@@ -1050,7 +1058,7 @@ def unsend_event(session_name: str, event_id: int, requester: str | None = None,
         if row is None or row[2] in ("ack", "unsend") or row[0].endswith(":ack"):
             return "not_found", f"no sendable event {event_id}"
         recipient, sender, _etype = row
-        if not force and requester and sender and sender != requester:
+        if not force and _other_pane(requester, sender):
             return "denied", f"event {event_id} was sent by {sender}"
         status = "cancelled"
         if recipient == "__any__":

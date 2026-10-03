@@ -5225,8 +5225,11 @@ def test_unsend_broadcast_and_permissions():
         common.log_broadcast(sess, "all hands", sender="a")
         bid = common.get_pending_broadcasts(sess, "0.0")[0][0]
         e = common.log_send(sess, "0.0", "m", sender="a")
-        assert common.unsend_event(sess, e, requester="b")[0] == "denied"
-        assert common.unsend_event(sess, e, requester="b", force=True)[0] == "cancelled"
+        e = common.log_send(sess, "0.0", "m2", sender="s:0.0")
+        assert common.unsend_event(sess, e, requester="s:0.1")[0] == "denied"
+        assert common.unsend_event(sess, e, requester="s:0.1", force=True)[0] == "cancelled"
+        e = common.log_send(sess, "0.0", "m3", sender="x:cli")
+        assert common.unsend_event(sess, e, requester="y:cli")[0] == "cancelled"
         assert common.unsend_event(sess, 9999)[0] == "not_found"
         assert common.unsend_event(sess, bid, requester="a")[0] == "cancelled"
         assert common.get_pending_broadcasts(sess, "0.0") == []
