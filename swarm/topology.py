@@ -300,12 +300,58 @@ def ensure_command(cfg: SwarmConfig, pane: str, title: str, command: str, dry_ru
 
 
 
-def capture_pane_text(cfg: SwarmConfig, pane: str) -> str | None:
+def capture_pane_text(cfg: SwarmConfig, pane: str, scrollback: int = 0) -> str | None:
     target = f"{cfg.session_name}:{pane}"
-    proc = subprocess.run(["tmux", "capture-pane", "-t", target, "-p"], text=True, capture_output=True)
+    cmd = ["tmux", "capture-pane", "-t", target, "-p"]
+    if scrollback > 0:
+        cmd.extend(["-S", f"-{scrollback}"])
+    proc = subprocess.run(cmd, text=True, capture_output=True)
     if proc.returncode != 0:
         return None
     return proc.stdout
+
+
+# Provider banners, not a discussion of rate limits. Reset text on the pane is frozen.
+_QUOTA_BLOCK = re.compile(
+    r"individual quota reached"
+    r"|quota exceeded"
+    r"|you(?:'|’)ve hit your limit"
+    r"|hit your usage limit"
+    r"|usage limit reached"
+    r"|resource has been exhausted",
+    re.I,
+)
+_USER_TURN = re.compile(r"^>\s+(?!/)")
+_RESET_IN = re.compile(r"Resets in\s+(\S+)", re.I)
+
+
+def rate_limit_label(text: str) -> str | None:
+    """Label when the latest real turn is a provider quota block.
+
+    Lines like ``> /model`` are local slash commands and do not start a turn.
+    ``Resets in`` is copied from the pane; it is not a live countdown.
+    """
+    if not text:
+        return None
+    last_user = -1
+    last_quota = -1
+    reset = ""
+    for i, raw in enumerate(text.splitlines()):
+        s = raw.strip()
+        if _USER_TURN.match(s):
+            last_user = i
+            last_quota = -1
+            reset = ""
+            continue
+        if _QUOTA_BLOCK.search(s):
+            last_quota = i
+        if last_quota >= 0:
+            m = _RESET_IN.search(s)
+            if m:
+                reset = m.group(1).rstrip(".")
+    if last_quota < 0 or last_quota < last_user:
+        return None
+    return f"rate_limited {reset}".strip() if reset else "rate_limited"
 
 
 def capture_pane(cfg: SwarmConfig, pane: str) -> None:
@@ -588,6 +634,14 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             mon = _query_monitor(cfg, pane.pane)
             state_str = mon.get('state', 'unreachable')
             monitor = state_str
+            # A quota banner stays on screen while the TUI redraws, so the
+            # monitor can still say working. The latest real turn wins.
+            try:
+                label = rate_limit_label(capture_pane_text(cfg, pane.pane, scrollback=150) or "")
+            except Exception:
+                label = None
+            if label:
+                monitor = label
         else:
             monitor = "off"
         states[pane.pane] = monitor
@@ -766,7 +820,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
 
         if not brief:
             lines.append("")
-            lines.append("  Agent    = live state of the agent in the pane (from its monitor: idle/working/etc)")
+            lines.append("  Agent    = monitor state (idle/working/…). rate_limited when the latest pane turn is a quota block")
             lines.append("  Comms HB = countdown to the next background worker loop check (messages + polling)")
             lines.append("  Babysit  = babysit prompt group status (on, off/not-started, drifted, stopped, stale)")
             lines.append("  Nudge HB = countdown to the next idle nudge check (babysit group only)")

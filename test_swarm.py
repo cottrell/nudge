@@ -1526,6 +1526,49 @@ windows:
     assert any(s in matching[0] for s in ["stopped", "stale", "on", "not started"])
 
 
+def test_rate_limit_label_from_latest_turn():
+    blocked = """
+> ship the dataset
+⚠ Individual quota reached. Please upgrade your subscription to
+increase your limits. Resets in 36m16s.
+> /statusline
+> /model
+GEMINI MODELS
+  Weekly Limit Remaining
+"""
+    assert swarm_apply.rate_limit_label(blocked) == "rate_limited 36m16s"
+    recovered = blocked + "\n> continue the rsync note\nYes.\n"
+    assert swarm_apply.rate_limit_label(recovered) is None
+    assert swarm_apply.rate_limit_label("we should handle rate limits in the client\n") is None
+
+
+def test_swarm_status_shows_agy_quota_block(monkeypatch, tmp_path: Path):
+    cfg = load_config(write_config(tmp_path, """
+session_name: demo
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: agy
+        nudge:
+          agent: antigravity
+          monitor: true
+"""))
+
+    def fake_run(*args, **kwargs):
+        stdout = "grid\n" if args[:3] == ("tmux", "list-windows", "-t") else "%0\n"
+        return type("Proc", (), {"returncode": 0, "stdout": stdout})()
+
+    monkeypatch.setattr(swarm_apply, "run", fake_run)
+    monkeypatch.setattr(swarm_apply, "_query_monitor", lambda cfg, pane: {"state": "idle"})
+    monkeypatch.setattr(
+        swarm_apply,
+        "capture_pane_text",
+        lambda *a, **k: "⚠ Individual quota reached.\nResets in 36m16s.\n",
+    )
+    row = next(line for line in swarm_apply.status_lines(cfg) if "demo:0.0" in line)
+    assert "rate_limited 36m16s" in row
+
+
 def test_swarm_status_brief_reports_compact_states(monkeypatch, tmp_path: Path, capsys):
     import shutil
     shutil.rmtree("/tmp/nudge-swarm/demo", ignore_errors=True)
