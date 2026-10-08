@@ -167,6 +167,33 @@ def test_swarm_init_babysit_flavour_layout():
     assert "title: shell" in text
 
 
+def test_swarm_init_categories_and_weights_on_all_flavours(tmp_path: Path):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "worker_long.md").write_text("long prompt\n")
+    (prompts_dir / "worker_short.txt").write_text("short prompt\n")
+
+    backlog_dir = tmp_path.parent / "backlog"
+    backlog_dir.mkdir(exist_ok=True)
+    (backlog_dir / "config.yml").write_text("mock: true\n")
+
+    for flv in swarm_init.FLAVOURS:
+        text = swarm_init.config_text(f"test-{flv}", flavour=flv)
+        cfg_file = tmp_path / f"{flv}.yaml"
+        cfg_file.write_text(text)
+        cfg = load_config(cfg_file)
+        assert cfg.session_name == f"test-{flv}"
+        for pane in cfg.panes:
+            if pane.agent:
+                # Every agent pane must have an explicit weight in title and categories
+                assert any(pane.title.endswith(f" {w}") for w in ("heavy", "medium", "light"))
+                assert pane.categories, f"pane {pane.pane} missing categories"
+                assert pane.agent in pane.categories
+                assert any(w in pane.categories for w in ("heavy", "medium", "light"))
+            else:
+                assert pane.categories == []
+
+
 def test_swarm_init_creates_config_prompts_and_agents_block(tmp_path: Path):
     swarm_init.init("demo", tmp_path)
     assert (tmp_path / ".aiswarm" / "config.yaml").exists()
@@ -801,7 +828,7 @@ def test_shell_alias_falls_back_light_to_heavy(monkeypatch):
         lambda: {"copilot:heavy": "copilot --allow-all-tools"},
     )
     assert swarm_init.shell_alias("copilot", "light") == "copilot:heavy"
-    assert swarm_init.shell_alias("copilot", "solo") == "copilot:heavy"
+    assert swarm_init.shell_alias("copilot", "heavy") == "copilot:heavy"
 
 
 def test_start_prints_alias_expansion(monkeypatch, tmp_path: Path, capsys):

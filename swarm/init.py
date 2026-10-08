@@ -144,67 +144,95 @@ def remove_agents_block(agents_path: Path, dry_run: bool = False) -> bool:
 
 DEFAULT_AGENTS = ["codex", "claude", "antigravity", "grok"]
 
+WEIGHT_PROFILES: dict[str, dict[str, int]] = {
+    "heavy": {"interval_secs": 7200, "clear_every": 1},
+    "medium": {"interval_secs": 3600, "clear_every": 3},
+    "light": {"interval_secs": 1800, "clear_every": 6},
+}
 
-def shell_alias(agent: str, weight: str) -> str:
+
+def shell_alias(agent: str, weight: str = "heavy") -> str:
     """Token written into shell_command.
 
-    Roles are heavy, medium, and light. A one-pane layout passes weight "solo";
-    that still writes provider:heavy. A missing role uses heavy, then the bare agent name.
+    Roles are heavy, medium, and light. A missing role uses heavy, then the bare agent name.
     """
+    if weight not in WEIGHT_PROFILES:
+        raise ValueError(f"unknown weight {weight!r}, expected one of {tuple(WEIGHT_PROFILES.keys())}")
     aliases = load_model_aliases()
-    role = "heavy" if weight == "solo" else weight
-    for key in (f"{agent}:{role}", f"{agent}:heavy"):
+    for key in (f"{agent}:{weight}", f"{agent}:heavy"):
         if key in aliases:
             return key
     return agent
 
-FLAVOUR_AGENTS: dict[str, list[str]] = {
-    "1x1": ["codex"],
-    "3x2": ["codex", "claude", "antigravity", "grok"],
-    "3x3": ["codex", "claude", "grok", "antigravity"],
-    "4x2": ["codex", "claude", "antigravity", "grok"],
-    "2x2": ["codex", "claude"],
-    "babysit": ["codex", "claude"],
-    # Usual multi-provider grid + log/shell (gemini stays in models.yaml only;
-    # Google-side in demos is antigravity/agy).
-    "demo": ["codex", "claude", "antigravity", "grok", "vibe", "copilot"],
+
+FLAVOUR_SPECS: dict[str, list[tuple[str, str]]] = {
+    "1x1": [("codex", "heavy")],
+    "2x2": [("codex", "heavy"), ("codex", "light"), ("claude", "heavy"), ("claude", "light")],
+    "3x2": [
+        ("codex", "heavy"),
+        ("codex", "light"),
+        ("claude", "heavy"),
+        ("claude", "light"),
+        ("antigravity", "heavy"),
+        ("grok", "heavy"),
+    ],
+    "3x3": [
+        ("codex", "heavy"),
+        ("codex", "medium"),
+        ("codex", "light"),
+        ("claude", "heavy"),
+        ("claude", "light"),
+        ("grok", "heavy"),
+        ("antigravity", "heavy"),
+        ("antigravity", "heavy"),
+        ("antigravity", "heavy"),
+    ],
+    "4x2": [
+        (agent, weight)
+        for agent in ("codex", "claude", "antigravity", "grok")
+        for weight in ("heavy", "light")
+    ],
+    "babysit": [
+        (agent, weight)
+        for agent in ("codex", "claude")
+        for weight in ("heavy", "light")
+    ],
+    "demo": [
+        (agent, "heavy")
+        for agent in ("codex", "claude", "antigravity", "grok", "vibe", "copilot")
+    ],
 }
 
-FLAVOURS = ("1x1", "2x2", "3x2", "3x3", "4x2", "babysit", "demo")
+FLAVOURS = tuple(FLAVOUR_SPECS.keys())
 
 
 def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babysit: bool = False) -> str:
-    if weight == "light":
-        cmd = shell_alias(agent, "light")
-        title = f"{agent} light"
-        interval = 1800
-        clear_every = "\n            clear_every: 6"
-    elif weight == "medium":
-        cmd = shell_alias(agent, "medium")
-        title = f"{agent} medium"
-        interval = 3600
-        clear_every = "\n            clear_every: 3"
-    else:
-        cmd = shell_alias(agent, weight)
-        title = f"{agent} heavy" if weight == "heavy" else agent
-        interval = 7200
-        clear_every = "\n            clear_every: 1"
-    tasks_block = "\n          tasks:\n            enabled: true" if tasks else ""
-    babysit_block = (
-        f"""\n          babysit:
-            enabled: false
-            interval_secs: {interval}{clear_every}
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt"""
-        if babysit
-        else ""
-    )
-    return f"""      - shell_command: "{cmd}"
-        nudge:
-          title: {title}
-          agent: {agent}
-          monitor: true{babysit_block}{tasks_block}
-"""
+    profile = WEIGHT_PROFILES[weight]
+    cmd = shell_alias(agent, weight)
+    title = f"{agent} {weight}"
+    lines = [
+        f'      - shell_command: "{cmd}"',
+        "        nudge:",
+        f"          title: {title}",
+        f"          agent: {agent}",
+        "          monitor: true",
+        f"          categories: [{weight}, {agent}]",
+    ]
+    if babysit:
+        lines.extend([
+            "          babysit:",
+            "            enabled: false",
+            f"            interval_secs: {profile['interval_secs']}",
+            f"            clear_every: {profile['clear_every']}",
+            "            long_prompt_file: prompts/worker_long.md",
+            "            short_prompt_file: prompts/worker_short.txt",
+        ])
+    if tasks:
+        lines.extend([
+            "          tasks:",
+            "            enabled: true",
+        ])
+    return "\n".join(lines) + "\n"
 
 
 def _operator_pane(title: str, cmd: str) -> str:
@@ -222,49 +250,13 @@ LOG_PANE = _operator_pane("log", "aiswarm log -w")
 
 
 def config_text(name: str, agents: list[str] | None = None, flavour: str | None = None) -> str:
-    if flavour == "4x2":
-        panes_block = "".join(
-            _pane_entry(a, w)
-            for a in FLAVOUR_AGENTS["4x2"]
-            for w in ("heavy", "light")
-        )
-    elif flavour == "3x2":
-        # codex+claude: heavy+light; antigravity+grok: solo
+    if flavour == "demo":
+        specs = FLAVOUR_SPECS["demo"]
         panes_block = (
-            "".join(_pane_entry(a, w) for a in ["codex", "claude"] for w in ("heavy", "light"))
-            + _pane_entry("antigravity", "solo")
-            + _pane_entry("grok", "solo")
-        )
-    elif flavour == "3x3":
-        # 9-pane layout: 3x codex (heavy, medium, light), 2x claude (heavy, light), grok solo, 3x antigravity solo
-        panes_block = (
-            "".join(_pane_entry("codex", w) for w in ("heavy", "medium", "light"))
-            + "".join(_pane_entry("claude", w) for w in ("heavy", "light"))
-            + _pane_entry("grok", "solo")
-            + "".join(_pane_entry("antigravity", "solo") for _ in range(3))
-        )
-    elif flavour == "2x2":
-        flavour_agents = FLAVOUR_AGENTS["2x2"]
-        panes_block = (
-            "".join(_pane_entry(a, w) for a in flavour_agents for w in ("heavy", "light"))
-            + SHELL_PANE
-        )
-    elif flavour == "1x1":
-        panes_block = _pane_entry("codex", "heavy")
-    elif flavour == "babysit":
-        # Example 2x2 layout with explicit babysit blocks included as reference
-        panes_block = (
-            "".join(_pane_entry(a, w, babysit=True) for a in FLAVOUR_AGENTS["babysit"] for w in ("heavy", "light"))
-            + SHELL_PANE
-        )
-    elif flavour == "demo":
-        # ~4×2 tiled: agent CLIs (tasks-enabled) + log watch + shell
-        panes_block = (
-            "".join(_pane_entry(a, "solo", tasks=True) for a in FLAVOUR_AGENTS["demo"])
+            "".join(_pane_entry(a, w, tasks=True) for a, w in specs)
             + LOG_PANE
             + DEMO_SHELL_PANE
         )
-        # backlog_dir is relative to .aiswarm/config.yaml → ../backlog = project root
         return f"""session_name: {name}
 tasks:
   source: backlog
@@ -280,10 +272,19 @@ windows:
     layout: tiled
     panes:
 {panes_block}"""
+
+    if flavour is not None:
+        if flavour not in FLAVOUR_SPECS:
+            raise ValueError(f"unknown flavour {flavour!r}, expected one of {FLAVOURS}")
+        specs = FLAVOUR_SPECS[flavour]
+        panes = [_pane_entry(a, w, babysit=(flavour == "babysit")) for a, w in specs]
+        if flavour in ("2x2", "babysit"):
+            panes.append(SHELL_PANE)
+        panes_block = "".join(panes)
     else:
-        if agents is None:
-            agents = DEFAULT_AGENTS
-        panes_block = "".join(_pane_entry(a, "solo") for a in agents)
+        chosen_agents = DEFAULT_AGENTS if agents is None else agents
+        panes_block = "".join(_pane_entry(a, "heavy") for a in chosen_agents)
+
     return f"""session_name: {name}
 # tasks:
 #   require_label: "auto"     # Optional: only claim backlog tasks tagged with this label
