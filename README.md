@@ -84,11 +84,11 @@ aiswarm send 0.0 "hello"        # same
 aiswarm send any "check tests"  # one eligible idle pane receives it
 aiswarm send heavy "refactor"   # one idle pane in category `heavy`
 aiswarm send --at +2h 0.2 "check progress"  # deferred delivery (ISO timestamp or +Nh/+Nm/+Ns)
-aiswarm status nudgeswarm/nudge.yaml   # explicit still works (e.g. this implementer repo)
+aiswarm status .aiswarm/config.yaml   # explicit path still works
 ```
 
-Note: in **this** repo, `./swarm/` is package **code**. Live harness is still
-`nudgeswarm/` until you migrate; use an explicit path or `$AISWARM_CONFIG` here.
+Note: in **this** repo, `./swarm/` is the Python package. The live harness is
+`.aiswarm/config.yaml`.
 
 States: `unknown` `working` `idle`
 
@@ -153,7 +153,7 @@ aiswarm cursors
 aiswarm clear-comms -y
 aiswarm quota
 aiswarm av-usage
-# explicit path still ok: aiswarm status ./nudgeswarm/nudge.yaml
+# explicit path still ok: aiswarm status .aiswarm/config.yaml
 ```
 
 Note: broadcast and log-delivered messages are sent literally. Do not add synthetic sender prefixes, and keep slash commands like `/clear` unchanged. Direct/manual sends still work with `tmux-send`; prefer it (or the log commands) over raw `tmux send-keys`.
@@ -227,7 +227,7 @@ Notes:
   auto-disables that group when the deadline passes; `babysit stop` clears any timer.
 - `session_worker.py` is the one process shown in `ps` for a swarm, not one Python process per pane.
   It handles comms for every configured pane and enables babysit prompts only for panes in that group.
-  `pane_worker.py` is retained as a compatibility entrypoint; `babysit.py` was renamed in this release.
+  `pane_worker.py` is the compatibility entrypoint.
 - `tasks start` enables a **session-level group in that same worker** that lists backlog
   tasks matching `tasks.ingest` (default: `To Do` + `In Progress`), claims them, and delivers a prompt via
   the durable log to free monitored panes (tasks enabled by default; opt out with
@@ -259,7 +259,7 @@ Notes:
 Why: fixed babysit “please continue” prompts waste tokens when real work already lives in backlog.
 The orchestrator must touch backlog itself (list + claim) so agents only receive a concrete task
 when free. Delivery uses the durable log so the existing idle consumer still gates tmux-send.
-Uses `backlog task list|view --json` only (Backlog.md BACK-545; git/main until the next release after 1.48.0 — do not scrape `--plain`).
+Uses `backlog task list|view --json` only. Do not scrape `--plain`.
 
 ```yaml
 # top-level (session)
@@ -336,10 +336,13 @@ continuous heartbeat and never scrapes provider-specific error text.
 
 ## Babysit quota pacing
 
-When `babysit.enabled: true` and `agent` is one of `claude`, `codex`, or `agy`, the
+When `babysit.enabled: true` and `agent` is `claude`, `codex`, or `agy`, the
 babysitter samples remaining quota every `quota_probe_secs` seconds (default 300) and
 uses an exponential moving average (EMA) to pace nudge intervals so quota is spread
-evenly until the provider reset.
+evenly until the provider reset. YAML `agent: antigravity` is paced as `agy`.
+
+This EMA paces nudges. Exhaustion forecasts from sampled history are a different
+EMA; see `swarm/QUOTA_TRACKING.md`.
 
 How it works:
 - After each nudge the babysitter measures how much quota was consumed (`C = pct_before - pct_after`)
@@ -394,6 +397,7 @@ make capture AGENT=claude DUR=60
 make capture_codex DUR=60
 make capture_copilot DUR=60
 make capture_gemini DUR=60
+make capture_antigravity DUR=60
 make capture_vibe DUR=60
 make capture_qwen DUR=60
 make capture_grok DUR=60

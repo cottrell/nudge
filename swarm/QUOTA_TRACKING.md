@@ -1,6 +1,8 @@
 # Quota Tracking & EMA Forecasting
 
-This module provides quota status monitoring and EMA-based exhaustion forecasting across all agent providers (Claude, Codex, Antigravity/Gemini).
+Forecast sampler: quota status and an EMA of exhaustion from history for Claude, Codex, and agy.
+
+Babysit nudge pacing is a different EMA. It lives in `pane_worker.py` and is documented in the README section "Babysit quota pacing". `agent: antigravity` is paced and sampled as `agy`.
 
 ## Quick Start
 
@@ -83,12 +85,8 @@ Sorted by ETA to show which quota blocks you first.
 ## Integration Points
 
 ### Babysit Loop
-Add to your `nudgeswarm/config.yaml` to periodically sample quotas:
 
-```bash
-# In nudgeswarm/config.yaml
-# (future: add cron or babysit hook to call `python3 swarm/cli-quota.py sample`)
-```
+Nudge pacing does not call this sampler. Record history with `python3 swarm/cli-quota.py sample` on whatever schedule you want. Swarm config is `.aiswarm/config.yaml`.
 
 ### Status Line Integration
 Read `/tmp/nudge-quota-forecast.json` in your tmux status line:
@@ -159,8 +157,6 @@ EMA_ALPHA = 0.30        # Sensitivity to new samples (0–1)
 
 ## Future Enhancements
 
-1. **Babysit Hook** — Integrate sampling into the nudge babysit loop (call `sample` every 5 min)
-2. **Alerting** — Warn when quota ETA < reset time
-3. **Dashboard** — HTTP endpoint to view forecasts
-4. **Multi-machine Aggregation** — Combine quotas across multiple hosts
-5. **Pacer Integration** — Adjust nudge frequency based on bottleneck quota
+1. **Alerting** — Warn when quota ETA < reset time
+2. **Dashboard** — HTTP endpoint to view forecasts
+3. **Multi-machine Aggregation** — Combine quotas across multiple hosts
