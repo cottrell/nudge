@@ -15,16 +15,21 @@ _ROOT_DIR = Path(__file__).resolve().parent
 _TMUX_SEND = _ROOT_DIR / "tmux-send"
 try:
     sys.path.insert(0, str(_ROOT_DIR / "swarm"))
-    from common import get_cached_provider_usage, query_monitor_socket
+    from common import QUOTA_AGENT_MAP, get_cached_provider_usage, query_monitor_socket
 except Exception:
     get_cached_provider_usage = None
-    from common import query_monitor_socket
+    from common import QUOTA_AGENT_MAP, query_monitor_socket
 
 _quota_refresh: set[str] = set()
 _quota_lock = threading.Lock()
 
 
+def _quota_agent(agent: str) -> str:
+    return QUOTA_AGENT_MAP.get(agent, agent)
+
+
 def _ensure_quota_refresh(agent: str, interval: int) -> None:
+    agent = _quota_agent(agent)
     if agent not in ("claude", "codex", "agy") or not get_cached_provider_usage:
         return
     with _quota_lock:
@@ -179,7 +184,7 @@ class PaneWorker:
         self.initial_comms = True
 
     def _quota(self, spec: dict, now_f: float) -> None:
-        agent = spec.get("agent", "")
+        agent = _quota_agent(spec.get("agent", ""))
         _ensure_quota_refresh(agent, int(spec.get("quota_probe_secs", 300)))
         if agent not in ("claude", "codex", "agy") or now_f - self.stats_last_probe < int(spec.get("quota_probe_secs", 300)):
             return
