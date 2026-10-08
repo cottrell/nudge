@@ -13,6 +13,8 @@ def _reg(name: str, summary: str, body: str) -> None:
     GUIDES[name] = (summary, body.strip() + "\n")
 
 
+# Procedure guide, not the command index. Index order lives in cli._HELP_ORDER
+# and bare_help(). Do not reorder this lifecycle to match -h.
 _reg(
     "overview",
     "Required first read: when/how to use aiswarm",
@@ -178,34 +180,49 @@ It is not a continuous heartbeat and does not inspect provider error strings.
 
 
 def bare_help() -> str:
+    # Handwritten cheat sheet for bare `aiswarm`. Command set and order must
+    # match swarm/cli.py _HELP_ORDER (`aiswarm -h`). Not generated from the parser.
+    # The overview "Common lifecycle" block is a procedure, not this index.
     return """aiswarm — config-driven tmux swarm for coding agents
 
-Common workflow:
-  aiswarm init <name>                 Create .aiswarm/config.yaml + AGENTS block
-  aiswarm start                       Start session, monitors, comms workers
-  aiswarm status --brief              Pane states
-  aiswarm capture <pane>              Snapshot pane text
-  aiswarm wait <pane>                 Block until pane monitor idle
-  aiswarm send [--at TIME] <target|swarm:target> "msg" Durable message via log (delivered on idle)
-  aiswarm swarms                      List active/inactive swarms on this machine
-  aiswarm clear [pane]                Send '/clear' via log (all agent panes by default)
-  aiswarm babysit start|stop          Optional per-pane idle nudges (session worker; --for 1h)
-  aiswarm tasks start|status|stop     Poll backlog; assign To Do to free panes (--for 1h)
-  aiswarm worker restart              Reload worker code without touching tmux panes
-  aiswarm stop                        Tear down workers + tmux session
+Same commands as `aiswarm -h`, in that order. Flags: `aiswarm <command> --help`.
+
+Lifecycle:
+  aiswarm init <name>              Create .aiswarm/config.yaml + AGENTS block
+  aiswarm start                    Start session, monitors, comms workers
+  aiswarm stop                     Tear down workers + tmux session
+  aiswarm status --brief           Pane states
+  aiswarm this                     Config + runtime.json path
+  aiswarm sessions                 Provider session IDs for crash resume
+  aiswarm swarms                   Active/inactive swarms on this machine
+  aiswarm worker restart           Reload worker code; leave tmux panes up
+
+Messaging:
+  aiswarm send [--at TIME] <target|swarm:target> "msg"
+                                   Durable log message, delivered on idle
+  aiswarm unsend <id>              Cancel a queued message before delivery
+  aiswarm broadcast "msg"          Immediate send to agent panes
+  aiswarm clear [pane]             Send '/clear' via log (default: all agent panes)
+  aiswarm log                      Inspect the comms event log
+  aiswarm clear-comms              Clear the event log (destructive)
+  aiswarm healthcheck pong <pane> <nonce>
+                                   Reply to a dispatcher healthcheck
+
+Pane:
+  aiswarm capture <pane>           Snapshot pane text
+  aiswarm wait <pane>              Block until the pane monitor is idle
+  aiswarm babysit start|stop       Optional idle nudges (--for 1h)
+  aiswarm tasks start|status|stop  Poll backlog; assign To Do to free panes (--for 1h)
+
+Usage:
+  aiswarm quota                    Cached provider quotas
+  aiswarm quota-debug <agent>      Raw and parsed usage for one agent
+  aiswarm av-usage                 Agentsview token usage
+  aiswarm help                     Probed model commands for installed CLIs
+  aiswarm instructions             Agent guides (overview, tasks)
 
 Config (when path omitted):
   $AISWARM_CONFIG  or  walk-up .aiswarm/config.yaml  or  explicit path / -c
-
-Instructions (workflow for agents):
-  aiswarm this                        This swarm: config + runtime.json path
-  aiswarm sessions                    Provider session IDs for crash resume
-  aiswarm instructions                List guides
-  aiswarm instructions overview       Start here
-  aiswarm instructions tasks          Backlog dispatcher
-
-Command help (flags):
-  aiswarm <command> --help
 
 Prereq: aiswarm on PATH (make install-aiswarm from the nudge repo).
 """

@@ -478,9 +478,13 @@ windows:
 def test_cli_bare_and_instructions(capsys):
     assert swarm_cli.main([]) == 0
     bare = capsys.readouterr().out
-    assert "Common workflow:" in bare
+    assert "Lifecycle:" in bare
+    assert "Messaging:" in bare
+    assert "Pane:" in bare
+    assert "Usage:" in bare
+    assert bare.index("aiswarm start") < bare.index("aiswarm send") < bare.index("aiswarm capture")
+    assert bare.index("aiswarm stop") < bare.index("aiswarm status")
     assert "aiswarm instructions" in bare
-    assert "aiswarm start" in bare
     assert "aiswarm this" in bare
 
     assert swarm_cli.main(["instructions"]) == 0

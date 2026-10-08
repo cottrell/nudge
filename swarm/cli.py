@@ -265,6 +265,9 @@ def print_model_help() -> None:
         print()
 
 
+# Display order for `aiswarm -h`. Groups: lifecycle, messaging, pane, usage.
+# Bare `aiswarm` is handwritten in instructions.bare_help() and must list these
+# commands in this order. Nothing else is a command index.
 _HELP_ORDER = (
     "init start stop status this sessions swarms worker "
     "send unsend broadcast clear log clear-comms healthcheck "
