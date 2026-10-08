@@ -95,7 +95,7 @@ def test_swarm_init_default_3x2_layout():
     assert text.count("agent: codex") == 2
     assert text.count("agent: claude") == 2
     assert 'agent: antigravity' in text
-    assert 'shell_command: "antigravity:heavy"' in text
+    assert 'shell_command: "antigravity:light"' in text
     assert 'agent: grok' in text
     assert 'shell_command: "grok:heavy"' in text
     assert 'shell_command: "codex:heavy"' in text
@@ -111,6 +111,8 @@ def test_swarm_init_3x3_layout():
     assert text.count("agent: claude") == 2
     assert text.count("agent: grok") == 1
     assert text.count("agent: antigravity") == 3
+    assert text.count('shell_command: "antigravity:light"') == 3
+    assert "antigravity:heavy" not in text
     assert "title: codex heavy" in text
     assert "title: codex medium" in text
     assert "title: codex light" in text

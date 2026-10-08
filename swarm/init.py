@@ -173,7 +173,7 @@ FLAVOUR_SPECS: dict[str, list[tuple[str, str]]] = {
         ("codex", "light"),
         ("claude", "heavy"),
         ("claude", "light"),
-        ("antigravity", "heavy"),
+        ("antigravity", "light"),
         ("grok", "heavy"),
     ],
     "3x3": [
@@ -183,9 +183,9 @@ FLAVOUR_SPECS: dict[str, list[tuple[str, str]]] = {
         ("claude", "heavy"),
         ("claude", "light"),
         ("grok", "heavy"),
-        ("antigravity", "heavy"),
-        ("antigravity", "heavy"),
-        ("antigravity", "heavy"),
+        ("antigravity", "light"),
+        ("antigravity", "light"),
+        ("antigravity", "light"),
     ],
     "4x2": [
         (agent, weight)
