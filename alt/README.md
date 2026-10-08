@@ -29,8 +29,7 @@ Persistent friction when running real multi-agent work under subscription CLIs:
 - Activity monitor (C) → working / idle only. No semantics.
 - Babysit workers (see `babysitctl.py` + spec/state files in `/tmp/nudge-swarm/<session>/`) that periodically poke panes.
 - Usage via per-agent scrapers in `swarm/usage/*.sh` + optional agent-monitor integration.
-- Self-awareness note written to `/tmp` so agents can discover targets, sockets, and "how to talk to siblings".
-- Messages between panes use `tmux-send` (never raw `send-keys`).
+- Messages between panes use `tmux-send` (never raw `send-keys`). Runtime map: `aiswarm this`.
 
 This works for small coordinated groups but does not scale to persistent multi-step collaborative work.
 
@@ -44,7 +43,7 @@ A **Thing** is the unit of persistent work:
 
 Key pieces:
 
-- **Persistent Record** (`alt/state/things/<thing-id>/`): nodes/edges + rich child props at creation time (agent, model, prompt, native session_id, pid, ...). `session_ref` captured at launch. Recent blocker: reliably extracting native session IDs from TUI launches (see TASK-12). Children are immutable snapshots — new prompt on reused session = new child node.
+- **Persistent Record** (proposed, not in the tree: `alt/state/things/<thing-id>/`): nodes/edges + rich child props at creation time (agent, model, prompt, native session_id, pid, ...). `session_ref` captured at launch. Recent blocker: reliably extracting native session IDs from TUI launches (see TASK-12). Children are immutable snapshots — new prompt on reused session = new child node.
 
 - **Backlog** (existing `backlog/` tool): the *human-visible, auditable, high-level* published view of the DAG. Tasks/subtasks map to (or summarize) graph nodes. Agents read it with the `backlog` CLI.
 
@@ -229,7 +228,7 @@ Humans mostly interact via backlog (high level) and `swarm/cli.py` status / broa
 See `graph.json` ideas in historical notes + the SQLite schema in `backlog/decisions/decision-1`.
 
 Rough shape:
-- Per-Thing directory under `alt/state/things/<thing-id>/`
+- Per-Thing directory under proposed `alt/state/things/<thing-id>/` (directory does not exist)
 - `graph.json` (or db): nodes + edges + live refs + revival history
 - `comms.db`: messages + subscription_cursors (per recent decision)
 - Optional checkpoints or artifacts
@@ -245,38 +244,3 @@ Rough shape:
 - Recent decision record on SQLite mailboxes
 
 The production `swarm/` + `babysit*` + monitor bits are the current implementation we are gradually evolving away from (or layering the new concepts on top of).
-
-## Holding the System in Your Head Persistently
-
-The goal of `alt/` is exactly to solve the problem you described.
-
-**Recommended practices:**
-
-1. Treat `alt/README.md` + the latest `graphify-out/GRAPH_REPORT.md` + backlog as the external brain. Read them at the start of deep work.
-
-2. **Model sync ritual** (suggested): At the beginning of a session with me, say "sync model" or just start. I will load the current alt/README + recent decisions + graph summary and either summarize or ask clarifying questions.
-
-3. **Learning / orientation mode**: Explicitly ask:
-   - "Walk me through kicking off a task end-to-end"
-   - "Quiz me on how mailboxes + pulse interact"
-   - "Simulate: parent wants to spawn a reviewer — what are the exact steps?"
-   - "What should the initial prompt for a new impl node contain?"
-
-   I can stay in "teach / quiz / simulate" mode as long as you want.
-
-4. Use the graph we just built (`graphify .`) — it surfaces real connections across code, prompts, backlog, and alt/.
-
-5. Add small living artifacts here over time:
-   - Mermaid diagrams for the main flows (Pulse cycle, node lifecycle, comms).
-   - A one-page "cheat sheet" of the mental model.
-   - Concrete examples (a real small Thing graph + mailbox contents).
-
-6. Keep decisions in `backlog/decisions/` and reference them here.
-
-Would you like me to:
-- Immediately replace this file with an even more polished version (with diagrams)?
-- Add a "mental model sync" section to CLAUDE.md / AGENTS.md so future sessions start here?
-- Do a live interactive walkthrough right now ("let's pretend we're kicking off a real task — you tell me what should happen at each branch point")?
-- Prototype any small piece (e.g. a tiny pulse loop sketch or mailbox helper)?
-
-This document + the practice of regularly walking the mechanics with me should make the system feel much more "in your head" persistently.
