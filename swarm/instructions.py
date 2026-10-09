@@ -73,6 +73,7 @@ aiswarm stop                 # workers + session teardown
 - Do **not** use raw `tmux send-keys` (Enter is unreliable). Prefer `aiswarm send` or `./tmux-send`.
 - Sent by mistake? `aiswarm unsend <id>` (id printed by `send`) cancels it if not yet delivered.
 - Do **not** attach/stream a peer pane. Snapshot: `aiswarm capture 0.2`. Block until idle: `aiswarm wait 0.2`.
+- Human presence: `aiswarm presence` (`IN` -> ask questions; `OUT` -> autonomous progress on routine authorized tasks, do not pause for trivial approvals; seek approval if material architecture/design decision requires it).
 - Done = backlog Done + notes/tasks/docs + ping. TUI findings ≠ done (`/clear` wipes them; the other pane waits).
 - `session_worker.py` is one worker process per swarm session: it multiplexes comms for all panes,
   optional per-pane babysit prompts, and the tasks group. C `monitor-bin` remains per pane.
@@ -91,6 +92,7 @@ aiswarm stop                 # workers + session teardown
 
 - `aiswarm this` — which swarm / where is runtime.json
 - `aiswarm instructions tasks` — backlog dispatcher
+- `aiswarm instructions presence` — human availability & autonomy guidance
 - `aiswarm <command> --help` — flags and options
 """,
 )
