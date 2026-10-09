@@ -11,7 +11,7 @@ test-c: build
 	uv run pytest test_monitor.py -v
 
 test-swarm:
-	uv run pytest test_swarm.py -v
+	uv run pytest test_swarm.py test_presence.py -v
 
 test: test-c test-swarm
 

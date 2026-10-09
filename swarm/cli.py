@@ -19,6 +19,7 @@ try:
     from . import tasksctl as swarm_tasks
     from . import init as swarm_init
     from . import instructions as swarm_instructions
+    from . import presence as swarm_presence
     from .common import (
         build_this_text,
         load_config,
@@ -33,6 +34,7 @@ except ImportError:
     import tasksctl as swarm_tasks
     import init as swarm_init
     import instructions as swarm_instructions
+    import presence as swarm_presence
     from common import (
         build_this_text,
         load_config,
@@ -696,6 +698,44 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Run the tasks group for a duration (1h, 30m, 90s, or seconds) then auto-stop",
                 )
 
+    presence_p = sub.add_parser(
+        "presence",
+        help="Human availability / presence state and overrides (global and swarm-local)",
+        description=(
+            "Check or override human availability state so agents know whether a human is present.\n"
+            "Scopes:\n"
+            "  aiswarm presence [config]                        Show effective, local, and global presence\n"
+            "  aiswarm presence global in|out|auto [--for D]     Set global override or reset to auto\n"
+            "  aiswarm presence local in|out|auto|global [--for] Set local override or follow global\n"
+            "Shorthand:\n"
+            "  aiswarm presence in|out|auto                      Sets local mode for current swarm"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    presence_p.add_argument("tokens", nargs="*", help="[local|global] [mode] or shorthand [mode]")
+    presence_p.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        default=None,
+        help=CONFIG_ARG_HELP,
+    )
+    presence_p.add_argument(
+        "--for",
+        dest="for_duration",
+        type=_duration_arg,
+        metavar="DURATION",
+        help="Duration for override (e.g. 2h, 30m, 90s) before expiring back to auto/global",
+    )
+    presence_p.add_argument(
+        "--idle-timeout",
+        type=_duration_arg,
+        default=None,
+        metavar="DURATION",
+        help="Idle duration threshold for passive auto detection (default 15m)",
+    )
+    presence_p.add_argument("--json", action="store_true", help="Emit JSON output")
+
     _order_subcommands(sub)
     return parser
 
@@ -1202,6 +1242,107 @@ def main(argv: list[str] | None = None) -> int:
                     print("no dispatch (no free pane or no candidates)")
             else:
                 swarm_tasks.status(cfg)
+            return 0
+
+        if args.command == "presence":
+            tokens = list(args.tokens)
+            explicit_cfg = getattr(args, "config_file", None)
+            if tokens and looks_like_config_path(tokens[0]) and not explicit_cfg:
+                explicit_cfg = tokens.pop(0)
+
+            # Determine scope and mode
+            # Scopes: global, local
+            # Commands:
+            #   aiswarm presence                           -> query
+            #   aiswarm presence global [in|out|auto]      -> set global override (or reset to auto)
+            #   aiswarm presence local [in|out|auto|global]-> set local override (or follow global)
+            #   aiswarm presence in|out|auto|global        -> shorthand for 'presence local <mode>'
+            scope = None
+            mode = None
+            if len(tokens) > 2:
+                raise ValueError(f"too many arguments for presence: {' '.join(tokens)}")
+
+            if len(tokens) == 2:
+                first, second = tokens[0].lower(), tokens[1].lower()
+                if first in ("global", "g"):
+                    scope = "global"
+                    mode = second
+                elif first in ("local", "l"):
+                    scope = "local"
+                    mode = second
+                else:
+                    raise ValueError(f"unknown presence scope '{tokens[0]}' (use 'global' or 'local')")
+            elif len(tokens) == 1:
+                arg = tokens[0].lower()
+                if arg in ("global", "g"):
+                    scope = "global"
+                    # query or missing mode
+                    mode = None
+                elif arg in ("local", "l"):
+                    scope = "local"
+                    mode = None
+                elif arg in ("in", "out", "auto"):
+                    scope = "local"
+                    mode = arg
+                else:
+                    raise ValueError(f"unknown presence mode or scope '{tokens[0]}' (use 'presence local global' to reset to global)")
+
+            until = _until_from_args(args)
+            if until is not None and not mode:
+                raise ValueError("--for cannot be specified without setting a mode (in or out)")
+
+            # Resolve config if needed for local scope or display
+            cfg = None
+            try:
+                cfg = load_config(explicit_cfg)
+            except Exception:
+                pass
+            session_name = cfg.session_name if cfg else None
+
+            timeout = args.idle_timeout or swarm_presence.DEFAULT_IDLE_TIMEOUT_SECS
+
+            if mode:
+                if scope == "global":
+                    if mode not in ("in", "out", "auto"):
+                        raise ValueError(f"invalid global presence mode: '{mode}' (use in, out, auto)")
+                    swarm_presence.save_override(swarm_presence.GLOBAL_PRESENCE_PATH, mode, until)
+                    print(f"Set global presence to '{mode}'" + (f" until {time.strftime('%H:%M:%S', time.localtime(until))}" if until else ""))
+                elif scope == "local":
+                    if mode not in ("in", "out", "auto", "global"):
+                        raise ValueError(f"invalid local presence mode: '{mode}' (use in, out, auto, global)")
+                    if not session_name:
+                        raise ValueError("local presence requires a valid swarm config/session")
+                    local_path = swarm_presence.local_presence_path(session_name)
+                    swarm_presence.save_override(local_path, mode, until)
+                    print(f"Set local presence ({session_name}) to '{mode}'" + (f" until {time.strftime('%H:%M:%S', time.localtime(until))}" if until else ""))
+                return 0
+
+            # Query mode
+            status = swarm_presence.evaluate_presence(
+                session_name=session_name,
+                idle_timeout=timeout,
+                global_path=swarm_presence.GLOBAL_PRESENCE_PATH,
+            )
+            if args.json:
+                data = {
+                    "effective": status.effective,
+                    "session": status.session_name,
+                    "local": {
+                        "mode": status.local.mode,
+                        "state": status.local.state,
+                        "source": status.local.source,
+                        "idle_seconds": status.local.idle_seconds,
+                    },
+                    "global": {
+                        "mode": status.global_eval.mode,
+                        "state": status.global_eval.state,
+                        "source": status.global_eval.source,
+                        "idle_seconds": status.global_eval.idle_seconds,
+                    },
+                }
+                print(json.dumps(data, indent=2))
+            else:
+                print(status.summary())
             return 0
 
         cfg = _cfg_from_args(args)

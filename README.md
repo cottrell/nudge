@@ -227,6 +227,24 @@ Notes:
   the config flags. No recorded id keeps `pane.command` (Claude and Grok still mint).
   Plain `start` always mints.
 - tasks dispatcher state and enable flag: `/tmp/nudge-swarm/<session>/tasks/`
+- presence state: `/tmp/nudge-swarm/presence_global.json` and `/tmp/nudge-swarm/<session>/presence_local.json`
+
+## Human Presence (`aiswarm presence`)
+
+Agents calibrate behavior based on whether a human is present (`IN`) or away/unattended (`OUT`).
+Default auto timeout is 15 minutes (`900s`), requiring no YAML configuration to work across existing swarms.
+
+- **`IN`**: Value human time. Ask clarifying questions, seek guidance, do not leave them waiting.
+- **`OUT`**: High autonomy on routine authorized tasks. Do not pause for trivial approvals; make reasonable decisions, document choices in notes, and keep moving. Seek approval if material architecture/design decision requires it.
+
+```bash
+aiswarm presence                              # effective, local, and global presence
+aiswarm presence in                           # pin current swarm to IN
+aiswarm presence out                          # pin current swarm to OUT
+aiswarm presence local global                 # follow global presence (default)
+aiswarm presence global in|out|auto           # set or reset global presence
+aiswarm presence in --for 2h                  # temporary override with auto-expiry
+```
 
 ## Tasks dispatcher (backlog → free panes)
 
