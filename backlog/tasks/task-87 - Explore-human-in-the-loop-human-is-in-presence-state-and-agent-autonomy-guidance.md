@@ -3,10 +3,10 @@ id: TASK-87
 title: >-
   Explore 'human-in-the-loop / human is in' presence state and agent autonomy
   guidance
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-09 08:57'
-updated_date: '2026-10-09 10:39'
+updated_date: '2026-10-09 11:06'
 labels: []
 dependencies: []
 ---
@@ -19,10 +19,10 @@ Agents frequently block waiting for human approval overnight or while the user i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Define presence semantics (global vs per-swarm state, e.g. 'aiswarm human in/out' or file/flag in runtime/config)
-- [ ] #2 Evaluate passive timeout vs explicit toggles vs auto-detection (e.g. prompt timeout or idle terminal detection)
-- [ ] #3 Provide guidance and naming conventions for AGENTS.md so agents know when and how to proceed autonomously
-- [ ] #4 Document concrete design recommendations or CLI commands in nudge/aiswarm
+- [x] #1 Define presence semantics (global vs per-swarm state, e.g. 'aiswarm human in/out' or file/flag in runtime/config)
+- [x] #2 Evaluate passive timeout vs explicit toggles vs auto-detection (e.g. prompt timeout or idle terminal detection)
+- [x] #3 Provide guidance and naming conventions for AGENTS.md so agents know when and how to proceed autonomously
+- [x] #4 Document concrete design recommendations or CLI commands in nudge/aiswarm
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -104,4 +104,12 @@ Notes and discussion points (no decisions finalized):
     `aiswarm presence local in|out|auto|global`
   - Status display: print effective state alongside origin:
     e.g. `local: auto (this swarm)`, `global: auto (3 clients, idle 4m)`, `effective: in`.
+
+Exploration and implementation concluded. All criteria met and implemented via child task TASK-87.1 (commit 7a3f75c). Full test suite passing (179 tests).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Explored presence state semantics, passive vs active detection, and AGENTS.md conventions. Fully implemented and verified via TASK-87.1 with 'aiswarm presence', test coverage, and documentation.
+<!-- SECTION:FINAL_SUMMARY:END -->
