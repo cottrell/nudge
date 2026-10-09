@@ -92,7 +92,6 @@ aiswarm stop                 # workers + session teardown
 
 - `aiswarm this` — which swarm / where is runtime.json
 - `aiswarm instructions tasks` — backlog dispatcher
-- `aiswarm instructions presence` — human availability & autonomy guidance
 - `aiswarm <command> --help` — flags and options
 """,
 )
@@ -180,44 +179,6 @@ It is not a continuous heartbeat and does not inspect provider error strings.
 """,
 )
 
-_reg(
-    "presence",
-    "Human availability state, overrides, and agent autonomy guidance",
-    """
-## Human Presence and Agent Autonomy
-
-`aiswarm presence` provides human presence state (IN vs OUT) so agents can calibrate their behavior:
-
-- **When Human is IN:** Value their time. Interrogate, clarify ambiguities, ask questions, and don't make them wait.
-- **When Human is OUT:** High autonomy on routine tasks. Do NOT stop or end turns asking "Does this look good?" or waiting for approvals on routine steps. Make reasonable decisions, document assumptions in backlog notes or commits, and proceed. If a material architectural decision explicitly requires human approval, document it and move to other work or idle.
-
-### Modes and Scopes
-
-- **Global Scope (`aiswarm presence global [in|out|auto]`):**
-  - `auto`: Passive detection from `tmux list-clients` across all attached terminals (default).
-  - `in`: Manually pinned global IN.
-  - `out`: Manually pinned global OUT.
-- **Swarm-Local Scope (`aiswarm presence local [in|out|auto|global]`):**
-  - `global`: Follow global state (default).
-  - `in`: Pinned local IN.
-  - `out`: Pinned local OUT.
-  - `auto`: Passive detection scoped strictly to clients viewing this swarm's session.
-
-### CLI
-
-```bash
-aiswarm presence                              # Show effective, local, and global presence
-aiswarm presence --json                       # Programmatic JSON inspection
-aiswarm presence in                           # Pin current swarm to IN
-aiswarm presence out                          # Pin current swarm to OUT
-aiswarm presence local global                 # Reset current swarm to follow global
-aiswarm presence global out                   # Pin global to OUT
-aiswarm presence global auto                  # Reset global to passive tmux auto detection
-aiswarm presence in --for 2h                  # Set override with 2-hour auto-expiry
-```
-""",
-)
-
 
 def bare_help() -> str:
     # Handwritten cheat sheet for bare `aiswarm`. Command set and order must
@@ -260,7 +221,7 @@ Usage:
   aiswarm quota-debug <agent>      Raw and parsed usage for one agent
   aiswarm av-usage                 Agentsview token usage
   aiswarm help                     Probed model commands for installed CLIs
-  aiswarm instructions             Agent guides (overview, tasks, presence)
+  aiswarm instructions             Agent guides (overview, tasks)
 
 Config (when path omitted):
   $AISWARM_CONFIG  or  walk-up .aiswarm/config.yaml  or  explicit path / -c

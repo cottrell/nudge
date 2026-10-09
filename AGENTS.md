@@ -67,7 +67,6 @@ Read workflow first:
 - `aiswarm` — common commands cheat sheet
 - `aiswarm instructions overview` — required agent briefing
 - `aiswarm instructions tasks` — backlog dispatcher
-- `aiswarm instructions presence` — human availability & autonomy guidance
 - `aiswarm this` — this swarm's config + runtime.json path
 
 After start, machine map (not git): `/tmp/nudge-swarm/nudge/runtime.json`
