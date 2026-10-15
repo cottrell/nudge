@@ -216,7 +216,6 @@ def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babys
         "        nudge:",
         f"          title: {title}",
         f"          agent: {agent}",
-        "          monitor: true",
         f"          categories: [{weight}, {agent}]",
     ]
     if babysit:
