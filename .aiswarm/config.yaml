@@ -7,7 +7,6 @@ windows:
         nudge:
           title: codex heavy
           agent: codex
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
@@ -20,7 +19,6 @@ windows:
         nudge:
           title: codex light
           agent: codex
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
@@ -33,7 +31,6 @@ windows:
         nudge:
           title: claude heavy
           agent: claude
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
@@ -46,7 +43,6 @@ windows:
         nudge:
           title: claude light
           agent: claude
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
@@ -59,7 +55,6 @@ windows:
         nudge:
           title: antigravity
           agent: antigravity
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
@@ -72,7 +67,6 @@ windows:
         nudge:
           title: grok
           agent: grok
-          monitor: true
           tasks:
             # no enabled: false = allowed to take tasks when dispatcher runs
           babysit:
