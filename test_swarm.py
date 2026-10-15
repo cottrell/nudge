@@ -5284,3 +5284,45 @@ def test_unsend_cli_roundtrip(capsys, monkeypatch):
         assert "cancelled" in capsys.readouterr().out
     finally:
         shutil.rmtree(Path("/tmp/nudge-swarm") / sess, ignore_errors=True)
+
+
+def test_pane_tasks_gate_command(tmp_path: Path):
+    from swarm.common import load_config
+    from swarm import tasksctl
+    cfg_file = write_config(tmp_path, """
+session_name: test_gate
+windows:
+  - window_name: grid
+    panes:
+      - shell_command: "codex"
+        nudge:
+          agent: codex
+          monitor: true
+          tasks:
+            enabled: true
+            gate_command: "exit 0"
+      - shell_command: "claude"
+        nudge:
+          agent: claude
+          monitor: true
+          tasks:
+            enabled: true
+            gate_command: "exit 1"
+      - shell_command: "agy"
+        nudge:
+          agent: antigravity
+          monitor: true
+          tasks:
+            enabled: true
+""")
+    cfg = load_config(cfg_file)
+    p0 = cfg.panes[0]
+    p1 = cfg.panes[1]
+    p2 = cfg.panes[2]
+    assert p0.tasks_gate_command == "exit 0"
+    assert p1.tasks_gate_command == "exit 1"
+    assert p2.tasks_gate_command is None
+
+    assert tasksctl.pane_passes_gate(cfg, p0.pane) is True
+    assert tasksctl.pane_passes_gate(cfg, p1.pane) is False
+    assert tasksctl.pane_passes_gate(cfg, p2.pane) is True

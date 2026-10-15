@@ -569,6 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quota_p.add_argument("--ttl", type=int, default=600, help="Cache TTL in seconds")
     quota_p.add_argument("--force", action="store_true", help="Force refresh")
+    quota_p.add_argument("--json", action="store_true", help="Print versioned machine-readable JSON output")
     quota_p.add_argument("-w", "--watch", action="store_true", help="Refresh in place until interrupted")
     quota_p.add_argument("-i", "--interval", type=float, default=2.0, help="Watch refresh interval in seconds")
 
@@ -944,6 +945,20 @@ def main(argv: list[str] | None = None) -> int:
                             out_lines.append("  - No active limits found.")
                     out_lines.append("")
                 return "\n".join(out_lines)
+
+            if getattr(args, "json", False):
+                result = {}
+                for agent in agents:
+                    res = get_cached_provider_usage(agent, ttl=args.ttl, force=args.force)
+                    result[agent] = {
+                        "limits": res.get("limits", []),
+                        "fetched_at": res.get("fetched_at", 0),
+                        "fetched_at_iso": res.get("fetched_at_iso", ""),
+                    }
+                    if "error" in res:
+                        result[agent]["error"] = res["error"]
+                print(json.dumps(result, indent=2))
+                return 0
 
             if args.watch:
                 if args.interval <= 0:

@@ -809,9 +809,27 @@ def pane_has_pending(cfg: SwarmConfig, pane: str) -> bool:
         return False
 
 
+def pane_passes_gate(cfg: SwarmConfig, pane: str) -> bool:
+    """True if pane has no gate_command or if the gate command exits 0."""
+    p_spec = next((p for p in cfg.panes if p.pane == pane), None)
+    if not p_spec or not p_spec.tasks_gate_command:
+        return True
+    cmd = p_spec.tasks_gate_command
+    # Allow simple token substitutions
+    cmd = cmd.replace("{pane}", pane).replace("{agent}", p_spec.agent or "")
+    try:
+        res = subprocess.run(cmd, shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return res.returncode == 0
+    except Exception as e:
+        print(f"warning: gate_command for pane {pane} failed with error: {e}", file=sys.stderr)
+        return False
+
+
 def is_pane_free(cfg: SwarmConfig, pane: str, state: dict) -> bool:
-    """Free for *new* claim: no local assignment + ready for prompt."""
+    """Free for *new* claim: no local assignment + ready for prompt + gate command passes."""
     if pane in (state.get("assignments") or {}):
+        return False
+    if not pane_passes_gate(cfg, pane):
         return False
     return pane_ready_for_prompt(cfg, pane)
 

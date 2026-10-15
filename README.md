@@ -282,6 +282,7 @@ windows:
             enabled: false        # prefer not both on same pane (fights tasks chase)
           tasks:
             enabled: true
+            gate_command: null    # optional: shell command; pane is only free when exit code is 0
 ```
 
 ```bash
@@ -307,7 +308,8 @@ state is cleared on the next poll when status is Done.
   `min_chase_secs` (default same as `poll_secs`). Raise it only if you need fewer nudges.
 
 Each `tasks once` pass (and each poll from `tasks start`) assigns **at most one task to each free
-pane**. A pane is free when it has no local assignment or pending comms-log event and, by default,
+pane**. A pane is free when it has no local assignment or pending comms-log event, passes its optional
+`gate_command` (if defined, must exit 0; supports `{pane}` and `{agent}` token replacement), and by default,
 is idle (`require_idle: true`; monitor-unknown panes are also eligible). With N free panes and M
 candidate tasks, the pass claims `min(N, M)` tasks, further limited by `max_inflight` when it is
 greater than zero. For example, 3 free panes and 10 To Dos claims 3 tasks this pass; the other 7

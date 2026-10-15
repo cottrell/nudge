@@ -181,6 +181,7 @@ class PaneSpec:
     comms: bool
     tasks_enabled: bool
     categories: list[str] = field(default_factory=list)
+    tasks_gate_command: str | None = None
     command_alias: str | None = None  # set when shell_command was a models.yaml key
     alias_warning: str | None = None  # printed by start, not by every load_config
 
@@ -510,6 +511,9 @@ def _fill_pane(
     tasks_enabled = bool(tasks_raw.get("enabled", monitor))
     if tasks_enabled and not monitor:
         raise ValueError(f"pane {pane_id} cannot enable tasks when monitor=false")
+    tasks_gate_command = tasks_raw.get("gate_command") or nudge.get("gate_command")
+    if tasks_gate_command is not None:
+        tasks_gate_command = str(tasks_gate_command).strip() or None
 
     # comms default = monitor
     comms_raw = nudge.get("comms") if isinstance(nudge.get("comms"), dict) else {}
@@ -538,6 +542,7 @@ def _fill_pane(
         comms=comms,
         tasks_enabled=tasks_enabled,
         categories=categories,
+        tasks_gate_command=tasks_gate_command,
         command_alias=command_alias,
         alias_warning=alias_warning,
     )
