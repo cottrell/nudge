@@ -27,7 +27,7 @@ are solving a related but different problem.
 | **[Claude Squad](https://github.com/smtg-ai/claude-squad)** (`cs`) | real tmux · Go TUI | Background multi-agent sessions, worktrees, diff review before apply | Session/worktree manager; not swarm log + babysit |
 | **[multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun)** | real tmux | Hierarchy (shogun → karo → ashigaru) across many CLIs | Role tree orchestration vs declarative pane grid |
 | **[Corral](https://github.com/cdknorow/corral)** | tmux + FastAPI | Self-hosted control plane for local coding agents | Server/API flavor; different packaging |
-| **[herdr](https://github.com/ogulcancelik/herdr)** | own mux (Rust) | Agent-aware multiplexer, status detection, persistent workspaces | Smart terminal, not tmux YAML + log workers |
+| **[herdr](https://github.com/herdrdev/herdr)** | own mux (Rust) | PTY server for agent panes: semantic status, CLI/socket, SSH machines | Replaces tmux; no idle log, babysit, or backlog dispatch |
 | **[tmux-ide](https://github.com/wavyrai/tmux-ide)** | real tmux | `ide.yml` layouts, agent-team templates | Layout/IDE templates; lighter orchestration loop |
 | **[cmux](https://github.com/manaflow-ai/cmux)** | macOS terminal | Agent-native terminal (panes/splits), not a thin tmux wrapper | Different substrate; often compared in the same “fleet” conversation |
 | **Claude Code Agent Teams** | native / tmux panes | Vendor multi-agent teams (`teammateMode`) | Claude-only product feature, not multi-provider harness |
@@ -118,6 +118,53 @@ Gemini, Aider, …), attach/diff/checkout/resume, optional auto-yes.
 Overlap: tmux-backed multi-agent coding with a human overview.
 Claude Squad is **instance lifecycle + worktrees**; nudge is **grid + idle
 workers + optional task feed**.
+
+#### [herdr](https://herdr.dev)
+
+[herdr](https://github.com/herdrdev/herdr) (site [herdr.dev](https://herdr.dev),
+Apache-2.0; previously `ogulcancelik/herdr`) is a **terminal runtime**, not a
+layer on tmux. One Rust binary (`curl -fsSL https://herdr.dev/install.sh | sh`,
+or Homebrew, mise, Nix, Windows installer) runs a background server that owns
+the PTYs. The TUI, CLI, plain SSH, and saved remote machines are clients.
+Prefix is `ctrl+b`; mouse split and drag are first-class. Workspaces, tabs,
+and panes. Plugins and a local socket API sit on the same command surface as
+the CLI.
+
+It detects a long list of coding CLIs (Claude Code, Codex, Cursor, opencode,
+Grok, Copilot, Pi, and others) by process plus screen manifests, or by the
+agent reporting its own state. Status is `working`, `blocked`, `idle`, `done`,
+or `unknown`, and rolls up to the tab and workspace. `blocked` means a
+recognized approval or question UI. `agent prompt`, `agent wait`, and
+`agent read` let a script or another agent submit work and wait for a real
+lifecycle state. A prompt aimed at an agent that is already `blocked` is
+refused. A prompt aimed at an agent that is still `working` is allowed.
+Grok and Antigravity count as idle once they are back at their prompt, even
+while background jobs or subagents are still running.
+
+Detach (`ctrl+b q`) keeps every process. A **server** restart does not: layout,
+cwd, and focus come back, and supported integrations can relaunch the agent
+with its native resume flag. Pane scrollback replay is off unless
+`pane_history` is enabled. Live handoff across a binary upgrade is
+experimental.
+
+| | **nudge (`aiswarm`)** | **herdr** |
+| --- | --- | --- |
+| **Shape** | Python + C monitor on real tmux; YAML/tmuxp grid | Rust PTY server + TUI client |
+| **Core job** | Keep a fixed swarm moving: idle gate, log, babysit, backlog claim | Own the terminals and show which agent needs a human |
+| **Substrate** | tmux session you already have | Herdr replaces tmux for those panes |
+| **Activity** | Any output is `working` until a quiet timeout (grok title is a fast idle path) | Semantic screen/self-report: working, blocked, idle, done |
+| **Comms** | Durable log; deliver only when the pane is idle | `agent prompt` / `send-keys` / `wait` on the live terminal |
+| **Work queue** | Optional Backlog.md claim onto a free pane | No task queue; agents spawn and prompt each other |
+| **Durability** | tmux keeps processes; nudge runtime is under `/tmp`; `start --resume` splices recorded provider session ids | Detach keeps processes; server restart restores layout and can native-resume the agent |
+| **Machines** | One host per swarm; cross-swarm send via `runtime.json` | Saved SSH machines in one client |
+| **When to prefer** | Declared grid, shared checkout, idle-gated mailbox, backlog dispatch | Multiplexer that knows agent state and survives the client |
+
+Overlap: many provider CLIs in parallel, and a way for one agent to poke
+another without a human walking the panes. Herdr's poke is a terminal prompt
+plus a lifecycle wait. nudge's poke is a durable log line delivered when the
+activity monitor says the pane is quiet. Herdr can run *inside* an outer tmux,
+but it does not see agents that are themselves inside a tmux session in one of
+its panes, so it is a poor inner layer under an `aiswarm` grid.
 
 #### [multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun)
 

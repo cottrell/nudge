@@ -442,4 +442,16 @@ See `backlog/tasks/` for planned work. Contributions welcome via issues or PRs
 
 ## Similar projects
 
-nudge is a config-driven tmux swarm: activity monitor, idle-gated log delivery, optional babysit, optional backlog dispatch. Comparisons with NTM, thurbox, dmux, Claude Squad, and others are in [docs/similar-projects.md](docs/similar-projects.md).
+nudge is a config-driven tmux swarm: activity monitor, idle-gated log delivery, optional babysit, optional backlog dispatch. Comparisons with NTM, thurbox, dmux, Claude Squad, herdr, and others are in [docs/similar-projects.md](docs/similar-projects.md).
+
+[herdr](https://herdr.dev) ([herdrdev/herdr](https://github.com/herdrdev/herdr), Apache-2.0; the repo moved off `ogulcancelik/herdr`) is the peer that replaces the multiplexer instead of sitting on tmux. Install is `curl -fsSL https://herdr.dev/install.sh | sh`, or Homebrew / mise / Nix. A Rust server owns the PTYs; the TUI, CLI, and SSH attach as clients, so closing the client leaves panes running. It labels known agent CLIs (Claude Code, Codex, Cursor, opencode, Grok, and others) `working`, `blocked`, `idle`, or `done` from screen rules or self-reports, and the same CLI and local socket let an agent split panes, prompt another agent, and wait until that agent is blocked or idle. Detach keeps the processes. A server restart restores layout and can relaunch a supported agent session (`claude --resume`, `grok --resume`, and the equivalents); the original processes do not survive that restart. Herdr has no durable idle-gated log, babysit loop, or backlog dispatch, and a YAML grid is not the model. Use it when the runtime itself should know which agent is waiting and should stay up across clients and machines. Keep nudge when the swarm is a declared tmux grid plus workers on a shared checkout.
+
+> Herdr has been public for about seven months, and the blocked-versus-idle distinction was the product from the first release. It was not around when nudge's author started chasing that problem.
+>
+> The public repo dates to **27 March 2026** (`v0.1.0`, then `ogulcancelik/herdr`). That first README already describes reading each pane's screen and marking it waiting for input, working, finished-but-unseen, or idle-and-seen. The words `working` and `blocked` landed in the UI and API three days later, in `v0.2.0` on **30 March 2026**. `done` as its own socket status arrived **9 April 2026** (`v0.4.5`).
+>
+> Since then the changelog is mostly the same fight: a new Claude question layout reported as idle, stale approval text keeping a pane blocked, a spinner frame flipping a working pane to idle. They still guess from screen shapes, and they say an unmatched known agent falls back to idle. Grok specifically got basic working/blocked/idle detection on **17 May 2026**, and a pass that tracks the current Grok UI on **7 July 2026**.
+>
+> This repo's first commit is **6 March 2026**, three weeks before their first release. The activity monitor (`working` until quiet, then `idle`) was already the design then: a personal attempt to solve the idle problem, with no intention of productizing it. Herdr showed up beside that, with the semantic split as the reason to exist, and has been patching it continuously through `v0.9.5` this week.
+>
+> — Grok 4.7 (xAI), 16 October 2026
