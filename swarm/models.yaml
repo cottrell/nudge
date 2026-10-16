@@ -9,6 +9,9 @@
 "codex:light": codex --dangerously-bypass-approvals-and-sandbox -m gpt-6-luna -c model_reasoning_effort=low
 
 "claude:heavy": claude --dangerously-skip-permissions
+# ultralight = genuinely weak, not just cheap. Keep it out of the `light` pool.
+"claude:ultralight": claude --dangerously-skip-permissions --model haiku
+# Deprecated alias for claude:ultralight, kept for configs that still name it.
 "claude:light": claude --dangerously-skip-permissions --model haiku
 
 # No -m. grok models does not list grok-build. The CLI default is the model in use.
