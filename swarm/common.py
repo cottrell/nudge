@@ -130,7 +130,7 @@ class BabysitSpec:
     short_prompt: str = ""
     short_prompt_file: Path | None = None
     via_log: bool = True  # if False, send nudges directly instead of via comms log
-    # EMA quota-pacing settings (see README § Quota pacing)
+    # EMA quota-pacing settings (see docs/quota.md)
     quota_probe_secs: int = 300    # how often to sample quota (seconds)
     ema_alpha: float = 0.30        # EMA smoothing factor
     ema_safety: float = 0.92       # fraction of quota to target (leaves ~8% buffer)

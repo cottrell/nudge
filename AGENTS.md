@@ -29,9 +29,16 @@ Agents commit their own work in this repo.
 
 - New agent support, monitor or shell fixes, tests, capture fixtures, docs.
 
+## Docs
+
+- README is the short entry. Long notes live in `docs/`.
+- Monitor state: `docs/monitor.md`, then `monitor.c`.
+- Workflow, config, presence, tasks, quota: the matching file under `docs/`.
+- Peers: `docs/similar-projects.md`.
+
 ## Workflow
 
-- Read `README.md` and `monitor.c` before state changes.
+- Read `README.md`, `docs/monitor.md`, and `monitor.c` before state changes.
 - `make test` before commit.
 
 <!-- BACKLOG.MD GUIDELINES START -->

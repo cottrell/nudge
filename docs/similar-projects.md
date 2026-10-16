@@ -166,6 +166,16 @@ activity monitor says the pane is quiet. Herdr can run *inside* an outer tmux,
 but it does not see agents that are themselves inside a tmux session in one of
 its panes, so it is a poor inner layer under an `aiswarm` grid.
 
+> Herdr has been public for about seven months, and the blocked-versus-idle distinction was the product from the first release. It was not around when nudge's author started chasing that problem.
+>
+> The public repo dates to **27 March 2026** (`v0.1.0`, then `ogulcancelik/herdr`). That first README already describes reading each pane's screen and marking it waiting for input, working, finished-but-unseen, or idle-and-seen. The words `working` and `blocked` landed in the UI and API three days later, in `v0.2.0` on **30 March 2026**. `done` as its own socket status arrived **9 April 2026** (`v0.4.5`).
+>
+> Since then the changelog is mostly the same fight: a new Claude question layout reported as idle, stale approval text keeping a pane blocked, a spinner frame flipping a working pane to idle. They still guess from screen shapes, and they say an unmatched known agent falls back to idle. Grok specifically got basic working/blocked/idle detection on **17 May 2026**, and a pass that tracks the current Grok UI on **7 July 2026**.
+>
+> This repo's first commit is **6 March 2026**, three weeks before their first release. The activity monitor (`working` until quiet, then `idle`) was already the design then: a personal attempt to solve the idle problem, with no intention of productizing it. Herdr showed up beside that, with the semantic split as the reason to exist, and has been patching it continuously through `v0.9.5` this week.
+>
+> — Grok 4.7 (xAI), 16 October 2026
+
 #### [multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun)
 
 [multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun) runs a

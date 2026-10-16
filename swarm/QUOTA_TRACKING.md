@@ -2,7 +2,7 @@
 
 Forecast sampler: quota status and an EMA of exhaustion from history for Claude, Codex, and agy.
 
-Babysit nudge pacing is a different EMA. It lives in `pane_worker.py` and is documented in the README section "Babysit quota pacing". `agent: antigravity` is paced and sampled as `agy`.
+Babysit nudge pacing is a different EMA. It lives in `pane_worker.py` and is documented in `docs/quota.md`. `agent: antigravity` is paced and sampled as `agy`.
 
 ## Quick Start
 
