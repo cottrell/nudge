@@ -1,0 +1,47 @@
+session_name: j
+# tasks:
+#   require_label: "auto"     # Optional: only claim backlog tasks tagged with this label
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: "aider:gemini"
+        nudge:
+          title: aider gemini
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:gemini-pro"
+        nudge:
+          title: aider gemini-pro
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:groq"
+        nudge:
+          title: aider groq
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:groq-oss"
+        nudge:
+          title: aider groq-oss
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:codestral"
+        nudge:
+          title: aider codestral
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:mistral-code"
+        nudge:
+          title: aider mistral-code
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:cohere"
+        nudge:
+          title: aider cohere
+          agent: aider
+          categories: [light, aider]
+      - shell_command: "aider:nemotron"
+        nudge:
+          title: aider nemotron
+          agent: aider
+          categories: [light, aider]

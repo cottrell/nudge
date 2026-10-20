@@ -13,13 +13,13 @@
 | alias | model | free tier |
 |---|---|---|
 | `aider:gemini` | gemini/gemini-3.8-flash | Google AI Studio |
-| `aider:gemini-pro` | gemini/gemini-2.5-pro | Google AI Studio (tighter) |
+| `aider:gemini-pro` | gemini/gemini-3.1-pro-preview | Google AI Studio (preview) |
 | `aider:groq` | qwen3.8-27b | Groq |
 | `aider:groq-oss` | gpt-oss-120b | Groq |
 | `aider:codestral` | codestral-latest | Mistral |
 | `aider:mistral-code` | mistral-code-latest | Mistral |
 | `aider:cohere` | cohere/north-mini-code:free | OpenRouter `:free` |
-| `aider:nemotron` | nemotron-3-super-120b:free | OpenRouter `:free` |
+| `aider:nemotron` | nemotron-3-ultra-550b-a55b:free | OpenRouter `:free` |
 
 Groq ids verified with `aider --list-models`; the others are from TASK-89 or review and not all verified. Check with `aider --list-models <name>`.
 
@@ -29,6 +29,13 @@ Groq ids verified with `aider --list-models`; the others are from TASK-89 or rev
 - Google: gemini-3.8-flash is ~$0.75/1M input on pay-as-you-go (reviewer-checked; the older ~$0.075 figure in TASK-89 is wrong for 3.8). Enable billing on the AI Studio project to lift free limits.
 - Groq: qwen/qwen3.8-27b is ~$0.80/1M input, $4/1M output, and the free tier is ~1K req/day for it (not 14.4k, which applies to smaller models). Upgrade via the Developer tier in Groq Console.
 - Hitting a limit: swap the pane's alias or enable billing. Only the key/alias changes.
+
+## Found in live use
+
+- gemini-2.5-pro: 404 for new accounts, replaced by gemini-3.1-pro-preview.
+- nemotron-3-super-120b-a12b:free: listed by OpenRouter but its Nvidia backend 404s. Use nemotron-3-ultra-550b-a55b:free.
+- Groq free tier TPM is tiny (qwen ~7k input tokens/min, gpt-oss ~8k). Aider's repo-map blows it, so Groq aliases use `--map-tokens 0`. Expect rate limits on large files even so.
+- gemini-3.8-flash can return 503 "high demand". Aider retries.
 
 ## Monitor
 
