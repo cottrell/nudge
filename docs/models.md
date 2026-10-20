@@ -12,8 +12,8 @@
 
 | alias | model | free tier |
 |---|---|---|
-| `aider:gemini` | gemini-3.8-flash | Google AI Studio |
-| `aider:gemini-pro` | gemini-2.5-pro | Google AI Studio (tighter) |
+| `aider:gemini` | gemini/gemini-3.8-flash | Google AI Studio |
+| `aider:gemini-pro` | gemini/gemini-2.5-pro | Google AI Studio (tighter) |
 | `aider:groq` | qwen3.8-27b | Groq |
 | `aider:groq-oss` | gpt-oss-120b | Groq |
 | `aider:codestral` | codestral-latest | Mistral |

@@ -4,7 +4,7 @@ Agents commit their own work in this repo.
 
 ## Shape
 
-- Toolbox for claude, codex, copilot, gemini, grok, vibe, qwen, antigravity in tmux.
+- Toolbox for claude, codex, copilot, gemini, grok, vibe, qwen, antigravity, aider in tmux.
 - `monitor.c` → `monitor-bin`. Only monitor. No extra deps.
 - Shell: `attach.sh`, `tmux-send`.
 - Python package: `swarm/`. Workers `session_worker.py` and `pane_worker.py` stay at the repo root.

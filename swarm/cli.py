@@ -130,7 +130,7 @@ MODEL_HELPERS = {
         "command": "aider",
         "help": ["aider", "--help"],
         "run": "aider --model <model>",
-        "swarm": "aider --yes-always --no-auto-commits --model <model>",
+        "swarm": "aider --yes-always --no-auto-commits --no-gitignore --model <model>",
     },
 }
 
