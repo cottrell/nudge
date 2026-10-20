@@ -21,14 +21,14 @@
 | `aider:cohere` | cohere/north-mini-code:free | OpenRouter `:free` |
 | `aider:nemotron` | nemotron-3-super-120b:free | OpenRouter `:free` |
 
-Model ids are from TASK-89 and not verified against live provider lists. Check with `aider --list-models <name>`.
+Groq ids verified with `aider --list-models`; the others are from TASK-89 or review and not all verified. Check with `aider --list-models <name>`.
 
 ## Free ceilings and paid upgrade
 
-- Google: ~1.5k req/day, 1M TPM free. Pay-as-you-go: enable billing on the AI Studio project; Flash ~$0.075/1M input tokens.
-- Groq: ~14.4k req/day, 30 RPM free. Pay-as-you-go: Developer tier in Groq Console; ~$0.20/1M tokens on small models.
-- Prices and limits are approximate (TASK-89 figures). Confirm in the provider console before relying on them.
-- Hitting a limit: swap the pane's alias or enable billing. No config other than the key changes.
+- Limits and prices differ per model and change. Check the provider console before relying on them.
+- Google: gemini-3.8-flash is ~$0.75/1M input on pay-as-you-go (reviewer-checked; the older ~$0.075 figure in TASK-89 is wrong for 3.8). Enable billing on the AI Studio project to lift free limits.
+- Groq: qwen/qwen3.8-27b is ~$0.80/1M input, $4/1M output, and the free tier is ~1K req/day for it (not 14.4k, which applies to smaller models). Upgrade via the Developer tier in Groq Console.
+- Hitting a limit: swap the pane's alias or enable billing. Only the key/alias changes.
 
 ## Monitor
 

@@ -14,8 +14,6 @@ windows:
             enabled: false
             interval_secs: 1800
             clear_every: 6
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
 
       - shell_command: "aider:groq"
         nudge:
@@ -27,5 +25,3 @@ windows:
             enabled: false
             interval_secs: 1800
             clear_every: 6
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
