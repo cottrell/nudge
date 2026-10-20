@@ -157,9 +157,11 @@ def shell_alias(agent: str, weight: str = "heavy") -> str:
 
     Roles are heavy, medium, and light. A missing role uses heavy, then the bare agent name.
     """
+    aliases = load_model_aliases()
+    if f"{agent}:{weight}" in aliases:
+        return f"{agent}:{weight}"
     if weight not in WEIGHT_PROFILES:
         raise ValueError(f"unknown weight {weight!r}, expected one of {tuple(WEIGHT_PROFILES.keys())}")
-    aliases = load_model_aliases()
     for key in (f"{agent}:{weight}", f"{agent}:heavy"):
         if key in aliases:
             return key
@@ -198,6 +200,10 @@ FLAVOUR_SPECS: dict[str, list[tuple[str, str]]] = {
         for agent in ("codex", "claude")
         for weight in ("heavy", "light")
     ],
+    "free": [
+        ("aider", w)
+        for w in ("gemini", "gemini-pro", "groq", "groq-oss", "codestral", "mistral-code", "cohere", "nemotron")
+    ],
     "demo": [
         (agent, "heavy")
         for agent in ("codex", "claude", "antigravity", "grok", "vibe", "copilot")
@@ -208,7 +214,7 @@ FLAVOURS = tuple(FLAVOUR_SPECS.keys())
 
 
 def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babysit: bool = False) -> str:
-    profile = WEIGHT_PROFILES[weight]
+    profile = WEIGHT_PROFILES.get(weight, WEIGHT_PROFILES["light"])
     cmd = shell_alias(agent, weight)
     title = f"{agent} {weight}"
     lines = [
@@ -216,7 +222,7 @@ def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babys
         "        nudge:",
         f"          title: {title}",
         f"          agent: {agent}",
-        f"          categories: [{weight}, {agent}]",
+        f"          categories: [{weight if weight in WEIGHT_PROFILES else "light"}, {agent}]",
     ]
     if babysit:
         lines.extend([

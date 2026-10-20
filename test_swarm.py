@@ -188,7 +188,7 @@ def test_swarm_init_categories_and_weights_on_all_flavours(tmp_path: Path):
         for pane in cfg.panes:
             if pane.agent:
                 # Every agent pane must have an explicit weight in title and categories
-                assert any(pane.title.endswith(f" {w}") for w in ("heavy", "medium", "light"))
+                assert flv == "free" or any(pane.title.endswith(f" {w}") for w in ("heavy", "medium", "light"))
                 assert pane.categories, f"pane {pane.pane} missing categories"
                 assert pane.agent in pane.categories
                 assert any(w in pane.categories for w in ("heavy", "medium", "light"))

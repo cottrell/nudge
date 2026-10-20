@@ -38,6 +38,6 @@ Groq ids verified with `aider --list-models`; the others are from TASK-89 or rev
 
 ## Try it
 
-`aiswarm init` is not changed. Use `swarm/templates/free-tier.yaml`:
+In a test project: `aiswarm init --flavour free` (8 aider panes, one per alias). Or the 2-pane `swarm/templates/free-tier.yaml`:
 
     aiswarm start swarm/templates/free-tier.yaml
