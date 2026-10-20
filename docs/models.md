@@ -30,6 +30,11 @@ Groq ids verified with `aider --list-models`; the others are from TASK-89 or rev
 - Groq: qwen/qwen3.8-27b is ~$0.80/1M input, $4/1M output, and the free tier is ~1K req/day for it (not 14.4k, which applies to smaller models). Upgrade via the Developer tier in Groq Console.
 - Hitting a limit: swap the pane's alias or enable billing. Only the key/alias changes.
 
+## Gotchas
+
+- Aider only sees git-tracked files plus files you `/add`. In a new repo with no commits it cannot see anything: `git add -A && git commit -m init` first, then start the swarm.
+- Run `make install-aiswarm` first if `aiswarm init --flavour free` is rejected (stale installed copy).
+
 ## Found in live use
 
 - gemini-2.5-pro: 404 for new accounts, replaced by gemini-3.1-pro-preview.

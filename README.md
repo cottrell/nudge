@@ -104,6 +104,7 @@ Send, categories, and handoff: [docs/workflow.md](docs/workflow.md).
 - [Presence](docs/presence.md) — `aiswarm presence`
 - [Tasks](docs/tasks.md) — backlog dispatcher, chase, healthcheck
 - [Quota pacing](docs/quota.md) — babysit EMA
+- [Free-tier models](docs/models.md) — aider panes on Gemini, Groq, Mistral, OpenRouter
 - [Monitor](docs/monitor.md) — activity states, fixtures, debug
 - [Similar projects](docs/similar-projects.md) — NTM, thurbox, dmux, Claude Squad, herdr, and others
 
