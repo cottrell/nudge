@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-20 13:47'
-updated_date: '2026-10-20 13:51'
+updated_date: '2026-10-20 13:52'
 labels: []
 dependencies: []
 ---
@@ -14,7 +14,7 @@ dependencies: []
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Evaluate and add alias definitions to swarm/models.yaml and config templates for low-cost and free-tier model backends across all 4 providers (Google AI Studio, Groq Cloud, Mistral AI, OpenRouter) driven via aider or native CLI. Covers all viable text/coding models queried directly from each provider API. These provide zero-token-cost and low-cost pay-as-you-go alternatives comparable to Claude Haiku (for graphify/extraction) and Codex Luna (for routine subtasks).
+Integrate low-cost and free-tier providers into aiswarm (Google AI Studio and Groq Cloud). Focus on free volume ceilings (Google: 1.5k req/day + 1M TPM; Groq: 14.4k req/day + 30 RPM) to absorb routine task loops at zero cost, with documented pay-as-you-go upgrade economics (Google ~bash.075/1M; Groq ~bash.20/1M) to seamlessly lift rate limits without breaking swarm pipelines.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
