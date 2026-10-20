@@ -8,7 +8,7 @@ import time
 import pytest
 
 
-AGENTS = ['claude', 'codex', 'copilot', 'gemini', 'grok', 'vibe', 'qwen', 'antigravity']
+AGENTS = ['claude', 'codex', 'copilot', 'gemini', 'grok', 'vibe', 'qwen', 'antigravity', 'aider']
 TEST_IDLE_SECS = 0.2
 
 
@@ -250,7 +250,7 @@ def test_cli_help_lists_agents_and_idle_timeout():
     proc = subprocess.run(['./monitor-bin', '--help'], capture_output=True, text=True)
     assert proc.returncode == 0
     normalized = proc.stdout.replace('\n', ' ')
-    assert 'claude, codex, copilot, gemini, grok, vibe, qwen, antigravity' in normalized
+    assert 'claude, codex, copilot, gemini, grok, vibe, qwen, antigravity, aider' in normalized
     assert 'idle-secs' in normalized
 
 

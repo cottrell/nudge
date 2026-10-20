@@ -18,7 +18,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 SWARM_CLI = ROOT_DIR / "swarm" / "cli.py"
 MODELS_PATH = Path(__file__).resolve().parent / "models.yaml"
 _ALIAS_TOKEN = re.compile(r"^([^:\s]+):([^:\s]+)$")
-VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity")
+VALID_AGENTS = ("claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity", "aider")
 SHELL_NAMES = {"bash", "sh", "zsh", "fish"}
 AGENT_STATS_CMD: dict[str, str | None] = {
     "claude":  "/usage",
@@ -29,6 +29,7 @@ AGENT_STATS_CMD: dict[str, str | None] = {
     "grok":    None,
     "copilot": None,
     "vibe":    None,
+    "aider":   None,
 }
 PANE_RE = re.compile(r"^(\d+)\.(\d+)$")
 RESERVED_TARGETS = {"any", "mcp"}

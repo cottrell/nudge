@@ -1,0 +1,31 @@
+session_name: nudge-free
+start_directory: ./
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: "aider:gemini"
+        nudge:
+          title: aider gemini
+          agent: aider
+          monitor: true
+          tasks:
+          babysit:
+            enabled: false
+            interval_secs: 1800
+            clear_every: 6
+            long_prompt_file: prompts/worker_long.md
+            short_prompt_file: prompts/worker_short.txt
+
+      - shell_command: "aider:groq"
+        nudge:
+          title: aider groq
+          agent: aider
+          monitor: true
+          tasks:
+          babysit:
+            enabled: false
+            interval_secs: 1800
+            clear_every: 6
+            long_prompt_file: prompts/worker_long.md
+            short_prompt_file: prompts/worker_short.txt

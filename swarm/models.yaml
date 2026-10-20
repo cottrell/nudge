@@ -20,3 +20,14 @@
 "antigravity:heavy": agy --dangerously-skip-permissions --model gemini-3.8-flash-high
 "antigravity:medium": agy --dangerously-skip-permissions --model gemini-3.8-flash-medium
 "antigravity:light": agy --dangerously-skip-permissions --model gemini-3.8-flash-low
+
+# aider = BYO-key models (see docs/models.md). Keys come from ~/.cred/ai.sh via --env-file.
+# Model ids are litellm names as given in TASK-89; unverified against each provider's live list.
+"aider:gemini": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model gemini/gemini-3.8-flash
+"aider:gemini-pro": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model gemini/gemini-2.5-pro
+"aider:groq": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model groq/qwen3.8-27b
+"aider:groq-oss": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model groq/openai/gpt-oss-120b
+"aider:codestral": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model mistral/codestral-latest
+"aider:mistral-code": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model mistral/mistral-code-latest
+"aider:cohere": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model openrouter/cohere/north-mini-code:free
+"aider:nemotron": aider --env-file ~/.cred/ai.sh --yes-always --no-auto-commits --no-gitignore --model openrouter/nvidia/nemotron-3-super-120b:free

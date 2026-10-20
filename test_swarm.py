@@ -670,7 +670,7 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
             return Proc('{"models":[{"slug":"gpt-test","visibility":"list"}]}')
         if argv == ["grok", "models"]:
             return Proc("Available models:\n  - grok-build\n  * grok-composer-2.5-fast (default)\n")
-        if argv[0] in {"claude", "gemini", "qwen", "agy", "grok"}:
+        if argv[0] in {"claude", "gemini", "qwen", "agy", "grok", "aider"}:
             return Proc("Usage\n  -m, --model  Model\n")
 
         if argv[0] == "vibe":
@@ -697,6 +697,7 @@ def test_cli_help_prints_probed_model_commands(monkeypatch, capsys):
     assert "grok-build" in out
     assert "qwen -y -m <model>" in out
     assert "VIBE_ACTIVE_MODEL=<model> vibe" in out
+    assert 'shell_command: "aider:gemini"' in out
 
 
 def test_babysit_log_nudge_includes_target(tmp_path: Path, monkeypatch):

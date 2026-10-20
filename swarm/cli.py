@@ -126,6 +126,12 @@ MODEL_HELPERS = {
         "run": "VIBE_ACTIVE_MODEL=<model> vibe",
         "swarm": "VIBE_ACTIVE_MODEL=<model> vibe --agent auto-approve",
     },
+    "aider": {
+        "command": "aider",
+        "help": ["aider", "--help"],
+        "run": "aider --model <model>",
+        "swarm": "aider --yes-always --no-auto-commits --model <model>",
+    },
 }
 
 

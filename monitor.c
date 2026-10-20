@@ -29,9 +29,9 @@
 typedef enum { ST_UNKNOWN, ST_WORKING, ST_IDLE } State;
 static const char *STATE_STR[] = { "unknown", "working", "idle" };
 
-static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, grok, vibe, qwen, antigravity";
+static const char *VALID_AGENTS_TEXT = "claude, codex, copilot, gemini, grok, vibe, qwen, antigravity, aider";
 static const char *VALID_AGENTS[] = {
-    "claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity", NULL
+    "claude", "codex", "copilot", "gemini", "grok", "vibe", "qwen", "antigravity", "aider", NULL
 };
 
 static int valid_agent(const char *agent) {

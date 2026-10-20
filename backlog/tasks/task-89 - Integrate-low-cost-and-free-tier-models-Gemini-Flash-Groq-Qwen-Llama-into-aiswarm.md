@@ -3,10 +3,11 @@ id: TASK-89
 title: >-
   Integrate low-cost and free-tier models (Gemini Flash, Groq Qwen/Llama) into
   aiswarm
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-20 13:47'
-updated_date: '2026-10-20 13:52'
+updated_date: '2026-10-20 13:54'
 labels: []
 dependencies: []
 ---
