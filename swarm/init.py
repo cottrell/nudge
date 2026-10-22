@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 try:
@@ -217,12 +218,19 @@ def _pane_entry(agent: str, weight: str = "heavy", *, tasks: bool = False, babys
     profile = WEIGHT_PROFILES.get(weight, WEIGHT_PROFILES["light"])
     cmd = shell_alias(agent, weight)
     title = f"{agent} {weight}"
+    cats = [weight if weight in WEIGHT_PROFILES else "light", agent]
+    if weight not in WEIGHT_PROFILES:
+        m = re.search(r"--model (\S+)", load_model_aliases().get(cmd, ""))
+        if m:
+            provider, model = m.group(1).split("/", 1)[0], m.group(1).rsplit("/", 1)[-1].removesuffix(":free")
+            title = f"{agent} {weight} ({model})"
+            cats += [provider, model]
     lines = [
         f'      - shell_command: "{cmd}"',
         "        nudge:",
         f"          title: {title}",
         f"          agent: {agent}",
-        f"          categories: [{weight if weight in WEIGHT_PROFILES else "light"}, {agent}]",
+        f"          categories: [{", ".join(cats)}]",
     ]
     if babysit:
         lines.extend([
