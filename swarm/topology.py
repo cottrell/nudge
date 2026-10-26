@@ -8,6 +8,7 @@ from datetime import datetime
 import subprocess
 import sys
 import time
+from time import perf_counter
 import json
 from pathlib import Path
 
@@ -536,7 +537,19 @@ def start(cfg: SwarmConfig, dry_run: bool, skip_grid: bool = False, resume: bool
     print()
 
 
-def category_lines(cfg: SwarmConfig, states: dict[str, str]) -> list[str]:
+def _format_timing_breakdown(stages: list[tuple[str, float]], total: float) -> list[str]:
+    lines = ["", "Timing:"]
+    max_len = max((len(name) for name, _ in stages), default=10)
+    for name, dur in stages:
+        pct = (dur / total * 100) if total > 0 else 0.0
+        dur_str = f"{dur * 1000.0:6.1f} ms" if dur < 1.0 else f"{dur:6.2f} s "
+        lines.append(f"  {name.ljust(max_len)}  {dur_str}  ({pct:4.1f}%)")
+    tot_str = f"{total * 1000.0:6.1f} ms" if total < 1.0 else f"{total:6.2f} s "
+    lines.append(f"  {'Total'.ljust(max_len)}  {tot_str}")
+    return lines
+
+
+def category_lines(cfg: SwarmConfig, states: dict[str, str], stage_recorder: Any = None) -> list[str]:
     """Per-category rollup: panes, idle panes, pending any-messages, open cat: tasks."""
     try:
         from .common import get_pending_any
@@ -554,6 +567,8 @@ def category_lines(cfg: SwarmConfig, states: dict[str, str]) -> list[str]:
             cat = None
         if cat:
             msgs[cat] = msgs.get(cat, 0) + 1
+    if stage_recorder:
+        stage_recorder("categories: pending messages")
     tasks: dict[str, int] = {}
     if tasks_group_enabled(cfg):
         try:
@@ -562,6 +577,8 @@ def category_lines(cfg: SwarmConfig, states: dict[str, str]) -> list[str]:
                     tasks[c] = tasks.get(c, 0) + 1
         except Exception:
             pass
+    if stage_recorder:
+        stage_recorder("categories: backlog tasks scan")
     names = sorted(set(panes) | set(msgs) | set(tasks))
     if not names:
         return []
@@ -576,7 +593,17 @@ def category_lines(cfg: SwarmConfig, states: dict[str, str]) -> list[str]:
     return out
 
 
-def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
+def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) -> list[str]:
+    stages: list[tuple[str, float]] = []
+    t_start = perf_counter()
+    t_prev = t_start
+
+    def record_stage(name: str) -> None:
+        nonlocal t_prev
+        now = perf_counter()
+        stages.append((name, now - t_prev))
+        t_prev = now
+
     lines: list[str] = []
     session_exists = run("tmux", "has-session", "-t", f"={cfg.session_name}", check=False).returncode == 0
     existing_windows = run("tmux", "list-windows", "-t", cfg.session_name, "-F", "#{window_name}", check=False).stdout.splitlines() if session_exists else []
@@ -586,7 +613,10 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
         lines.append(f"{cfg.session_name} panes={actual_count}/{cfg.pane_count}" if session_ok else f"{cfg.session_name} missing")
     else:
         lines.append(f"session={cfg.session_name} exists={'yes' if session_ok else 'no'} panes={actual_count}/{cfg.pane_count}")
+    record_stage("tmux session & windows")
     if not session_ok:
+        if timing:
+            lines.extend(_format_timing_breakdown(stages, perf_counter() - t_start))
         return lines
 
     if brief:
@@ -616,6 +646,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             tasks_hb = "≤1s" if delta <= 0 else f"{delta}s"
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             tasks_hb = "?"
+    record_stage("tasks supervisor & worker state")
 
     states: dict[str, str] = {}
     for pane in cfg.panes:
@@ -809,6 +840,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                  babysit_val, nudge_hb, clear_hb, tasks_val, pane_tasks_hb)
             )
 
+    record_stage(f"panes inspect ({len(cfg.panes)} panes: tmux, socket, capture)")
+
     if rows:
         all_rows = [headers] + rows
         widths = [max(len(row[i]) for row in all_rows) for i in range(len(headers))]
@@ -829,7 +862,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
             lines.append("  Tasks HB = countdown to the next claim/chase dispatcher pass")
             lines.append("             Run `babysit start` / `babysit stop` to toggle the babysit prompt group.")
 
-    lines.extend(category_lines(cfg, states))
+    lines.extend(category_lines(cfg, states, stage_recorder=record_stage))
 
     try:
         from .common import get_scheduled_events
@@ -853,14 +886,19 @@ def status_lines(cfg: SwarmConfig, brief: bool = False) -> list[str]:
                 lines.append(f"  id={eid} to={rec_display} from={snd or '-'} due={due} payload={pay}")
     except Exception:
         pass
+    record_stage("scheduled messages")
+
+    if timing:
+        lines.extend(_format_timing_breakdown(stages, perf_counter() - t_start))
+
     return lines
 
 
 
 
 
-def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) -> None:
-    lines = status_lines(cfg, brief)
+def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False, timing: bool = False) -> None:
+    lines = status_lines(cfg, brief, timing=timing)
     text = "\n".join(lines)
     if in_place:
         sys.stdout.write("\x1b[H\x1b[2J")
@@ -871,10 +909,10 @@ def print_status(cfg: SwarmConfig, brief: bool = False, in_place: bool = False) 
     print(text)
 
 
-def watch_status(cfg: SwarmConfig, brief: bool, interval: float) -> None:
+def watch_status(cfg: SwarmConfig, brief: bool, interval: float, timing: bool = False) -> None:
     try:
         while True:
-            lines = status_lines(cfg, brief)
+            lines = status_lines(cfg, brief, timing=timing)
             lines.insert(0, f"watch interval={interval:.1f}s updated={time.strftime('%H:%M:%S')}")
             sys.stdout.write("\x1b[H\x1b[2J")
             sys.stdout.write("\n".join(lines))

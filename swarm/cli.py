@@ -377,6 +377,7 @@ def build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("-b", "--brief", action="store_true", help="Print a compact per-pane state view")
     status_p.add_argument("-w", "--watch", action="store_true", help="Refresh the status in place until interrupted")
     status_p.add_argument("-i", "--interval", type=float, default=1.0, help="Watch refresh interval in seconds")
+    status_p.add_argument("--timing", action="store_true", help="Print step names and timings of the status check")
 
     broadcast_p = sub.add_parser("broadcast", help="Send an immediate message to swarm agent panes (flavours: tmux or log)")
     broadcast_p.add_argument(
@@ -895,9 +896,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.interval <= 0:
                 raise ValueError("--interval must be > 0")
             if args.watch:
-                swarm_topology.watch_status(cfg, args.brief, args.interval)
+                if getattr(args, "timing", False):
+                    swarm_topology.watch_status(cfg, args.brief, args.interval, timing=True)
+                else:
+                    swarm_topology.watch_status(cfg, args.brief, args.interval)
             else:
-                swarm_topology.print_status(cfg, args.brief)
+                if getattr(args, "timing", False):
+                    swarm_topology.print_status(cfg, args.brief, timing=True)
+                else:
+                    swarm_topology.print_status(cfg, args.brief)
             return 0
 
         if args.command == "quota":

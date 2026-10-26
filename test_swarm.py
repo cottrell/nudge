@@ -1897,6 +1897,38 @@ windows:
     assert "unreachable" in matching[0]
 
 
+def test_status_timing_flag(tmp_path: Path, monkeypatch, capsys):
+    cfg_file = write_config(tmp_path, """
+session_name: demo_timing
+windows:
+  - window_name: grid
+    layout: tiled
+    panes:
+      - shell_command: claude
+        nudge:
+          agent: claude
+          monitor: true
+""")
+    cfg = load_config(cfg_file)
+    monkeypatch.setattr(swarm_apply, "run", lambda *args, **kwargs: type("Proc", (), {"returncode": 0, "stdout": "%0\n" if args[:3] == ("tmux", "list-panes", "-t") else "grid"})())
+    monkeypatch.setattr(swarm_apply, "query_monitor_socket", lambda s, p, timeout=2.0: {"state": "idle"})
+    lines = swarm_apply.status_lines(cfg, brief=False, timing=True)
+    timing_text = "\n".join(lines)
+    assert "Timing:" in timing_text
+    assert "tmux session & windows" in timing_text
+    assert "panes inspect" in timing_text
+    assert "Total" in timing_text
+
+    # Test via CLI status parser
+    from cli import main
+    monkeypatch.setattr(sys, "argv", ["aiswarm", "status", str(cfg_file), "--timing"])
+    assert main() == 0
+    out = capsys.readouterr().out
+    assert "Timing:" in out
+    assert "panes inspect" in out
+    assert "Total" in out
+
+
 def test_this_text_points_at_runtime_map(tmp_path: Path):
     cfg = load_config(write_config(tmp_path, """
 session_name: demo
