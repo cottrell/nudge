@@ -624,7 +624,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
         rows = []
     else:
         headers = [
-            "Target", "Title", "Command", "Agent", "PID", "Comms HB",
+            "Target", "Title", "Agent", "PID", "Comms HB",
             "Babysit", "Nudge HB", "Clear HB", "Tasks", "Tasks HB",
         ]
         rows = []
@@ -657,7 +657,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
                 rows.append((target, _title_cats(pane), "missing", "off"))
             else:
                 rows.append(
-                    (target, _title_cats(pane), "-", "missing", "-", "-", "off", "-", "-",
+                    (target, _title_cats(pane), "missing", "-", "-", "off", "-", "-",
                      "off", "-")
                 )
             continue
@@ -831,12 +831,8 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
         if brief:
             rows.append((target, _title_cats(pane), monitor, brief_val))
         else:
-            # Show the configured command from the YAML (what was requested),
-            # not the live process name from tmux (which for node-based tools
-            # like codex shows "node").
-            command = pane.command or pane_current_command(cfg, pane.pane) or "-"
             rows.append(
-                (target, _title_cats(pane), command or "-", monitor, pid_val, comms_hb,
+                (target, _title_cats(pane), monitor, pid_val, comms_hb,
                  babysit_val, nudge_hb, clear_hb, tasks_val, pane_tasks_hb)
             )
 
