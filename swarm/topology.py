@@ -49,6 +49,7 @@ try:
         refresh_records,
         merge_record,
     )
+    from .models import extract_live_model
 except ImportError:
     # direct script fallback
     from common import (
@@ -87,6 +88,7 @@ except ImportError:
         refresh_records,
         merge_record,
     )
+    from models import extract_live_model
 
 
 def _title_cats(pane) -> str:
@@ -624,7 +626,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
         rows = []
     else:
         headers = [
-            "Target", "Title", "Agent", "PID", "Comms HB",
+            "Target", "Title", "Agent", "Model", "PID", "Comms HB",
             "Babysit", "Nudge HB", "Clear HB", "Tasks", "Tasks HB",
         ]
         rows = []
@@ -657,24 +659,51 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
                 rows.append((target, _title_cats(pane), "missing", "off"))
             else:
                 rows.append(
-                    (target, _title_cats(pane), "missing", "-", "-", "off", "-", "-",
+                    (target, _title_cats(pane), "missing", "-", "-", "-", "off", "-", "-",
                      "off", "-")
                 )
             continue
+        model_val = "-"
+        pane_tm_pid = None
+        if not brief:
+            try:
+                pane_tm_pid = pane_pid(cfg, pane.pane)
+            except Exception:
+                pass
         if pane.monitor:
             mon = _query_monitor(cfg, pane.pane)
             state_str = mon.get('state', 'unreachable')
             monitor = state_str
             # A quota banner stays on screen while the TUI redraws, so the
             # monitor can still say working. The latest real turn wins.
+            pane_cap = None
             try:
-                label = rate_limit_label(capture_pane_text(cfg, pane.pane, scrollback=150) or "")
+                pane_cap = capture_pane_text(cfg, pane.pane, scrollback=150)
+                label = rate_limit_label(pane_cap or "")
             except Exception:
                 label = None
             if label:
                 monitor = label
+            if not brief:
+                try:
+                    live_m = extract_live_model(pane.agent, pane_cap, pid=pane_tm_pid)
+                    if live_m:
+                        model_val = live_m
+                except Exception:
+                    pass
         else:
             monitor = "off"
+            if not brief:
+                try:
+                    live_m = extract_live_model(
+                        pane.agent,
+                        capture_pane_text(cfg, pane.pane, scrollback=150),
+                        pid=pane_tm_pid,
+                    )
+                    if live_m:
+                        model_val = live_m
+                except Exception:
+                    pass
         states[pane.pane] = monitor
         pid_val = "-"
         comms_hb = "-"
@@ -832,7 +861,7 @@ def status_lines(cfg: SwarmConfig, brief: bool = False, timing: bool = False) ->
             rows.append((target, _title_cats(pane), monitor, brief_val))
         else:
             rows.append(
-                (target, _title_cats(pane), monitor, pid_val, comms_hb,
+                (target, _title_cats(pane), monitor, model_val, pid_val, comms_hb,
                  babysit_val, nudge_hb, clear_hb, tasks_val, pane_tasks_hb)
             )
 
