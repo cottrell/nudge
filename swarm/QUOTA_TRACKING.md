@@ -95,9 +95,15 @@ Read `/tmp/nudge-quota-forecast.json` in your tmux status line:
 {
   "claude": {"session": {"current_pct": 51.0, ...}, "weekly": {...}},
   "codex": {"5h": {...}, "weekly": {...}},
-  "agy": {"claude_gpt_five_hour": {...}, ...}
+  "agy": {"gemini_weekly": {...}, "claude_gpt_five_hour": {...}, "argon_weekly": {...}}
 }
 ```
+
+agy reports three independent quota families: `gemini_*` (Flash, Pro), `claude_gpt_*`
+(Opus, Sonnet, GPT-OSS) and `argon_*` (Gemini 4 Argon, separate on paid Pro plans, no
+five-hour window). Percentages are *remaining* — the bars are labelled "Limit Remaining",
+and "Quota available" means a full window. Babysit paces a pane from its own family only,
+picked from the pane command, so an exhausted Argon window cannot slow a Flash pane.
 
 ### Alert System
 Bottleneck quotas appear in `format_forecast_report()` and can trigger warnings.

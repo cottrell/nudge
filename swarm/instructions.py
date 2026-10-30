@@ -36,6 +36,14 @@ Resolution order:
 
 `shell_command` may be a `provider:role` token from `swarm/models.yaml` (`codex:heavy`). The whole value must match a key. Anything else, including a full command, is launched as written. Model ids and launch flags live in that file. A config that uses no tokens does not read the table. `aiswarm init` writes `provider:role`, then `heavy`, then the bare agent name when a role is missing. A one-pane agent still uses `heavy`. `aiswarm start` prints each expansion and any unknown-token warning.
 
+### Model tiers
+
+`heavy` / `medium` / `light` / `ultralight` are launch roles in `swarm/models.yaml` and
+send/dispatch categories. They do not gate what a pane may attempt: any pane may try any
+task and may ask any other pane for help. One rule only: **ultralight output is a proposal,
+not a result — another pane or a human reviews it before Done.** Which model sits in which
+tier lives in `swarm/models.yaml`, not here.
+
 In the **nudge** implementer repo, package code is `swarm/`. The live harness is
 `.aiswarm/config.yaml` (or `$AISWARM_CONFIG`).
 

@@ -2,6 +2,16 @@
 
 `agent: aider` runs any litellm-backed model in a swarm pane. Aliases live in `swarm/models.yaml` (`aider:*`).
 
+## Tiers
+
+Roles in `swarm/models.yaml` (`claude:heavy`, `antigravity:light`, …) double as send and
+dispatch categories. A tier is not a permission: any pane may attempt any task and may ask
+any other pane. The one implication is review — **ultralight output is a proposal, not a
+result.** Another pane or a human checks it before the task goes Done.
+
+`ultralight` means local tiny-GPU models and the weakest free-tier endpoints. No claude
+model is ultralight — haiku is `claude:light`.
+
 ## Keys
 
 - `~/.cred/ai.sh` holds `export GEMINI_API_KEY=…`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`.

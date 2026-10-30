@@ -1,6 +1,6 @@
 # Babysit quota pacing
 
-When `babysit.enabled: true` and `agent` is `claude`, `codex`, or `agy`, the babysitter samples remaining quota every `quota_probe_secs` seconds (default 300) and uses an exponential moving average (EMA) to pace nudge intervals so quota is spread until the provider reset. YAML `agent: antigravity` is paced as `agy`.
+When `babysit.enabled: true` and `agent` is `claude`, `codex`, or `agy`, the babysitter samples remaining quota every `quota_probe_secs` seconds (default 300) and uses an exponential moving average (EMA) to pace nudge intervals so quota is spread until the provider reset. YAML `agent: antigravity` is paced as `agy`. agy has three separate quota families (gemini, claude_gpt, argon); a pane is paced by the family its model belongs to, not by the lowest of all three.
 
 This EMA paces nudges. Exhaustion forecasts from sampled history are a different EMA. See `swarm/QUOTA_TRACKING.md`.
 

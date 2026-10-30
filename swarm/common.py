@@ -1814,77 +1814,95 @@ def parse_codex_usage(text: str) -> dict:
     return res
 
 
+_AGY_HEADER_RE = re.compile(r"^[A-Z][A-Z0-9 /&+.\-]*[A-Z0-9]$")
+_AGY_LIMIT_RE = re.compile(r"^(.*?)\s+Limit(?:\s+Remaining)?$", re.IGNORECASE)
+_AGY_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_AGY_REFRESH_RE = re.compile(r"Refreshes\s+in\s+(.+?)\s*$", re.IGNORECASE)
+# Pager furniture and the model footer, never group headers or limits.
+_AGY_NOISE_RE = re.compile(r"^\(|Scroll|esc Close|Models within this group", re.IGNORECASE)
+
+
+def _agy_group_prefix(name: str) -> str:
+    low = name.lower()
+    if "argon" in low:
+        return "argon"
+    return "gemini" if "gemini" in low else "claude_gpt"
+
+
+def _agy_limit_label(raw: str) -> str:
+    """'Gemini 4 Argon Weekly' -> weekly. Group words are already in the prefix."""
+    low = raw.strip().lower()
+    for window in ("five hour", "weekly", "daily", "monthly", "hourly"):
+        if window in low:
+            return window.replace(" ", "_")
+    return re.sub(r"[^a-z0-9]+", "_", low).strip("_") or "limit"
+
+
 def parse_agy_usage(text: str) -> dict:
-    """Parse raw Antigravity /usage text into a structured dictionary."""
-    res = {
-        "groups": [],
-        "limits": []
-    }
-    blocks = re.split(r'([^\S\r\n]*[A-Z0-9_\- \t]+MODELS)\s*\n', text, flags=re.IGNORECASE)
-    if len(blocks) > 1:
-        for idx in range(1, len(blocks), 2):
-            group_name = blocks[idx].strip()
-            block_content = blocks[idx+1]
-            
-            group_entry = {
-                "group": group_name,
-                "models": [],
-                "limits": []
-            }
-            
-            models_m = re.search(r'Models within this group:\s*(.+)', block_content, re.IGNORECASE)
-            if models_m:
-                group_entry["models"] = [m.strip() for m in models_m.group(1).split(",")]
-                
-            limit_blocks = re.split(
-                r'^[^\S\r\n]*([a-zA-Z0-9_\-]+(?:[^\S\r\n]+[a-zA-Z0-9_\-]+){0,2}\s+Limit)\s*\n',
-                block_content,
-                flags=re.MULTILINE | re.IGNORECASE
-            )
-            if len(limit_blocks) > 1:
-                for l_idx in range(1, len(limit_blocks), 2):
-                    limit_label = limit_blocks[l_idx].strip().lower().replace(" limit", "")
-                    limit_content = limit_blocks[l_idx+1]
+    """Parse raw Antigravity /usage text into a structured dictionary.
 
-                    pct_remaining = 0
-                    reset = ""
+    Headers are unindented and upper case; a group need not end in MODELS
+    (GEMINI 4 ARGON). Bars are labelled 'Limit Remaining', so the percent is
+    remaining, not used. 'Quota available' is a full window, not an empty one.
+    """
+    res: dict = {"groups": [], "limits": []}
+    group: dict | None = None
+    limit: dict | None = None
 
-                    # Check for "N% remaining · Refreshes in X" (explicit remaining)
-                    rem_m = re.search(r'(\d+(?:\.\d+)?)%\s+remaining\s+·\s+Refreshes\s+in\s+(.+)', limit_content, re.IGNORECASE)
-                    if rem_m:
-                        pct_remaining = int(float(rem_m.group(1)))
-                        reset = "in " + rem_m.group(2).strip()
-                    elif "quota available" in limit_content.lower():
-                        # "Quota available" with 100% shown means exhausted (0% remaining)
-                        pct_remaining = 0
-                        reset = "Exhausted"
-                    else:
-                        # Fallback: extract percentage (used) and invert to get remaining
-                        pct_m = re.search(r'(\d+(?:\.\d+)?)%', limit_content)
-                        if pct_m:
-                            pct_used = int(float(pct_m.group(1)))
-                            pct_remaining = 100 - pct_used
+    def close_limit() -> None:
+        nonlocal limit
+        if group is not None and limit is not None and limit.pop("_seen_pct", False):
+            reset_ts = _parse_reset_ts(limit["reset"]) or 0
+            limit["reset_ts"] = reset_ts
+            limit["reset_iso"] = _ts_to_iso(reset_ts)
+            group["limits"].append(limit)
+        limit = None
 
-                    reset_ts = _parse_reset_ts(reset) or 0
-                    group_entry["limits"].append({
-                        "label": limit_label,
-                        "pct": pct_remaining,
-                        "reset": reset,
-                        "reset_ts": reset_ts,
-                        "reset_iso": _ts_to_iso(reset_ts)
-                    })
-            res["groups"].append(group_entry)
-            
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or _AGY_NOISE_RE.search(line):
+            if group is not None and line.lower().startswith("models within this group"):
+                group["models"] = [m.strip() for m in line.split(":", 1)[1].split(",") if m.strip()]
+            continue
+
+        # Unindented upper-case line starts a group; indented text never does.
+        if raw_line[:1] not in (" ", "\t") and _AGY_HEADER_RE.match(line) and not _AGY_PCT_RE.search(line):
+            close_limit()
+            group = {"group": line, "models": [], "limits": []}
+            res["groups"].append(group)
+            continue
+
+        if group is None:
+            continue
+
+        m = _AGY_LIMIT_RE.match(line)
+        if m and not _AGY_PCT_RE.search(line):
+            close_limit()
+            limit = {"label": _agy_limit_label(m.group(1)), "pct": 0, "reset": "", "_seen_pct": False}
+            continue
+
+        if limit is None:
+            continue
+
+        if "quota available" in line.lower():
+            limit["pct"] = 100
+            limit["_seen_pct"] = True
+            continue
+        pct_m = _AGY_PCT_RE.search(line)
+        if pct_m:
+            limit["pct"] = int(float(pct_m.group(1)))
+            limit["_seen_pct"] = True
+            continue
+        refresh_m = _AGY_REFRESH_RE.search(line)
+        if refresh_m:
+            limit["reset"] = "in " + refresh_m.group(1).strip()
+
+    close_limit()
+
     for g in res["groups"]:
-        prefix = "gemini" if "gemini" in g["group"].lower() else "claude_gpt"
+        prefix = _agy_group_prefix(g["group"])
         for lim in g["limits"]:
-            res["limits"].append({
-                "label": f"{prefix}_{lim['label']}",
-                "pct": lim["pct"],
-                "reset": lim["reset"],
-                "reset_ts": lim["reset_ts"],
-                "reset_iso": lim["reset_iso"]
-            })
+            res["limits"].append({"label": f"{prefix}_{lim['label']}", **{k: lim[k] for k in ("pct", "reset", "reset_ts", "reset_iso")}})
     return res
 
 

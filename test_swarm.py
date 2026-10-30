@@ -5359,3 +5359,66 @@ windows:
     assert tasksctl.pane_passes_gate(cfg, p0.pane) is True
     assert tasksctl.pane_passes_gate(cfg, p1.pane) is False
     assert tasksctl.pane_passes_gate(cfg, p2.pane) is True
+
+
+def _agy_usage_fixture() -> str:
+    return (Path(__file__).resolve().parent / "fixtures" / "agy_usage_capture.txt").read_text()
+
+
+def test_parse_agy_usage_all_three_quota_groups():
+    """agy 1.4.x /usage: Gemini, Claude/GPT, and Argon are independent windows."""
+    parsed = common.parse_agy_usage(_agy_usage_fixture())
+
+    assert [g["group"] for g in parsed["groups"]] == [
+        "GEMINI MODELS",
+        "CLAUDE AND GPT MODELS",
+        "GEMINI 4 ARGON",
+    ]
+    assert parsed["groups"][0]["models"] == ["Gemini Flash", "Gemini Pro"]
+
+    limits = {x["label"]: x for x in parsed["limits"]}
+    assert set(limits) == {
+        "gemini_weekly",
+        "gemini_five_hour",
+        "claude_gpt_weekly",
+        "claude_gpt_five_hour",
+        "argon_weekly",
+    }
+    # Bars are "Limit Remaining": the percent is remaining, not used.
+    assert limits["gemini_weekly"]["pct"] == 53
+    assert limits["gemini_five_hour"]["pct"] == 92
+    # "Quota available" is a full window, not an exhausted one.
+    assert limits["claude_gpt_weekly"]["pct"] == 100
+    assert limits["claude_gpt_five_hour"]["pct"] == 100
+    assert limits["claude_gpt_weekly"]["reset"] == ""
+    # Four words before "Limit", no "Remaining" suffix, and no five-hour line.
+    assert limits["argon_weekly"]["pct"] == 0
+    assert limits["argon_weekly"]["reset"] == "in 73h 58m"
+    assert limits["argon_weekly"]["reset_ts"] > 0
+    assert "argon_five_hour" not in limits
+
+
+def test_parse_agy_usage_first_screen_only_is_still_parsed():
+    """A short capture (pre-fix pager truncation) must not invent other groups."""
+    text = "\n".join(_agy_usage_fixture().splitlines()[:24])
+    limits = {x["label"]: x["pct"] for x in common.parse_agy_usage(text)["limits"]}
+    assert limits == {"gemini_weekly": 53, "gemini_five_hour": 92}
+
+
+def test_agy_quota_pacing_uses_only_the_panes_own_family():
+    limits = [
+        {"label": "gemini_weekly", "pct": 53},
+        {"label": "gemini_five_hour", "pct": 92},
+        {"label": "claude_gpt_weekly", "pct": 100},
+        {"label": "argon_weekly", "pct": 0},
+    ]
+    own = babysit_worker._own_family_limits
+    # An exhausted Argon window must not pace a gemini-flash pane.
+    assert [x["pct"] for x in own("agy", "agy --model gemini-3.8-flash-low", limits)] == [53, 92]
+    assert [x["pct"] for x in own("agy", "agy --model gemini-4-argon", limits)] == [0]
+    assert [x["pct"] for x in own("agy", "agy --model claude-opus", limits)] == [100]
+    # Non-agy agents keep every limit; an unknown family falls back to all.
+    assert own("claude", "claude", limits) == limits
+    assert own("agy", "agy --model gemini-3.8-flash", [{"label": "weird", "pct": 7}]) == [
+        {"label": "weird", "pct": 7}
+    ]

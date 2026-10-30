@@ -172,6 +172,26 @@ def _write_state(path: str | None, target: str, interval: int, state: str, actio
     tmp = dest.with_suffix(".tmp"); tmp.write_text(json.dumps(out) + "\n"); tmp.replace(dest)
 
 
+def _agy_family(command: str) -> str:
+    """Which agy quota group this pane's model belongs to."""
+    low = (command or "").lower()
+    if "argon" in low:
+        return "argon"
+    if "claude" in low or "gpt" in low:
+        return "claude_gpt"
+    return "gemini"
+
+
+def _own_family_limits(agent: str, command: str, limits: list) -> list:
+    """agy reports three independent families; another family's full or empty
+    window must not pace this pane. Unmatched labels fall back to all."""
+    if agent != "agy":
+        return limits
+    prefix = _agy_family(command) + "_"
+    mine = [x for x in limits if str(x.get("label", "")).startswith(prefix)]
+    return mine or limits
+
+
 class PaneWorker:
     """Stateful original pane loop, advanced one non-blocking poll at a time."""
     def __init__(self, session: str, pane: str, state_file: str | None = None):
@@ -191,6 +211,7 @@ class PaneWorker:
         try:
             result = get_cached_provider_usage(agent, ttl=30, force=False) if get_cached_provider_usage else {}
             limits = result.get("limits") or (result.get("parsed") or {}).get("limits") or []
+            limits = _own_family_limits(agent, spec.get("command", ""), limits)
             pcts = [x.get("pct") for x in limits if x.get("pct") is not None]
             resets = [x.get("reset_ts", 0) for x in limits if x.get("reset_ts", 0)]
             if pcts: self.current_pct = min(pcts); self.current_reset_ts = min(resets) if resets else None
