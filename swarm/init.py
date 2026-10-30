@@ -316,6 +316,7 @@ def init(
     agents: list[str] | None = None,
     flavour: str | None = None,
     force: bool = False,
+    agents_only: bool = False,
 ) -> None:
     root_path = Path(root).resolve()
     # Consumer harness dir (not the aiswarm Python package). Default discovery: .aiswarm/config.yaml
@@ -324,33 +325,35 @@ def init(
     config_path = aiswarm_dir / "config.yaml"
     agents_path = root_path / "AGENTS.md"
 
-    files = {
-        config_path: config_text(name, agents, flavour=flavour),
-        prompts_dir / "worker_long.md": (
-            "Continue the assigned work. Read AGENTS.md; for swarm ops run "
-            "`aiswarm instructions overview`. Session paths: `aiswarm this`. "
-            "TUI findings are not done — file backlog/docs and ping.\n"
-        ),
-        prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
-    }
+    if not agents_only:
+        files = {
+            config_path: config_text(name, agents, flavour=flavour),
+            prompts_dir / "worker_long.md": (
+                "Continue the assigned work. Read AGENTS.md; for swarm ops run "
+                "`aiswarm instructions overview`. Session paths: `aiswarm this`. "
+                "TUI findings are not done — file backlog/docs and ping.\n"
+            ),
+            prompts_dir / "worker_short.txt": "Continue. Stay in role and keep the current thread moving.\n",
+        }
 
-    for path, content in files.items():
-        if path.exists() and not force:
-            print(f"exists: {path}")
-            continue
-        if dry_run:
-            action = "overwrite" if path.exists() else "create"
-            print(f"would {action}: {path}")
-            continue
-        action = "overwritten" if path.exists() else "created"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-        print(f"{action}: {path}")
+        for path, content in files.items():
+            if path.exists() and not force:
+                print(f"exists: {path}")
+                continue
+            if dry_run:
+                action = "overwrite" if path.exists() else "create"
+                print(f"would {action}: {path}")
+                continue
+            action = "overwritten" if path.exists() else "created"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+            print(f"{action}: {path}")
 
     write_agents_block(agents_path, name, dry_run=dry_run)
 
-    print()
-    print("Next (config is discovered from .aiswarm/config.yaml):")
-    print("  aiswarm start -D")
-    print("  aiswarm start")
-    print(f"  # or explicit: aiswarm start {config_path.relative_to(root_path)}")
+    if not agents_only:
+        print()
+        print("Next (config is discovered from .aiswarm/config.yaml):")
+        print("  aiswarm start -D")
+        print("  aiswarm start")
+        print(f"  # or explicit: aiswarm start {config_path.relative_to(root_path)}")

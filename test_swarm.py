@@ -602,6 +602,18 @@ def test_swarm_init_does_not_duplicate_agents_block(tmp_path: Path):
     assert "# Existing" in text
 
 
+def test_swarm_init_agents_only(tmp_path: Path, capsys):
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("# Existing Project\n")
+    swarm_init.init("demo", tmp_path, agents_only=True)
+    assert not (tmp_path / ".aiswarm").exists()
+    text = agents.read_text()
+    assert "# Existing Project" in text
+    assert swarm_init.BLOCK_START in text
+    assert swarm_init.BLOCK_END in text
+    assert "`/tmp/nudge-swarm/demo/runtime.json`" in text
+
+
 def test_agents_block_upsert_and_remove():
     block_a = swarm_init.agent_block("alpha")
     block_b = swarm_init.agent_block("beta")

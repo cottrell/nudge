@@ -371,6 +371,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pane layout: 3x2 (default), free (8 aider panes on free-tier models), 1x1, 2x2, 3x3 (9 panes: 3x codex, 2x claude, grok, 3x antigravity light), 4x2, babysit (2x2 with explicit babysit prompts), or demo (agents + log -w + shell)",
     )
     init_p.add_argument("-f", "--force", action="store_true", help="Overwrite existing configuration and prompt files")
+    init_p.add_argument("--agents-only", action="store_true", help="Only update the AGENTS.md block without creating or modifying config/prompts")
     init_p.add_argument("-D", "--dry-run", action="store_true", help="Print planned files and AGENTS.md block without writing")
 
     start_p = sub.add_parser("start", help="Start the swarm (tmux session, monitors, titles, commands, and comms workers)")
@@ -902,6 +903,7 @@ def main(argv: list[str] | None = None) -> int:
                 agents,
                 flavour=args.flavour or "3x2",
                 force=args.force,
+                agents_only=args.agents_only,
             )
             return 0
 
