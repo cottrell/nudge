@@ -1,4 +1,6 @@
 session_name: nudge
+# tasks:
+#   require_label: "auto"     # Optional: only claim backlog tasks tagged with this label
 windows:
   - window_name: grid
     layout: tiled
@@ -7,71 +9,29 @@ windows:
         nudge:
           title: codex heavy
           agent: codex
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 7200
-            clear_every: 1
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [heavy, codex]
       - shell_command: "codex:light"
         nudge:
           title: codex light
           agent: codex
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 1800
-            clear_every: 6
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [light, codex]
       - shell_command: "claude:heavy"
         nudge:
           title: claude heavy
           agent: claude
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 7200
-            clear_every: 1
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [heavy, claude]
       - shell_command: "claude:light"
         nudge:
           title: claude light
           agent: claude
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 1800
-            clear_every: 6
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [light, claude]
       - shell_command: "antigravity:light"
         nudge:
-          title: antigravity
+          title: antigravity light
           agent: antigravity
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 7200
-            clear_every: 1
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [light, antigravity]
       - shell_command: "grok:heavy"
         nudge:
-          title: grok
+          title: grok heavy
           agent: grok
-          tasks:
-            # no enabled: false = allowed to take tasks when dispatcher runs
-          babysit:
-            enabled: false
-            interval_secs: 7200
-            clear_every: 1
-            long_prompt_file: prompts/worker_long.md
-            short_prompt_file: prompts/worker_short.txt
+          categories: [heavy, grok]
