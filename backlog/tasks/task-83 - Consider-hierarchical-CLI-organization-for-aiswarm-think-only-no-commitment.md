@@ -1,10 +1,10 @@
 ---
 id: TASK-83
 title: 'Consider hierarchical CLI organization for aiswarm (think only, no commitment)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-02 09:46'
-updated_date: '2026-10-02 10:07'
+updated_date: '2026-10-30 11:29'
 labels:
   - cli
   - parked
@@ -43,3 +43,9 @@ Related: multi-swarm addressing audit (selector design for send -c vs -s, swarm:
 
 Free option done (display only): aiswarm -h now lists commands grouped (lifecycle, messaging, pane, automation, usage/info) via _order_subcommands in swarm/cli.py. No behavior change.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed recommendation: keep flat command structure. The grouped display in help output (_order_subcommands in swarm/cli.py) provides discoverability without breaking muscle memory, scripts, agent prompts, or tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

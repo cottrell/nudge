@@ -26,6 +26,7 @@ try:
         load_model_aliases,
         looks_like_config_path,
         parse_duration,
+        resolve_swarm,
     )
 except ImportError:
     # direct script fallback (python swarm/cli.py or installed aiswarm)
@@ -41,6 +42,7 @@ except ImportError:
         load_model_aliases,
         looks_like_config_path,
         parse_duration,
+        resolve_swarm,
     )
 
 CONFIG_ARG_HELP = (
@@ -52,6 +54,16 @@ CONFIG_ARG_HELP = (
 def _cfg_from_args(args) -> object:
     """Load SwarmConfig from optional args.config / args.config_file."""
     explicit = getattr(args, "config_file", None) or getattr(args, "config", None)
+    return load_config(explicit)
+
+
+def _resolve_swarm_for_cmd(explicit: str | None) -> object:
+    """Resolve via resolve_swarm if target exists in runtime maps, else load_config."""
+    if explicit is not None and not looks_like_config_path(explicit):
+        runtime_path = Path("/tmp/nudge-swarm") / explicit / "runtime.json"
+        if not runtime_path.is_file():
+            raise FileNotFoundError(f"cannot read runtime map for swarm '{explicit}' ({runtime_path})")
+        return resolve_swarm(runtime_path)
     return load_config(explicit)
 
 
@@ -602,7 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture_p.add_argument(
         "tokens",
         nargs="+",
-        help="pane id, or legacy: config pane",
+        help="pane id (or <swarm>:<pane>), or legacy: config pane",
     )
 
     wait_p = sub.add_parser(
@@ -626,7 +638,7 @@ def build_parser() -> argparse.ArgumentParser:
     wait_p.add_argument(
         "tokens",
         nargs="+",
-        help="pane id, or legacy: config pane",
+        help="pane id (or <swarm>:<pane>), or legacy: config pane",
     )
     wait_p.add_argument(
         "--timeout",
@@ -786,10 +798,19 @@ def _split_capture_tokens(tokens: list[str], config_file: str | None) -> tuple[s
     if config_file:
         if len(tokens) != 1:
             raise ValueError("capture requires a single PANE when -c is set")
-        return config_file, tokens[0]
+        token = tokens[0]
+        if ":" in token and not looks_like_config_path(token):
+            raise ValueError(f"cannot combine -c/--config-file with qualified target '{token}'")
+        return config_file, token
     if len(tokens) == 1:
-        return None, tokens[0]
+        token = tokens[0]
+        if ":" in token and not looks_like_config_path(token):
+            swarm_name, pane = token.split(":", 1)
+            return swarm_name, pane
+        return None, token
     if len(tokens) == 2 and looks_like_config_path(tokens[0]):
+        if ":" in tokens[1] and not looks_like_config_path(tokens[1]):
+            raise ValueError(f"cannot combine config path with qualified target '{tokens[1]}'")
         return tokens[0], tokens[1]
     raise ValueError("capture requires PANE or CONFIG PANE")
 
@@ -1055,13 +1076,13 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "capture":
             explicit, pane = _split_capture_tokens(args.tokens, getattr(args, "config_file", None))
-            cfg = load_config(explicit)
+            cfg = _resolve_swarm_for_cmd(explicit)
             swarm_topology.capture_pane(cfg, pane)
             return 0
 
         if args.command == "wait":
             explicit, pane = _split_capture_tokens(args.tokens, getattr(args, "config_file", None))
-            cfg = load_config(explicit)
+            cfg = _resolve_swarm_for_cmd(explicit)
             return swarm_topology.wait_pane(
                 cfg,
                 pane,
@@ -1104,8 +1125,23 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
 
             swarm_name = getattr(args, "swarm", None)
-            if not swarm_name and ":" in target and not target.startswith("mcp:"):
-                swarm_name, target = target.split(":", 1)
+            if ":" in target and not target.startswith("mcp:"):
+                split_swarm, split_target = target.split(":", 1)
+                if swarm_name and swarm_name != split_swarm:
+                    print(
+                        f"error: conflicting swarm targets '{swarm_name}' (-s) and '{split_swarm}' ({target})",
+                        file=sys.stderr,
+                    )
+                    return 1
+                swarm_name = split_swarm
+                target = split_target
+
+            if swarm_name and explicit:
+                print(
+                    f"error: cannot combine -c/--config-file ('{explicit}') with remote swarm target '{swarm_name}'",
+                    file=sys.stderr,
+                )
+                return 1
 
             if swarm_name:
                 runtime_path = Path("/tmp/nudge-swarm") / swarm_name / "runtime.json"

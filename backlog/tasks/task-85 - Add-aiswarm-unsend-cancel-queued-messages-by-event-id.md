@@ -1,10 +1,10 @@
 ---
 id: TASK-85
 title: 'Add aiswarm unsend: cancel queued messages by event id'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 11:37'
-updated_date: '2026-10-03 11:38'
+updated_date: '2026-10-30 11:22'
 labels: []
 dependencies: []
 ---
@@ -17,10 +17,10 @@ Agents can cancel a sent message by id (printed by send) before the comms consum
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 unsend <id> cancels undelivered pane/any/scheduled messages
-- [ ] #2 consumer claim before tmux-send; unsend after delivery reports too late
-- [ ] #3 unsend appends ack event (delivery=unsent) to log
-- [ ] #4 tests in test_swarm.py
+- [x] #1 unsend <id> cancels undelivered pane/any/scheduled messages
+- [x] #2 consumer claim before tmux-send; unsend after delivery reports too late
+- [x] #3 unsend appends ack event (delivery=unsent) to log
+- [x] #4 tests in test_swarm.py
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -34,3 +34,9 @@ Agents can cancel a sent message by id (printed by send) before the comms consum
 <!-- SECTION:NOTES:BEGIN -->
 Implemented: common.claim_delivery/unsend_event, pane_worker claims before send, cli unsend, 5 tests. Uncommitted (test_swarm.py/topology.py had pre-existing changes).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented aiswarm unsend command with cursor_acks tombstoning, atomic claim_delivery check, ack event logging, and CLI help. Verified with 5 targeted unit tests in test_swarm.py (test_unsend_*).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -781,6 +781,7 @@ def build_runtime_map(cfg: SwarmConfig) -> dict:
                 "has_long_prompt": has_long,
                 "has_short_prompt": has_short,
             }
+        entry["title"] = pane.title
         entry["tasks"] = {"enabled": pane.tasks_enabled}
         entry["categories"] = list(pane.categories)
         panes_map[pane.pane] = entry
@@ -822,6 +823,62 @@ def write_runtime_map(cfg: SwarmConfig) -> None:
     cfg.runtime_dir.mkdir(parents=True, exist_ok=True)
     init_comms_db(cfg.session_name)
     cfg.runtime_map_path.write_text(json.dumps(build_runtime_map(cfg), indent=2) + "\n")
+
+
+def config_from_runtime_json(swarm_name_or_path: str | Path) -> SwarmConfig:
+    """Build a SwarmConfig from an active swarm's runtime.json map."""
+    p = Path(swarm_name_or_path)
+    if not p.is_file():
+        p = Path("/tmp/nudge-swarm") / str(swarm_name_or_path) / "runtime.json"
+    if not p.is_file():
+        raise FileNotFoundError(f"runtime map not found: {p}")
+    data = json.loads(p.read_text())
+    session_name = data.get("session_name") or p.parent.name
+    panes: list[PaneSpec] = []
+    for pane_id, pinfo in (data.get("panes") or {}).items():
+        agent = pinfo.get("session", {}).get("agent")
+        title = pinfo.get("title") or agent or pane_id
+        panes.append(PaneSpec(
+            pane=pane_id,
+            agent=agent,
+            command="",
+            title=title,
+            monitor=True,
+            babysit=BabysitSpec(enabled=False, interval_secs=60),
+            comms=True,
+            tasks_enabled=pinfo.get("tasks", {}).get("enabled", False),
+            categories=pinfo.get("categories", []),
+        ))
+    # Map each pane to its window (pane format is "W.N")
+    win_names = data.get("windows") or ["grid"]
+    windows: list[WindowSpec] = []
+    for win_idx, win_name in enumerate(win_names):
+        win_panes = [p for p in panes if p.window_index == win_idx]
+        windows.append(WindowSpec(window_name=win_name, layout="tiled", panes=win_panes))
+    if not any(w.panes for w in windows):
+        windows = [WindowSpec(window_name="grid", layout="tiled", panes=panes)]
+    tasks = TasksSpec(source="backlog", poll_secs=60, min_chase_secs=60)
+    return SwarmConfig(
+        path=p,
+        session_name=session_name,
+        windows=windows,
+        tasks=tasks,
+    )
+
+
+def resolve_swarm(target_or_config: str | Path | None = None) -> SwarmConfig:
+    """Resolve a SwarmConfig from an explicit config path, runtime swarm name, or cwd walk-up."""
+    if target_or_config is not None:
+        s = str(target_or_config).strip()
+        p = Path(s).expanduser()
+        if p.name == "runtime.json" and p.is_file():
+            return config_from_runtime_json(p)
+        if p.is_file() or "/" in s or s.endswith((".yaml", ".yml")):
+            return load_config(p)
+        runtime_path = Path("/tmp/nudge-swarm") / s / "runtime.json"
+        if runtime_path.is_file():
+            return config_from_runtime_json(runtime_path)
+    return load_config(target_or_config)
 
 
 def build_this_text(cfg: SwarmConfig) -> str:

@@ -5422,3 +5422,53 @@ def test_agy_quota_pacing_uses_only_the_panes_own_family():
     assert own("agy", "agy --model gemini-3.8-flash", [{"label": "weird", "pct": 7}]) == [
         {"label": "weird", "pct": 7}
     ]
+
+
+def test_cli_qualified_capture_and_wait(tmp_path: Path, monkeypatch, capsys):
+    target_swarm = "test_cap_wait"
+    target_dir = Path("/tmp/nudge-swarm") / target_swarm
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "runtime.json").write_text(json.dumps({
+        "session_name": target_swarm,
+        "panes": {"0.0": {"session": {"agent": "claude"}}},
+    }))
+    try:
+        from cli import main as cli_main
+        import topology
+
+        captured = []
+        monkeypatch.setattr(topology, "capture_pane", lambda cfg, pane: captured.append((cfg.session_name, pane)))
+        waited = []
+        monkeypatch.setattr(topology, "wait_pane", lambda cfg, pane, **kw: waited.append((cfg.session_name, pane)) or 0)
+
+        assert cli_main(["capture", f"{target_swarm}:0.0"]) == 0
+        assert captured == [(target_swarm, "0.0")]
+
+        assert cli_main(["wait", f"{target_swarm}:0.0"]) == 0
+        assert waited == [(target_swarm, "0.0")]
+
+        # Conflict check: cannot combine -c with qualified target for capture and wait
+        capsys.readouterr()
+        rc_cap = cli_main(["capture", "-c", "some.yaml", f"{target_swarm}:0.0"])
+        assert rc_cap == 1
+        _, err_cap = capsys.readouterr()
+        assert "cannot combine -c/--config-file" in err_cap
+
+        rc_wait = cli_main(["wait", "-c", "some.yaml", f"{target_swarm}:0.0"])
+        assert rc_wait == 1
+        _, err_wait = capsys.readouterr()
+        assert "cannot combine -c/--config-file" in err_wait
+
+        # Send conflict check: cannot combine -c with qualified send target
+        res = cli_main(["send", "-c", "some.yaml", f"{target_swarm}:0.0", "hello"])
+        assert res == 1
+        out, err = capsys.readouterr()
+        assert "cannot combine -c/--config-file" in err
+
+        # Send conflict check: cannot combine conflicting -s with qualified send target
+        res_conf = cli_main(["send", "-s", "other", f"{target_swarm}:0.0", "hello"])
+        assert res_conf == 1
+        _, err_conf = capsys.readouterr()
+        assert "conflicting swarm targets" in err_conf
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
