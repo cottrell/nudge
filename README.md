@@ -1,7 +1,5 @@
 # nudge
 
-:-)
-
 <p align="center">
   <img src="assets/favicon-mural-droid.jpg" alt="Kratos and Bia force an idle agent-droid back to work" width="220" />
 </p>
